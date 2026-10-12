@@ -34,7 +34,10 @@ import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppsScreen
+import io.github.zapretdroid.ui.AutoHostScreen
 import io.github.zapretdroid.ui.HomeScreen
+import io.github.zapretdroid.ui.HostListEditorScreen
+import io.github.zapretdroid.ui.HostListsScreen
 import io.github.zapretdroid.ui.LogsScreen
 import io.github.zapretdroid.ui.SettingsScreen
 import io.github.zapretdroid.ui.TestScreen
@@ -67,7 +70,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -75,6 +78,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     val settings = remember { Settings(context) }
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var logsReturn by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var editingList by rememberSaveable { mutableStateOf<String?>(null) }
     var state by remember {
         mutableStateOf(if (VpnStatus.isServiceRunning(context)) VpnState.RUNNING else VpnState.STOPPED)
     }
@@ -138,7 +142,8 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
-            Screen.APPS, Screen.TEST -> Screen.SETTINGS
+            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST -> Screen.SETTINGS
+            Screen.LIST_EDIT -> Screen.LISTS
             Screen.LOGS -> logsReturn
             else -> Screen.HOME
         }
@@ -176,12 +181,23 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenApps = { screen = Screen.APPS },
             onOpenLogs = { openLogs(Screen.SETTINGS) },
             onOpenTest = { screen = Screen.TEST },
+            onOpenLists = { screen = Screen.LISTS },
+            onOpenAutoHost = { screen = Screen.AUTOHOST },
         )
         Screen.APPS -> AppsScreen(
             settings = settings,
             onBack = { screen = Screen.SETTINGS },
         )
         Screen.LOGS -> LogsScreen(onBack = { screen = logsReturn })
+        Screen.LISTS -> HostListsScreen(
+            onBack = { screen = Screen.SETTINGS },
+            onEdit = { name ->
+                editingList = name
+                screen = Screen.LIST_EDIT
+            },
+        )
+        Screen.LIST_EDIT -> HostListEditorScreen(initialName = editingList, onBack = { screen = Screen.LISTS })
+        Screen.AUTOHOST -> AutoHostScreen(enabled = settings.autohost, onBack = { screen = Screen.SETTINGS })
         Screen.TEST -> TestScreen(
             settings = settings,
             onBack = { screen = Screen.SETTINGS },

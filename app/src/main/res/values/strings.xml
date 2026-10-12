@@ -120,4 +120,47 @@
     <string name="test_applied">Strategy applied. Reconnect to use it.</string>
     <string name="strategy_tpws">tpws style (zapret)</string>
     <string name="strategy_tpws_desc">HTTP: split after the method, hostcase and hostdot; TLS: split in the middle of the second-level domain and a TLS record at the SNI extension</string>
+    <string name="action_save">Save</string>
+    <string name="action_add">Add</string>
+
+    <string name="section_hosts">Where to apply</string>
+    <string name="hosts_all">All sites</string>
+    <string name="hosts_only_list">Only sites from a list</string>
+    <string name="hosts_except_list">All sites except a list</string>
+    <string name="hosts_list">Host list</string>
+    <string name="hosts_list_none">Not chosen</string>
+    <string name="hosts_list_value">%1$s (%2$d domains)</string>
+
+    <string name="title_host_lists">Host lists</string>
+    <string name="host_lists_open_desc">Create, import and edit lists of domains (zapret format)</string>
+    <string name="host_lists_intro">One domain per line, subdomains included, # starts a comment. Use a list in the "Where to apply" setting or in arguments as {list:name}, e.g. --hosts {list:youtube}.</string>
+    <string name="host_lists_new">New list</string>
+    <string name="host_lists_import">Import file</string>
+    <string name="host_lists_download">Download from a link</string>
+    <string name="host_lists_download_action">Download</string>
+    <string name="host_lists_download_failed">Download failed: %1$s</string>
+    <string name="host_lists_empty">No lists yet</string>
+    <string name="host_lists_count">%1$d domains</string>
+    <string name="host_lists_delete">Delete</string>
+    <string name="host_lists_delete_confirm">Delete the list \"%1$s\"?</string>
+    <string name="host_lists_name">List name</string>
+    <string name="host_lists_new_name">Or a new list</string>
+    <string name="host_lists_name_hint">Latin letters, digits, _ and -</string>
+    <string name="host_lists_name_taken">A list with this name exists</string>
+    <string name="host_lists_saved">Saved: %1$d domains, %2$d lines rejected</string>
+    <string name="host_lists_too_big">The list is too large to edit here (%1$d domains). Import a new version to replace it.</string>
+    <string name="host_lists_format">Accepted: domains, URLs, *.example.com, several per line. Gzip files can be imported.</string>
+
+    <string name="autohost_toggle">Record blocked domains (autohostlist)</string>
+    <string name="autohost_toggle_desc">The engine notes domains where it still sees a block (reset, timeout, redirect, TLS error), as zapret autohostlist does. Adds a fallback attempt without bypass after a failure.</string>
+    <string name="title_autohost">Detected blocks</string>
+    <string name="autohost_open_desc">Domains that failed with the current strategy</string>
+    <string name="autohost_intro">Domains where a block was detected even with the strategy applied. Add them to a list, e.g. to try another strategy only for them.</string>
+    <string name="autohost_disabled">Recording is off. Turn on \"Record blocked domains\" in Settings → Debugging and reconnect.</string>
+    <string name="autohost_refresh">Refresh</string>
+    <string name="autohost_add">Add to list (%1$d)</string>
+    <string name="autohost_clear">Clear</string>
+    <string name="autohost_empty">Nothing recorded yet</string>
+    <string name="autohost_entry">%1$d times · %2$s · %3$s</string>
+    <string name="autohost_pick_list">Add to list</string>
 </resources>

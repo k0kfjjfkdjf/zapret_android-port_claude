@@ -170,6 +170,7 @@ struct params {
     int need_free_n;
     
     const char *protect_path;
+    const char *autohost_log;
     bool daemonize;
     const char *pid_file;
     int pid_fd;

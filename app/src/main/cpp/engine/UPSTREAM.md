@@ -17,3 +17,6 @@ Changes in this fork:
   `hostnospace`, `hostpad=N`, `methodspace`, `methodeol`, `unixeol` (ported from
   `tpws/tamper.c`, same order of operations). The original `h`, `d`, `r` flags still work.
 - Host tests: `app/src/test/native/run.sh`.
+- autohostlist as a debugging aid: `--autohost-log <file>` appends `<time> <host> <reason>`
+  for every detected block (torst, redirect, ssl_err, connect). Detection needs an `--auto`
+  group; the app adds an empty one at the end when the feature is on.

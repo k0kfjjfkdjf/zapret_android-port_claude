@@ -45,6 +45,8 @@ import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.FakePayloads
+import io.github.zapretdroid.core.HostLists
+import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
@@ -59,6 +61,8 @@ fun SettingsScreen(
     onOpenApps: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenTest: () -> Unit,
+    onOpenLists: () -> Unit,
+    onOpenAutoHost: () -> Unit,
 ) {
     var strategyId by remember { mutableStateOf(settings.strategyId) }
     var customArgs by remember { mutableStateOf(settings.customArgs) }
@@ -67,6 +71,10 @@ fun SettingsScreen(
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
     var logLevel by remember { mutableStateOf(settings.logLevel) }
     var fakePicker by remember { mutableStateOf(false) }
+    var hostScope by remember { mutableStateOf(settings.hostScope) }
+    var hostList by remember { mutableStateOf(settings.hostList) }
+    var autohost by remember { mutableStateOf(settings.autohost) }
+    var listPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val setCustomArgs = { args: String ->
         customArgs = args
@@ -150,6 +158,47 @@ fun SettingsScreen(
                 TextButton(onClick = { fakePicker = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
                     Text(stringResource(R.string.fake_insert))
                 }
+            }
+
+            item { SectionHeader(R.string.section_hosts) }
+            items(HostScope.entries.toList(), key = { "scope_" + it.name }) { scope ->
+                RadioRow(
+                    title = stringResource(
+                        when (scope) {
+                            HostScope.ALL -> R.string.hosts_all
+                            HostScope.ONLY_LIST -> R.string.hosts_only_list
+                            HostScope.EXCEPT_LIST -> R.string.hosts_except_list
+                        },
+                    ),
+                    subtitle = null,
+                    selected = hostScope == scope,
+                    onSelect = {
+                        hostScope = scope
+                        settings.hostScope = scope
+                        if (scope != HostScope.ALL && hostList.isEmpty()) listPicker = true
+                    },
+                )
+            }
+            if (hostScope != HostScope.ALL) {
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.hosts_list)) },
+                        supportingContent = {
+                            Text(
+                                if (hostList.isEmpty()) stringResource(R.string.hosts_list_none)
+                                else stringResource(R.string.hosts_list_value, hostList, HostLists.count(context, hostList)),
+                            )
+                        },
+                        modifier = Modifier.selectable(selected = false, onClick = { listPicker = true }),
+                    )
+                }
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.title_host_lists)) },
+                    supportingContent = { Text(stringResource(R.string.host_lists_open_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenLists),
+                )
             }
 
             item { SectionHeader(R.string.section_network) }
@@ -241,6 +290,24 @@ fun SettingsScreen(
             }
             item {
                 ListItem(
+                    headlineContent = { Text(stringResource(R.string.autohost_toggle)) },
+                    supportingContent = { Text(stringResource(R.string.autohost_toggle_desc)) },
+                    trailingContent = { Switch(checked = autohost, onCheckedChange = null) },
+                    modifier = Modifier.toggleable(value = autohost, role = Role.Switch) {
+                        autohost = it
+                        settings.autohost = it
+                    },
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.title_autohost)) },
+                    supportingContent = { Text(stringResource(R.string.autohost_open_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenAutoHost),
+                )
+            }
+            item {
+                ListItem(
                     headlineContent = { Text(stringResource(R.string.title_logs)) },
                     supportingContent = { Text(stringResource(R.string.logs_open_desc)) },
                     modifier = Modifier.selectable(selected = false, onClick = onOpenLogs),
@@ -262,6 +329,18 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (listPicker) {
+        ListPickerDialog(
+            onDismiss = { listPicker = false },
+            onPick = { name ->
+                listPicker = false
+                if (!HostLists.file(context, name).exists()) HostLists.save(context, name, "")
+                hostList = name
+                settings.hostList = name
+            },
+        )
     }
 
     if (fakePicker) {

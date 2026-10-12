@@ -14,6 +14,7 @@ object Diagnostics {
         add("strategy: ${settings.strategyId}")
         add("args: ${settings.strategyArgs}")
         add("dns: ${settings.dns}, ipv6: ${settings.ipv6}, log level: ${settings.logLevel}")
+        add("hosts: ${settings.hostScope}" + (if (settings.hostScope != HostScope.ALL) " list '${settings.hostList}'" else "") + ", autohost: ${settings.autohost}")
         add("apps: ${settings.appFilterMode}" + if (settings.appFilterMode != AppFilterMode.ALL) " ${settings.selectedApps.sorted()}" else "")
         addAll(network(context))
     }

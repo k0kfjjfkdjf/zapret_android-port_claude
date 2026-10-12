@@ -51,6 +51,19 @@ class Settings(context: Context) {
             ?.let { runCatching { LogLevel.valueOf(it) }.getOrNull() } ?: LogLevel.NORMAL
         set(value) = prefs.edit(commit = true) { putString(KEY_LOG_LEVEL, value.name) }
 
+    var hostScope: HostScope
+        get() = prefs.getString(KEY_HOST_SCOPE, null)
+            ?.let { runCatching { HostScope.valueOf(it) }.getOrNull() } ?: HostScope.ALL
+        set(value) = prefs.edit(commit = true) { putString(KEY_HOST_SCOPE, value.name) }
+
+    var hostList: String
+        get() = prefs.getString(KEY_HOST_LIST, "")!!
+        set(value) = prefs.edit(commit = true) { putString(KEY_HOST_LIST, value) }
+
+    var autohost: Boolean
+        get() = prefs.getBoolean(KEY_AUTOHOST, false)
+        set(value) = prefs.edit(commit = true) { putBoolean(KEY_AUTOHOST, value) }
+
     /** The ByeDPI arguments of the active strategy, without listen address options. */
     val strategyArgs: String
         get() = Strategies.byId(strategyId)?.args ?: customArgs
@@ -64,5 +77,8 @@ class Settings(context: Context) {
         private const val KEY_APP_FILTER = "app_filter"
         private const val KEY_APPS = "apps"
         private const val KEY_LOG_LEVEL = "log_level"
+        private const val KEY_HOST_SCOPE = "host_scope"
+        private const val KEY_HOST_LIST = "host_list"
+        private const val KEY_AUTOHOST = "autohost"
     }
 }

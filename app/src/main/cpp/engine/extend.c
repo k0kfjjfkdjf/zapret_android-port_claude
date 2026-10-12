@@ -14,6 +14,8 @@
 #endif
 
 #include <string.h>
+#include <stdio.h>
+#include <time.h>
 #include <assert.h>
 
 #include "proxy.h"
@@ -341,9 +343,32 @@ static void swop_groups(struct desync_params *dpc, struct desync_params *dpn)
 }
 
 
+/*
+ * autohostlist (zapret tpws): every detected block is appended to --autohost-log as
+ * "<unix time> <host> <reason>", so the app can show which sites still fail.
+ */
+static void autohost_record(const char *host, int len, int type)
+{
+    if (!params.autohost_log || !host || len <= 0) {
+        return;
+    }
+    const char *reason = (type & DETECT_TORST) ? "torst"
+        : (type & DETECT_HTTP_LOCAT) ? "redirect"
+        : (type & DETECT_TLS_ERR) ? "ssl_err"
+        : (type & DETECT_CONNECT) ? "connect" : "unknown";
+    FILE *f = fopen(params.autohost_log, "a");
+    if (!f) {
+        return;
+    }
+    fprintf(f, "%ld %.*s %s\n", (long) time(0), len, host, reason);
+    fclose(f);
+}
+
+
 int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_alive)
 {
     struct eval *lav = val->pair;
+    autohost_record(lav->host, lav->host_len, type);
     
     bool before_req = !lav->recv_count && !val->recv_count;
     

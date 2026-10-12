@@ -22,7 +22,10 @@ import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.Diagnostics
 import io.github.zapretdroid.core.FakePayloads
+import io.github.zapretdroid.core.AutoHost
 import io.github.zapretdroid.core.HostLists
+import io.github.zapretdroid.core.HostScope
+import io.github.zapretdroid.core.StrategyArgs
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.TProxyService
@@ -300,12 +303,26 @@ class ZapretVpnService : VpnService() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** Strategy arguments with {fake:...} and {list:...} replaced by file paths. */
-    private fun resolveStrategy(settings: Settings): List<String> = try {
-        ArgTemplates.resolve(splitArgs(settings.strategyArgs), FakePayloads.install(this), HostLists.dir(this))
-    } catch (e: ArgTemplates.UnknownReference) {
-        val res = if (e.kind == "fake") R.string.error_unknown_fake else R.string.error_unknown_list
-        throw IllegalStateException(getString(res, e.name))
+    /**
+     * Strategy arguments with {fake:...} and {list:...} replaced by file paths, limited to the
+     * chosen host list and with the autohostlist recorder when enabled.
+     */
+    private fun resolveStrategy(settings: Settings): List<String> {
+        val strategy = try {
+            ArgTemplates.resolve(splitArgs(settings.strategyArgs), FakePayloads.install(this), HostLists.dir(this))
+        } catch (e: ArgTemplates.UnknownReference) {
+            val res = if (e.kind == "fake") R.string.error_unknown_fake else R.string.error_unknown_list
+            throw IllegalStateException(getString(res, e.name))
+        }
+        val scope = settings.hostScope
+        val listPath = if (scope == HostScope.ALL) {
+            null
+        } else {
+            HostLists.file(this, settings.hostList).takeIf { settings.hostList.isNotEmpty() && it.isFile }?.absolutePath
+                ?: throw IllegalStateException(getString(R.string.error_unknown_list, settings.hostList))
+        }
+        val autohostLog = if (settings.autohost) AutoHost.file(this).absolutePath else null
+        return StrategyArgs.build(strategy, scope, listPath, autohostLog)
     }
 
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */

@@ -118,4 +118,47 @@
     <string name="test_applied">Стратегия применена. Переподключитесь, чтобы она заработала.</string>
     <string name="strategy_tpws">В стиле tpws (zapret)</string>
     <string name="strategy_tpws_desc">HTTP: разбиение после метода, hostcase и hostdot; TLS: разбиение посередине домена второго уровня и TLS-запись на расширении SNI</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_add">Добавить</string>
+
+    <string name="section_hosts">Где применять</string>
+    <string name="hosts_all">Ко всем сайтам</string>
+    <string name="hosts_only_list">Только к сайтам из списка</string>
+    <string name="hosts_except_list">Ко всем, кроме списка</string>
+    <string name="hosts_list">Список хостов</string>
+    <string name="hosts_list_none">Не выбран</string>
+    <string name="hosts_list_value">%1$s (доменов: %2$d)</string>
+
+    <string name="title_host_lists">Списки хостов</string>
+    <string name="host_lists_open_desc">Создание, импорт и правка списков доменов (формат zapret)</string>
+    <string name="host_lists_intro">Один домен в строке, поддомены включаются, # начинает комментарий. Список можно выбрать в настройке «Где применять» или указать в аргументах как {list:имя}, например --hosts {list:youtube}.</string>
+    <string name="host_lists_new">Новый список</string>
+    <string name="host_lists_import">Импорт файла</string>
+    <string name="host_lists_download">Загрузить по ссылке</string>
+    <string name="host_lists_download_action">Загрузить</string>
+    <string name="host_lists_download_failed">Не удалось загрузить: %1$s</string>
+    <string name="host_lists_empty">Списков пока нет</string>
+    <string name="host_lists_count">Доменов: %1$d</string>
+    <string name="host_lists_delete">Удалить</string>
+    <string name="host_lists_delete_confirm">Удалить список «%1$s»?</string>
+    <string name="host_lists_name">Имя списка</string>
+    <string name="host_lists_new_name">Или новый список</string>
+    <string name="host_lists_name_hint">Латинские буквы, цифры, _ и -</string>
+    <string name="host_lists_name_taken">Список с таким именем уже есть</string>
+    <string name="host_lists_saved">Сохранено доменов: %1$d, отброшено строк: %2$d</string>
+    <string name="host_lists_too_big">Список слишком большой для правки здесь (доменов: %1$d). Импортируйте новую версию, чтобы заменить его.</string>
+    <string name="host_lists_format">Принимаются домены, ссылки, *.example.com, несколько в строке. Можно импортировать gzip.</string>
+
+    <string name="autohost_toggle">Записывать заблокированные домены (autohostlist)</string>
+    <string name="autohost_toggle_desc">Движок отмечает домены, где всё ещё видит блокировку (сброс, таймаут, редирект, ошибка TLS), как autohostlist в zapret. После сбоя добавляется запасная попытка без обхода.</string>
+    <string name="title_autohost">Обнаруженные блокировки</string>
+    <string name="autohost_open_desc">Домены, которые не открылись с текущей стратегией</string>
+    <string name="autohost_intro">Домены, на которых блокировка обнаружена даже с применённой стратегией. Добавьте их в список, например чтобы применить к ним другую стратегию.</string>
+    <string name="autohost_disabled">Запись выключена. Включите «Записывать заблокированные домены» в Настройках → Отладка и переподключитесь.</string>
+    <string name="autohost_refresh">Обновить</string>
+    <string name="autohost_add">В список (%1$d)</string>
+    <string name="autohost_clear">Очистить</string>
+    <string name="autohost_empty">Пока ничего не записано</string>
+    <string name="autohost_entry">%1$d раз · %2$s · %3$s</string>
+    <string name="autohost_pick_list">Добавить в список</string>
 </resources>
