@@ -81,7 +81,7 @@ cd zapret_android-port_claude
 ./gradlew assembleDebug
 ```
 
-Нужны JDK 17, Android SDK (platform 36), NDK 27.2.12479018 и CMake 3.22.1.
+Нужны JDK 21 (или 17), Android SDK (platform 36), NDK 27.2.12479018 и CMake 3.22.1.
 APK для всех ABI и универсальный APK появятся в `app/build/outputs/apk/debug/`.
 CI (GitHub Actions) собирает их на каждый push — смотрите артефакты сборки.
 

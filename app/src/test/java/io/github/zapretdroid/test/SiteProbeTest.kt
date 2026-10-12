@@ -27,8 +27,8 @@ class SiteProbeTest {
 
         @JvmStatic @BeforeClass fun setUp() {
             val ks = KeyStore.getInstance("JKS").apply { load(SiteProbeTest::class.java.getResourceAsStream("/probe-test.jks"), "password".toCharArray()) }
-            val kmf = KeyManagerFactory.getInstance("SunX509").apply { init(ks, "password".toCharArray()) }
-            val tmf = TrustManagerFactory.getInstance("SunX509").apply { init(ks) }
+            val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(ks, "password".toCharArray()) }
+            val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(ks) }
             val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, tmf.trustManagers, null) }
             SSLContext.setDefault(ctx)
             // The JVM's default verifier rejects everything; Android's checks the SAN like this.
