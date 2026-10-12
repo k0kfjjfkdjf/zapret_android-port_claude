@@ -83,9 +83,9 @@
 
     <string name="section_debug">Debugging</string>
     <string name="log_level_normal">Normal log</string>
-    <string name="log_level_normal_desc">App events, settings and errors</string>
+    <string name="log_level_normal_desc">App actions and settings, every connection of the engine (host, strategy group, bytes), detected blocks, errors</string>
     <string name="log_level_debug">Detailed log</string>
-    <string name="log_level_debug_desc">Also every connection and which strategy group was used</string>
+    <string name="log_level_debug_desc">Also the internal steps of the engine: split positions, fakes, timers</string>
     <string name="log_level_verbose">Maximum log</string>
     <string name="log_level_verbose_desc">Also packet dumps. Slows the connection down, use only to investigate a problem</string>
     <string name="strategy_discord">Discord and calls</string>

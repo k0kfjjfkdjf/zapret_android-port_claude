@@ -81,9 +81,9 @@
 
     <string name="section_debug">Отладка</string>
     <string name="log_level_normal">Обычный лог</string>
-    <string name="log_level_normal_desc">События приложения, настройки и ошибки</string>
+    <string name="log_level_normal_desc">Действия и настройки, каждое соединение движка (домен, группа стратегии, объём), обнаруженные блокировки, ошибки</string>
     <string name="log_level_debug">Подробный лог</string>
-    <string name="log_level_debug_desc">Плюс каждое соединение и какая группа стратегии сработала</string>
+    <string name="log_level_debug_desc">Плюс внутренние шаги движка: позиции разбиения, фейки, таймеры</string>
     <string name="log_level_verbose">Максимальный лог</string>
     <string name="log_level_verbose_desc">Плюс дампы пакетов. Замедляет соединение, включайте только для разбора проблемы</string>
     <string name="strategy_discord">Discord и звонки</string>
