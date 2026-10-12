@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">ZapretDroid</string>
+
+    <string name="state_stopped">Disconnected</string>
+    <string name="state_starting">Connecting…</string>
+    <string name="state_running">Connected</string>
+    <string name="state_stopping">Disconnecting…</string>
+    <string name="traffic">↑ %1$s · ↓ %2$s</string>
+    <string name="current_strategy">Strategy</string>
+
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_back">Back</string>
+    <string name="action_dismiss">Dismiss</string>
+
+    <string name="notification_channel">VPN status</string>
+    <string name="notification_running">DPI bypass is active</string>
+
+    <string name="error_vpn_permission">VPN permission was not granted</string>
+    <string name="error_engine_start">The bypass engine did not start. Check the strategy arguments.</string>
+    <string name="error_engine_exited">The bypass engine stopped (code %1$d). Check the strategy arguments.</string>
+    <string name="error_tunnel_start">Could not start the tunnel</string>
+
+    <string name="title_settings">Settings</string>
+    <string name="settings_apply_hint">Changes apply after reconnecting.</string>
+
+    <string name="section_strategy">Bypass strategy</string>
+    <string name="strategy_auto">Adaptive</string>
+    <string name="strategy_auto_desc">Disorder; if a connection looks blocked, switches to splitting TLS records</string>
+    <string name="strategy_disorder">Disorder</string>
+    <string name="strategy_disorder_desc">Sends the first byte out of order</string>
+    <string name="strategy_split_sni">Split at SNI</string>
+    <string name="strategy_split_sni_desc">Splits the request inside the domain name</string>
+    <string name="strategy_oob_sni">OOB at SNI</string>
+    <string name="strategy_oob_sni_desc">Inserts an out-of-band byte into the domain name</string>
+    <string name="strategy_tlsrec">TLS records</string>
+    <string name="strategy_tlsrec_desc">Splits the ClientHello into two TLS records, falls back to disorder</string>
+    <string name="strategy_fake">Fake packet</string>
+    <string name="strategy_fake_desc">Sends a decoy with low TTL first; the TTL may need tuning for your ISP</string>
+    <string name="strategy_quic">TCP + QUIC/UDP</string>
+    <string name="strategy_quic_desc">Disorder and TLS records for TCP, fake datagrams for UDP (YouTube, calls)</string>
+    <string name="strategy_byebyedpi">ByeByeDPI default</string>
+    <string name="strategy_byebyedpi_desc">The default command line of ByeByeDPI</string>
+    <string name="strategy_custom">Custom</string>
+    <string name="strategy_custom_desc">Your own ByeDPI command line</string>
+    <string name="strategy_args">ByeDPI arguments</string>
+    <string name="strategy_args_hint">Editing switches to a custom strategy. --ip and --port are set by the app.</string>
+
+    <string name="section_network">Network</string>
+    <string name="dns_server">DNS server</string>
+    <string name="dns_server_hint">IP address; DNS queries go through the bypass</string>
+    <string name="dns_server_invalid">Enter an IPv4 or IPv6 address</string>
+    <string name="ipv6">IPv6</string>
+    <string name="ipv6_desc">Route IPv6 traffic too. Enable only if your network has IPv6.</string>
+
+    <string name="section_apps">Apps</string>
+    <string name="apps_all">All apps</string>
+    <string name="apps_only_selected">Only selected apps</string>
+    <string name="apps_except_selected">All apps except selected</string>
+    <string name="apps_choose">Choose apps</string>
+    <string name="apps_selected_count">Selected: %1$d</string>
+    <string name="apps_search">Search</string>
+
+    <string name="about_version">Version %1$s</string>
+    <string name="about_credits">GPLv3. Built on ByeDPI and hev-socks5-tunnel, with ideas from zapret and ByeByeDPI.</string>
+</resources>

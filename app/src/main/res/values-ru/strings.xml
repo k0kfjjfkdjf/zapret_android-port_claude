@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="state_stopped">Отключено</string>
+    <string name="state_starting">Подключение…</string>
+    <string name="state_running">Подключено</string>
+    <string name="state_stopping">Отключение…</string>
+    <string name="traffic">↑ %1$s · ↓ %2$s</string>
+    <string name="current_strategy">Стратегия</string>
+
+    <string name="action_connect">Подключить</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="action_stop">Остановить</string>
+    <string name="action_back">Назад</string>
+    <string name="action_dismiss">Закрыть</string>
+
+    <string name="notification_channel">Состояние VPN</string>
+    <string name="notification_running">Обход DPI включён</string>
+
+    <string name="error_vpn_permission">Разрешение на VPN не выдано</string>
+    <string name="error_engine_start">Движок обхода не запустился. Проверьте аргументы стратегии.</string>
+    <string name="error_engine_exited">Движок обхода остановился (код %1$d). Проверьте аргументы стратегии.</string>
+    <string name="error_tunnel_start">Не удалось запустить туннель</string>
+
+    <string name="title_settings">Настройки</string>
+    <string name="settings_apply_hint">Изменения применятся после переподключения.</string>
+
+    <string name="section_strategy">Стратегия обхода</string>
+    <string name="strategy_auto">Адаптивная</string>
+    <string name="strategy_auto_desc">Disorder; если соединение похоже на заблокированное, переключается на разбиение TLS-записей</string>
+    <string name="strategy_disorder">Disorder</string>
+    <string name="strategy_disorder_desc">Отправляет первый байт не по порядку</string>
+    <string name="strategy_split_sni">Разбиение по SNI</string>
+    <string name="strategy_split_sni_desc">Разбивает запрос внутри имени домена</string>
+    <string name="strategy_oob_sni">OOB в SNI</string>
+    <string name="strategy_oob_sni_desc">Вставляет внеполосный байт в имя домена</string>
+    <string name="strategy_tlsrec">TLS-записи</string>
+    <string name="strategy_tlsrec_desc">Делит ClientHello на две TLS-записи, при сбое переходит на disorder</string>
+    <string name="strategy_fake">Фейковый пакет</string>
+    <string name="strategy_fake_desc">Сначала отправляет обманку с низким TTL; TTL может понадобиться подобрать под провайдера</string>
+    <string name="strategy_quic">TCP + QUIC/UDP</string>
+    <string name="strategy_quic_desc">Disorder и TLS-записи для TCP, фейковые датаграммы для UDP (YouTube, звонки)</string>
+    <string name="strategy_byebyedpi">Как в ByeByeDPI</string>
+    <string name="strategy_byebyedpi_desc">Командная строка ByeByeDPI по умолчанию</string>
+    <string name="strategy_custom">Своя</string>
+    <string name="strategy_custom_desc">Собственная командная строка ByeDPI</string>
+    <string name="strategy_args">Аргументы ByeDPI</string>
+    <string name="strategy_args_hint">Правка переключает на свою стратегию. --ip и --port задаёт приложение.</string>
+
+    <string name="section_network">Сеть</string>
+    <string name="dns_server">DNS-сервер</string>
+    <string name="dns_server_hint">IP-адрес; DNS-запросы идут через обход</string>
+    <string name="dns_server_invalid">Введите IPv4- или IPv6-адрес</string>
+    <string name="ipv6">IPv6</string>
+    <string name="ipv6_desc">Пропускать через обход и IPv6. Включайте, только если в сети есть IPv6.</string>
+
+    <string name="section_apps">Приложения</string>
+    <string name="apps_all">Все приложения</string>
+    <string name="apps_only_selected">Только выбранные</string>
+    <string name="apps_except_selected">Все, кроме выбранных</string>
+    <string name="apps_choose">Выбрать приложения</string>
+    <string name="apps_selected_count">Выбрано: %1$d</string>
+    <string name="apps_search">Поиск</string>
+
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_credits">GPLv3. Основано на ByeDPI и hev-socks5-tunnel, с идеями из zapret и ByeByeDPI.</string>
+</resources>
