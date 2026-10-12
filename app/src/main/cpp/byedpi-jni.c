@@ -5,8 +5,8 @@
  * startProxy() blocks the calling thread until the proxy exits, stopProxy() shuts
  * down the listening socket, which makes the event loop return.
  *
- * ByeDPI keeps its state in globals, so the engine can be started only once per
- * process. The VPN service runs in its own process and exits after every session.
+ * ByeDPI keeps its state in globals: one engine can run at a time per process, and
+ * engine_reset() restores the globals before every run.
  */
 #include <errno.h>
 #include <jni.h>
@@ -20,10 +20,10 @@
 #define TAG "zapretdroid"
 
 int main(int argc, char **argv);
+void engine_reset(void);
 extern int server_fd;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-static int used;
 static int running;
 
 int __wrap_daemon(int nochdir, int noclose)
@@ -36,14 +36,14 @@ JNIEXPORT jint JNICALL
 Java_io_github_zapretdroid_core_ByeDpi_startProxy(JNIEnv *env, jobject thiz, jobjectArray args)
 {
     pthread_mutex_lock(&lock);
-    if (used) {
+    if (running) {
         pthread_mutex_unlock(&lock);
-        __android_log_print(ANDROID_LOG_ERROR, TAG, "engine already used in this process");
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "engine is already running in this process");
         return -1;
     }
-    used = 1;
-    server_fd = -1;
     running = 1;
+    server_fd = -1;
+    engine_reset();
     pthread_mutex_unlock(&lock);
 
     int argc = (*env)->GetArrayLength(env, args);
