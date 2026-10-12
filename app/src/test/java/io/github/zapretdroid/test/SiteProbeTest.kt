@@ -27,7 +27,7 @@ class SiteProbeTest {
         @Volatile var serverError: Throwable? = null
 
         @JvmStatic @BeforeClass fun setUp() {
-            val ks = KeyStore.getInstance("JKS").apply { load(SiteProbeTest::class.java.getResourceAsStream("/probe-test.jks"), "password".toCharArray()) }
+            val ks = KeyStore.getInstance("JKS").apply { load(requireNotNull(SiteProbeTest::class.java.getResourceAsStream("/probe-test.jks")) { "probe-test.jks missing from test resources" }, "password".toCharArray()) }
             val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(ks, "password".toCharArray()) }
             val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(ks) }
             val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, tmf.trustManagers, null) }

@@ -10,3 +10,5 @@ build/
 .cxx/
 *.keystore
 *.jks
+# Test-only self-signed certificate for SiteProbeTest
+!app/src/test/resources/probe-test.jks
