@@ -8,6 +8,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
@@ -59,6 +60,10 @@ object SiteProbe {
     private const val MAX_READ = 128 * 1024
     private val BLOCK_PAGE_HINTS = listOf("warning", "block", "zapret", "rkn", "forbidden", "stop", "ban")
 
+    /** Checks that the certificate is for the host; replaceable in tests. */
+    @Volatile
+    var hostnameVerifier: HostnameVerifier? = null
+
     fun probe(proxyPort: Int, host: String, address: InetAddress?, timeoutMs: Int): ProbeResult {
         val start = System.currentTimeMillis()
         var stage = ProbeStage.PROXY
@@ -89,7 +94,8 @@ object SiteProbe {
                     tlsMs = System.currentTimeMillis() - tlsStart
                     tlsVersion = ssl.session.protocol
                     stage = ProbeStage.CERTIFICATE
-                    if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, ssl.session)) {
+                    val verifier = hostnameVerifier ?: HttpsURLConnection.getDefaultHostnameVerifier()
+                    if (!verifier.verify(host, ssl.session)) {
                         return fail("certificate is not for $host (DNS spoofing or a block page?)")
                     }
                     stage = ProbeStage.RESPONSE

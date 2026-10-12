@@ -31,8 +31,8 @@ class SiteProbeTest {
             val tmf = TrustManagerFactory.getInstance("SunX509").apply { init(ks) }
             val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, tmf.trustManagers, null) }
             SSLContext.setDefault(ctx)
-            // The desktop JDK's default verifier rejects everything; Android's checks the SAN like this.
-            javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier { host, session ->
+            // The JVM's default verifier rejects everything; Android's checks the SAN like this.
+            SiteProbe.hostnameVerifier = javax.net.ssl.HostnameVerifier { host, session ->
                 (session.peerCertificates[0] as java.security.cert.X509Certificate)
                     .subjectAlternativeNames.orEmpty().any { it[1] == host }
             }
@@ -77,17 +77,21 @@ class SiteProbeTest {
             o.flush(); s.close()
         }
 
-        @JvmStatic @AfterClass fun tearDown() { tls.close(); socks.close() }
+        @JvmStatic @AfterClass fun tearDown() {
+            SiteProbe.hostnameVerifier = null
+            tls.close()
+            socks.close()
+        }
     }
 
     private fun run(m: String, host: String = "localhost") = run { mode = m; SiteProbe.probe(socks.localPort, host, InetAddress.getLoopbackAddress(), 1500) }.also { println("[$m] ${it.summary()}") }
 
-    @Test fun ok() { val r = run("ok"); assertTrue(r.ok); assertEquals(200, r.httpStatus); assertTrue(r.bytes >= 50_000) }
-    @Test fun notFoundIsReachable() { val r = run("404"); assertTrue(r.ok); assertEquals(404, r.httpStatus) }
-    @Test fun truncated() { val r = run("truncated"); assertTrue(!r.ok); assertTrue(r.detail, r.detail.contains("truncated")) }
-    @Test fun stall() { val r = run("stall"); assertTrue(!r.ok); assertTrue(r.detail, r.detail.contains("stalled")); assertEquals(ProbeStage.BODY, r.stage) }
-    @Test fun blockPage() { val r = run("blockpage"); assertTrue(!r.ok); assertTrue(r.detail, r.detail.contains("block page")) }
-    @Test fun sameSiteRedirectIsFine() { val r = run("redirect"); assertTrue(r.ok); assertEquals(301, r.httpStatus) }
-    @Test fun wrongCertificate() { val r = run("ok", host = "example.com"); assertTrue(!r.ok); assertTrue(r.detail, r.stage == ProbeStage.TLS || r.stage == ProbeStage.CERTIFICATE) }
-    @Test fun connectRefused() { val r = run("refused"); assertTrue(!r.ok); assertEquals(ProbeStage.CONNECT, r.stage) }
+    @Test fun ok() { val r = run("ok"); assertTrue(r.summary(), r.ok); assertEquals(r.summary(), 200, r.httpStatus); assertTrue(r.summary(), r.bytes >= 50_000) }
+    @Test fun notFoundIsReachable() { val r = run("404"); assertTrue(r.summary(), r.ok); assertEquals(r.summary(), 404, r.httpStatus) }
+    @Test fun truncated() { val r = run("truncated"); assertTrue(r.summary(), !r.ok); assertTrue(r.detail, r.detail.contains("truncated")) }
+    @Test fun stall() { val r = run("stall"); assertTrue(r.summary(), !r.ok); assertTrue(r.detail, r.detail.contains("stalled")); assertEquals(r.summary(), ProbeStage.BODY, r.stage) }
+    @Test fun blockPage() { val r = run("blockpage"); assertTrue(r.summary(), !r.ok); assertTrue(r.detail, r.detail.contains("block page")) }
+    @Test fun sameSiteRedirectIsFine() { val r = run("redirect"); assertTrue(r.summary(), r.ok); assertEquals(r.summary(), 301, r.httpStatus) }
+    @Test fun wrongCertificate() { val r = run("ok", host = "example.com"); assertTrue(r.summary(), !r.ok); assertTrue(r.detail, r.stage == ProbeStage.TLS || r.stage == ProbeStage.CERTIFICATE) }
+    @Test fun connectRefused() { val r = run("refused"); assertTrue(r.summary(), !r.ok); assertEquals(r.summary(), ProbeStage.CONNECT, r.stage) }
 }
