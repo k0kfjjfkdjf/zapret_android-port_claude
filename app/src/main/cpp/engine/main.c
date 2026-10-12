@@ -187,6 +187,7 @@ const struct option options[] = {
     {"copy",          1, 0, 'B'},
     {"cache-file",    1, 0, 'y'},
     {"autohost-log",  1, 0, 'J'},
+    {"conn-log",      0, 0, 'k'},
     {"proto",         1, 0, 'K'},
     {"hosts",         1, 0, 'H'},
     {"pf",            1, 0, 'V'},
@@ -852,6 +853,10 @@ int parse_args(int argc, char **argv)
             
         case 'J':
             params.autohost_log = optarg;
+            break;
+            
+        case 'k':
+            params.conn_log = 1;
             break;
             
         case 'y':

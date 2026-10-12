@@ -102,6 +102,11 @@ struct eval {
     const char *restore_orig;
     size_t restore_orig_len;
     unsigned int part_sent;
+    long long started_ms;
+    // --conn-log: host name kept for the summary (host itself moves into the cache on a
+    // block) and the bytes the remote side received, saved when it closes first.
+    char log_host[64];
+    ssize_t peer_recv;
 };
 
 struct poolhd {
@@ -130,6 +135,8 @@ struct eval *add_event(struct poolhd *pool, evcb_t cb, int fd, int e);
 struct eval *add_pair(struct poolhd *pool, struct eval *val, int sfd, int e);
 
 void del_event(struct poolhd *pool, struct eval *val);
+
+long long mono_ms(void);
 
 void destroy_pool(struct poolhd *pool);
 

@@ -347,15 +347,21 @@ static void swop_groups(struct desync_params *dpc, struct desync_params *dpn)
  * autohostlist (zapret tpws): every detected block is appended to --autohost-log as
  * "<unix time> <host> <reason>", so the app can show which sites still fail.
  */
+static const char *detect_name(int type)
+{
+    return (type & DETECT_TORST) ? "torst"
+        : (type & DETECT_HTTP_LOCAT) ? "redirect"
+        : (type & DETECT_TLS_ERR) ? "ssl_err"
+        : (type & DETECT_CONNECT) ? "connect" : "unknown";
+}
+
+
 static void autohost_record(const char *host, int len, int type)
 {
     if (!params.autohost_log || !host || len <= 0) {
         return;
     }
-    const char *reason = (type & DETECT_TORST) ? "torst"
-        : (type & DETECT_HTTP_LOCAT) ? "redirect"
-        : (type & DETECT_TLS_ERR) ? "ssl_err"
-        : (type & DETECT_CONNECT) ? "connect" : "unknown";
+    const char *reason = detect_name(type);
     FILE *f = fopen(params.autohost_log, "a");
     if (!f) {
         return;
@@ -407,6 +413,18 @@ int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_aliv
             swop_groups(lav->dp, next);
         }
         lav->dp->pri++;
+    }
+    if (params.conn_log) {
+        const char *h = lav->log_host[0] ? lav->log_host : "-";
+        if (next) {
+            fprintf(ENGINE_LOG, "conn %d: block detected (%s) on %s (%s) with group %d, trying group %d%s\n",
+                lav->fd, detect_name(type), h, ADDR_STR, lav->dp->id, next->id,
+                (!(next->auto_level & AUTO_NORECONN) && can_reconn) ? ", reconnecting" : "");
+        }
+        else {
+            fprintf(ENGINE_LOG, "conn %d: block detected (%s) on %s (%s) with group %d, no group left\n",
+                lav->fd, detect_name(type), h, ADDR_STR, lav->dp->id);
+        }
     }
     if (!next) {
         LOG(LOG_S, "unreach ip: %s\n", ADDR_STR);
@@ -671,6 +689,19 @@ static int setup_conn(struct eval *client, const char *buffer, ssize_t n)
     save_hostname(client, buffer, n);
     client->mark = is_tls_chello(buffer, n);
     client->dp = dp;
+    if (params.conn_log) {
+        const union sockaddr_u *dst = &client->pair->addr;
+        INIT_ADDR_STR((*dst));
+        if (client->host) {
+            snprintf(client->log_host, sizeof(client->log_host), "%.*s", client->host_len, client->host);
+        }
+        else if (!client->log_host[0]) {
+            snprintf(client->log_host, sizeof(client->log_host), "%s", ADDR_STR);
+        }
+        fprintf(ENGINE_LOG, "conn %d: %s -> %s:%d, %s, group %d\n", client->fd,
+            client->log_host, ADDR_STR, ntohs(dst->in.sin_port),
+            client->mark ? "TLS" : is_http(buffer, n) ? "HTTP" : "other", dp->id);
+    }
     
     if (params.timeout 
             && set_timeout(client->pair->fd, params.timeout)) {
@@ -836,6 +867,11 @@ ssize_t udp_hook(struct eval *val,
             }
         }
         pair->dp = dp;
+        if (params.conn_log) {
+            INIT_ADDR_STR((*dst));
+            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, group %d\n", val->fd,
+                ADDR_STR, ntohs(dst->in.sin_port), dp->id);
+        }
     }
     if (!check_round(dp->rounds, r)) {
         return send(val->fd, buffer, n, 0);

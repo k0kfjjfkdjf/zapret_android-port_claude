@@ -29,6 +29,7 @@ import io.github.zapretdroid.core.AutoHost
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.StrategyArgs
+import io.github.zapretdroid.core.StrategyGroups
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.TProxyService
@@ -101,12 +102,15 @@ class ZapretVpnService : VpnService() {
                 add("ciadpi")
                 add("--ip"); add(PROXY_HOST)
                 add("--port"); add(PROXY_PORT.toString())
+                // One line per connection (host, group, bytes) and per detected block at every level.
+                add("--conn-log")
                 if (logLevel.byedpiDebug > 0) {
                     add("--debug"); add(logLevel.byedpiDebug.toString())
                 }
                 addAll(resolveStrategy(settings))
             }
             AppLog.i("byedpi command: ${args.joinToString(" ") { quoteArg(it) }}")
+            StrategyGroups.describe(args.drop(1)).forEach { AppLog.i(it) }
             val proxy = ByeDpi()
             engine = proxy
             engineThread = thread(name = "byedpi") {
@@ -218,10 +222,21 @@ class ZapretVpnService : VpnService() {
         return builder
     }
 
+    private var lastLoggedTx = 0L
+    private var lastLoggedRx = 0L
+    private var ticks = 0
+
     private val statsTick = object : Runnable {
         override fun run() {
             if (state != VpnState.RUNNING) return
             val stats = runCatching { TProxyService.TProxyGetStats() }.getOrNull()
+            if (stats != null && ++ticks % 60 == 0) {
+                val tx = stats.getOrNull(1) ?: 0
+                val rx = stats.getOrNull(3) ?: 0
+                AppLog.i("traffic: last minute up ${tx - lastLoggedTx} B, down ${rx - lastLoggedRx} B; total up $tx B, down $rx B")
+                lastLoggedTx = tx
+                lastLoggedRx = rx
+            }
             VpnStatus.send(this@ZapretVpnService, state, tx = stats?.getOrNull(1) ?: 0, rx = stats?.getOrNull(3) ?: 0)
             handler.postDelayed(this, STATS_INTERVAL_MS)
         }

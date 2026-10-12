@@ -23,3 +23,6 @@ Changes in this fork:
 - Diagnostics go to `engine_log` (stderr by default) instead of stderr directly, and option
   errors are reported there with the offending argument; the app captures them without
   touching the process stdio descriptors.
+- `--conn-log`: one line when a connection is set up (host, destination, protocol, group),
+  one when it closes (bytes up/down, rounds, duration), one per detected block with the
+  group switch, and one per UDP association.

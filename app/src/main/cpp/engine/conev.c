@@ -4,6 +4,8 @@
 #include <string.h>
 #include <limits.h>
 #include <assert.h>
+#include <stdio.h>
+#include <time.h>
 #include "error.h"
 
 
@@ -43,6 +45,14 @@ struct poolhd *init_pool(int count)
 }
 
 
+long long mono_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+
 struct eval *add_event(struct poolhd *pool, evcb_t cb,
         int fd, int e)
 {
@@ -58,6 +68,7 @@ struct eval *add_event(struct poolhd *pool, evcb_t cb,
     val->fd = fd;
     val->index = pool->count;
     val->cb = cb;
+    val->started_ms = mono_ms();
 
     #ifndef NOEPOLL
     struct epoll_event ev = { .events = _POLLDEF | e, .data = {val} };
@@ -86,6 +97,19 @@ void del_event(struct poolhd *pool, struct eval *val)
         val->recv_count, val->round_count);
     if (val->fd == -1) {
         return;
+    }
+    if (params.conn_log) {
+        struct eval *pair = val->pair;
+        if ((val->flag & FLAG_CONN) && pair && pair->fd >= 0) {
+            pair->peer_recv = val->recv_count; // remote closes first: keep "down" for the client
+        }
+        else if (val->log_host[0]) {
+            // Client side: summary of the connection.
+            ssize_t down = pair && pair->fd >= 0 && pair != val ? pair->recv_count : val->peer_recv;
+            fprintf(ENGINE_LOG, "conn %d closed: %s, up %zd B, down %zd B, rounds %u, %lld ms\n",
+                val->fd, val->log_host, val->recv_count, down,
+                val->round_count, mono_ms() - val->started_ms);
+        }
     }
     #ifdef NOEPOLL
     assert(val->fd == pool->pevents[val->index].fd);

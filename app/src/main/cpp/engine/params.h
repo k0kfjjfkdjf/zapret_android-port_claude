@@ -171,6 +171,7 @@ struct params {
     
     const char *protect_path;
     const char *autohost_log;
+    bool conn_log;
     bool daemonize;
     const char *pid_file;
     int pid_fd;
