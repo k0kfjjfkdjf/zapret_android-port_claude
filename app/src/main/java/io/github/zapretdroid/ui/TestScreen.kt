@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -33,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,7 +46,9 @@ import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.test.ProbeResult
 import io.github.zapretdroid.test.StrategyResult
+import io.github.zapretdroid.test.StrategySet
 import io.github.zapretdroid.test.StrategyTester
 import io.github.zapretdroid.test.TestPlan
 
@@ -55,11 +56,15 @@ import io.github.zapretdroid.test.TestPlan
 @Composable
 fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
     val context = LocalContext.current
-    var groups by rememberSaveable { mutableStateOf(setOf("youtube")) }
+    var groups by rememberSaveable { mutableStateOf(setOf("youtube", "googlevideo")) }
     var custom by rememberSaveable { mutableStateOf("") }
-    var full by rememberSaveable { mutableStateOf(false) }
+    var set by rememberSaveable { mutableStateOf(StrategySet.QUICK) }
+    var sni by rememberSaveable { mutableStateOf(TestPlan.DEFAULT_SNI) }
+    var attempts by rememberSaveable { mutableIntStateOf(1) }
+    val siteGroups = remember { TestPlan.siteGroups(context) }
+    val candidates = remember(set, sni) { TestPlan.strategies(context, set, sni) }
     val hosts = remember(groups, custom) {
-        (TestPlan.siteGroups.filter { it.id in groups }.flatMap { it.hosts } +
+        (siteGroups.filter { it.id in groups }.flatMap { it.hosts } +
             custom.split(Regex("[\\s,]+")).map { it.trim().removePrefix("https://").substringBefore('/') }.filter { it.contains('.') })
             .distinct()
     }
@@ -92,12 +97,12 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
             }
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TestPlan.siteGroups.forEach { group ->
+                    siteGroups.forEach { group ->
                         FilterChip(
                             selected = group.id in groups,
                             enabled = !running,
                             onClick = { groups = if (group.id in groups) groups - group.id else groups + group.id },
-                            label = { Text(stringResource(group.title)) },
+                            label = { Text(stringResource(group.title) + " · " + group.hosts.size) },
                         )
                     }
                 }
@@ -113,20 +118,53 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                 )
             }
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
-                        selected = !full,
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StrategySet.entries.forEach { option ->
+                        val count = if (option == set) candidates.size else TestPlan.strategies(context, option, sni).size
+                        FilterChip(
+                            selected = set == option,
+                            enabled = !running,
+                            onClick = { set = option },
+                            label = {
+                                Text(
+                                    stringResource(
+                                        when (option) {
+                                            StrategySet.QUICK -> R.string.test_quick
+                                            StrategySet.FULL -> R.string.test_full
+                                            StrategySet.COMMUNITY -> R.string.test_community
+                                        },
+                                        count,
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+            if (set == StrategySet.COMMUNITY) {
+                item {
+                    OutlinedTextField(
+                        value = sni,
+                        onValueChange = { sni = it.trim() },
                         enabled = !running,
-                        onClick = { full = false },
-                        label = { Text(stringResource(R.string.test_quick, TestPlan.quick.size)) },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.test_sni)) },
+                        supportingText = { Text(stringResource(R.string.test_sni_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(Modifier.width(8.dp))
-                    FilterChip(
-                        selected = full,
-                        enabled = !running,
-                        onClick = { full = true },
-                        label = { Text(stringResource(R.string.test_full, TestPlan.full.size)) },
-                    )
+                }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.test_attempts), style = MaterialTheme.typography.bodyMedium)
+                    (1..3).forEach { n ->
+                        FilterChip(
+                            selected = attempts == n,
+                            enabled = !running,
+                            onClick = { attempts = n },
+                            label = { Text(n.toString()) },
+                        )
+                    }
                 }
             }
             item {
@@ -136,13 +174,11 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                     }
                 } else {
                     Button(
-                        onClick = {
-                            StrategyTester.start(context, hosts, if (full) TestPlan.full else TestPlan.quick, settings.dns)
-                        },
+                        onClick = { StrategyTester.start(context, hosts, candidates, settings.dns, attempts) },
                         enabled = hosts.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.test_start, hosts.size))
+                        Text(stringResource(R.string.test_start, hosts.size, candidates.size))
                     }
                 }
             }
@@ -166,6 +202,13 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
             }
             StrategyTester.message?.let { msg ->
                 item { Text(msg, color = MaterialTheme.colorScheme.error) }
+            }
+            item {
+                Text(
+                    stringResource(R.string.test_status_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             StrategyTester.baseline?.let { base ->
                 item {
@@ -192,6 +235,24 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun ProbeLine(probe: ProbeResult) {
+    val timings = listOfNotNull(
+        probe.tlsMs?.let { stringResource(R.string.test_tls_ms, it) },
+        stringResource(R.string.test_total_ms, probe.totalMs),
+    ).joinToString(" · ")
+    val text = if (probe.ok) {
+        stringResource(R.string.test_probe_ok, probe.host, probe.detail, timings)
+    } else {
+        stringResource(R.string.test_probe_fail, probe.host, probe.detail, timings)
+    }
+    Text(
+        text + (probe.address?.let { " · $it" } ?: ""),
+        style = MaterialTheme.typography.bodySmall,
+        color = if (probe.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+    )
 }
 
 @Composable
@@ -224,13 +285,7 @@ private fun ResultCard(result: StrategyResult, onApply: () -> Unit) {
             }
             AnimatedVisibility(expanded) {
                 Column(Modifier.padding(top = 8.dp)) {
-                    result.probes.forEach { probe ->
-                        Text(
-                            "${if (probe.ok) "✓" else "✗"} ${probe.host} — ${probe.detail} (${probe.millis} ms)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (probe.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
-                        )
-                    }
+                    result.probes.forEach { probe -> ProbeLine(probe) }
                 }
             }
         }

@@ -9,6 +9,7 @@ import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
+import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.splitArgs
 import java.net.Inet4Address
 import java.net.InetAddress
@@ -19,8 +20,12 @@ import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
 data class StrategyResult(val args: String, val probes: List<ProbeResult>) {
+    /** Successful requests out of all (sites x attempts). */
     val passed get() = probes.count { it.ok }
-    val averageMillis get() = probes.filter { it.ok }.map { it.millis }.average().takeIf { !it.isNaN() }?.toLong() ?: 0L
+    val averageMillis get() = probes.filter { it.ok }.map { it.totalMs }.average().takeIf { !it.isNaN() }?.toLong() ?: 0L
+
+    /** Per site: its attempts, in the order the sites were given. */
+    val bySite: Map<String, List<ProbeResult>> get() = probes.groupBy { it.host }
 }
 
 /**
@@ -50,9 +55,10 @@ object StrategyTester {
 
     private const val PORT = 10900
     private const val TIMEOUT_MS = 5000
-    private const val PARALLEL = 6
+    private const val PARALLEL = 8
+    private const val TEST_LOG_LIMIT = 8L * 1024 * 1024
 
-    fun start(context: Context, hosts: List<String>, candidates: List<String>, dns: String) {
+    fun start(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int = 1) {
         if (running) return
         val app = context.applicationContext
         running = true
@@ -63,7 +69,7 @@ object StrategyTester {
         progress = 0 to candidates.size + 1
         thread(name = "strategy-test") {
             try {
-                run(app, hosts, candidates, dns)
+                run(app, hosts, candidates, dns, attempts.coerceIn(1, 5))
             } catch (e: Throwable) {
                 AppLog.e("strategy test failed", e, source = "test")
                 message = e.message ?: e.toString()
@@ -79,22 +85,30 @@ object StrategyTester {
         cancelled = true
     }
 
-    private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String) {
-        AppLog.i("strategy test: ${candidates.size} strategies, sites: ${hosts.joinToString()}", source = "test")
+    private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int) {
+        AppLog.i(
+            "strategy test: ${candidates.size} strategies, $attempts attempt(s) per site, timeout ${TIMEOUT_MS} ms, " +
+                "DNS $dns, sites: ${hosts.joinToString()}",
+            source = "test",
+        )
+        // Engine output of the test proxy (connections, groups, detected blocks) goes to the journal too.
+        if (NativeLog.start(AppLog.file.absolutePath, TEST_LOG_LIMIT) == null) {
+            AppLog.w("strategy test: engine output is not captured", source = "test")
+        }
         val addresses = resolveAll(hosts, dns)
         val fakeDir = FakePayloads.install(context)
         val listDir = HostLists.dir(context)
         val pool = Executors.newFixedThreadPool(PARALLEL)
         try {
-            val base = test("", hosts, addresses, pool, fakeDir, listDir)
+            val base = test("", hosts, addresses, attempts, pool, fakeDir, listDir)
             baseline = base
-            AppLog.i("strategy test: without bypass ${base.passed}/${hosts.size}", source = "test")
+            AppLog.i("strategy test: result without bypass ${base.passed}/${base.probes.size}", source = "test")
             progress = 1 to candidates.size + 1
             for ((index, candidate) in candidates.withIndex()) {
                 if (cancelled) break
-                val result = test(candidate, hosts, addresses, pool, fakeDir, listDir)
+                val result = test(candidate, hosts, addresses, attempts, pool, fakeDir, listDir)
                 results = (results + result).sortedWith(compareByDescending<StrategyResult> { it.passed }.thenBy { it.averageMillis })
-                AppLog.i("strategy test: ${result.passed}/${hosts.size} ${candidate}", source = "test")
+                AppLog.i("strategy test: result ${result.passed}/${result.probes.size} for $candidate", source = "test")
                 progress = index + 2 to candidates.size + 1
             }
         } finally {
@@ -120,24 +134,38 @@ object StrategyTester {
         candidate: String,
         hosts: List<String>,
         addresses: Map<String, InetAddress?>,
+        attempts: Int,
         pool: java.util.concurrent.ExecutorService,
         fakeDir: java.io.File,
         listDir: java.io.File,
     ): StrategyResult {
         currentArgs = candidate
-        val args = listOf("ciadpi", "--ip", "127.0.0.1", "--port", PORT.toString()) +
+        AppLog.i("strategy test: --- ${candidate.ifEmpty { "without bypass" }} ---", source = "test")
+        val args = listOf("ciadpi", "--ip", "127.0.0.1", "--port", PORT.toString(), "--conn-log") +
             ArgTemplates.resolve(splitArgs(candidate), fakeDir, listDir)
         val engine = ByeDpi()
         var exitCode = Int.MIN_VALUE
         val engineThread = thread(name = "test-engine") { exitCode = engine.startProxy(args.toTypedArray()) }
         try {
             if (!awaitListening(engineThread)) {
-                return StrategyResult(candidate, hosts.map { ProbeResult(it, false, "engine did not start (code $exitCode)", 0) })
+                AppLog.e("strategy test: engine did not start for '$candidate' (code $exitCode)", source = "test")
+                return StrategyResult(candidate, hosts.map {
+                    ProbeResult(it, null, false, "engine did not start (code $exitCode)", ProbeStage.PROXY, totalMs = 0)
+                })
             }
-            val tasks = hosts.map { host ->
-                Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) }
+            val probes = mutableListOf<ProbeResult>()
+            repeat(attempts) { attempt ->
+                val tasks = hosts.map { host ->
+                    Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) }
+                }
+                pool.invokeAll(tasks).map { it.get() }.forEach { probe ->
+                    val prefix = if (attempts > 1) "attempt ${attempt + 1}: " else ""
+                    if (probe.ok) AppLog.i("strategy test: $prefix${probe.summary()}", source = "test")
+                    else AppLog.w("strategy test: $prefix${probe.summary()}", source = "test")
+                    probes += probe
+                }
             }
-            return StrategyResult(candidate, pool.invokeAll(tasks).map { it.get() })
+            return StrategyResult(candidate, probes)
         } finally {
             engine.stopProxy()
             engineThread.join(3000)

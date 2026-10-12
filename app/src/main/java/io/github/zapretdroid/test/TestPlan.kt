@@ -1,19 +1,45 @@
 package io.github.zapretdroid.test
 
+import android.content.Context
 import androidx.annotation.StringRes
 import io.github.zapretdroid.R
 
-/** A group of sites that are usually blocked together. */
+/** A group of sites that are usually blocked together (assets/sites/<id>.sites, from ByeByeDPI). */
 data class SiteGroup(val id: String, @StringRes val title: Int, val hosts: List<String>)
 
+/** A set of strategies to try. */
+enum class StrategySet { QUICK, FULL, COMMUNITY }
+
 object TestPlan {
-    val siteGroups = listOf(
-        SiteGroup("youtube", R.string.sites_youtube, listOf("www.youtube.com", "i.ytimg.com", "yt3.ggpht.com", "redirector.googlevideo.com")),
-        SiteGroup("discord", R.string.sites_discord, listOf("discord.com", "gateway.discord.gg", "cdn.discordapp.com", "media.discordapp.net")),
-        SiteGroup("meta", R.string.sites_meta, listOf("www.instagram.com", "www.facebook.com", "static.cdninstagram.com")),
-        SiteGroup("x", R.string.sites_x, listOf("x.com", "abs.twimg.com", "pbs.twimg.com")),
-        SiteGroup("other", R.string.sites_other, listOf("rutracker.org", "www.linkedin.com", "proton.me", "signal.org")),
+    private val GROUPS = listOf(
+        "youtube" to R.string.sites_youtube,
+        "googlevideo" to R.string.sites_googlevideo,
+        "discord" to R.string.sites_discord,
+        "social" to R.string.sites_social,
+        "telegram" to R.string.sites_telegram,
+        "cloudflare" to R.string.sites_cloudflare,
+        "general" to R.string.sites_other,
     )
+
+    /** Fake SNI substituted for {sni} in community strategies, as in ByeByeDPI. */
+    const val DEFAULT_SNI = "google.com"
+
+    fun siteGroups(context: Context): List<SiteGroup> = GROUPS.map { (id, title) ->
+        SiteGroup(id, title, readLines(context, "sites/$id.sites"))
+    }
+
+    fun strategies(context: Context, set: StrategySet, sni: String): List<String> = when (set) {
+        StrategySet.QUICK -> quick
+        StrategySet.FULL -> full
+        // Strategies collected by the ByeByeDPI community (assets/strategies/byebyedpi.list).
+        StrategySet.COMMUNITY -> readLines(context, "strategies/byebyedpi.list")
+            .map { it.replace("{sni}", sni.ifBlank { DEFAULT_SNI }) }
+    }
+
+    private fun readLines(context: Context, asset: String): List<String> =
+        context.assets.open(asset).bufferedReader().useLines { lines ->
+            lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
+        }
 
     /** Strategies tried in quick mode: the main socket-level techniques. */
     val quick = listOf(

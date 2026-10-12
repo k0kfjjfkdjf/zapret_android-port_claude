@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Runs every preset (core/Strategies.kt) and tester candidate (test/TestPlan.kt) through the
+"""Runs every preset (core/Strategies.kt), tester candidate (test/TestPlan.kt) and community
+strategy (assets/strategies/byebyedpi.list) through the
 engine's option parser, so that a strategy the app offers can never fail to start."""
 import re
 import subprocess
@@ -20,6 +21,11 @@ strategies += re.findall(r'^\s*"(-[^"]*)",?\s*$', plan, re.M)
 strategies += ["--fake -1 --ttl %d" % t for t in range(3, 13)]
 strategies += ["--disorder 1 --fake -1 --ttl %d --fake-data {fake:tls_clienthello_www_google_com.bin}" % t
                for t in (4, 6, 10)]
+
+# ByeByeDPI community strategies, with {sni} as the tester substitutes it.
+community = root + "/src/main/assets/strategies/byebyedpi.list"
+strategies += [l.strip().replace("{sni}", "google.com") for l in open(community)
+               if l.strip() and not l.strip().startswith("#")]
 
 failed = 0
 for line in strategies:
