@@ -15,6 +15,17 @@ class ByeDpi {
     }
 }
 
+/** Redirects stdout/stderr of the native engines into a log file (see native-log.c). */
+object NativeLog {
+    init {
+        System.loadLibrary("byedpi")
+    }
+
+    /** Starts capturing; the file is truncated when it grows beyond [limitBytes]. */
+    @JvmStatic
+    external fun start(path: String, limitBytes: Long): Boolean
+}
+
 /**
  * hev-socks5-tunnel: moves packets between the TUN interface and the SOCKS5 proxy.
  * The natives are registered by the library's JNI_OnLoad for this exact class name.

@@ -6,10 +6,11 @@ project(zapretdroid C)
 file(GLOB BYEDPI_SRC ${CMAKE_CURRENT_SOURCE_DIR}/byedpi/*.c)
 list(REMOVE_ITEM BYEDPI_SRC ${CMAKE_CURRENT_SOURCE_DIR}/byedpi/win_service.c)
 
-add_library(byedpi SHARED ${BYEDPI_SRC} byedpi-jni.c)
+add_library(byedpi SHARED ${BYEDPI_SRC} byedpi-jni.c native-log.c)
 target_include_directories(byedpi PRIVATE byedpi)
 target_compile_options(byedpi PRIVATE -std=gnu99 -O2 -Wall -Wextra -Wno-unused -Wno-unused-parameter)
-target_compile_definitions(byedpi PRIVATE ANDROID_APP)
+# Without ANDROID_APP ByeDPI logs to stderr, honours --debug and skips per-packet logging at level 0.
+# native-log.c collects stderr into the session log.
 target_link_libraries(byedpi PRIVATE log)
 # daemon() would fork the app process; the JNI layer replaces it with a stub.
 target_link_options(byedpi PRIVATE

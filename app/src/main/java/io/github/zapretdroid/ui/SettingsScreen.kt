@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.BuildConfig
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
+import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.isIpLiteral
@@ -50,12 +51,14 @@ fun SettingsScreen(
     vpnActive: Boolean,
     onBack: () -> Unit,
     onOpenApps: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     var strategyId by remember { mutableStateOf(settings.strategyId) }
     var customArgs by remember { mutableStateOf(settings.customArgs) }
     var dns by remember { mutableStateOf(settings.dns) }
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
+    var logLevel by remember { mutableStateOf(settings.logLevel) }
     val selectedCount = remember { settings.selectedApps.size }
 
     Scaffold(
@@ -188,6 +191,38 @@ fun SettingsScreen(
                         enabled = appMode != AppFilterMode.ALL,
                         onClick = onOpenApps,
                     ),
+                )
+            }
+
+            item { SectionHeader(R.string.section_debug) }
+            items(LogLevel.entries.toList(), key = { "log_" + it.name }) { level ->
+                RadioRow(
+                    title = stringResource(
+                        when (level) {
+                            LogLevel.NORMAL -> R.string.log_level_normal
+                            LogLevel.DEBUG -> R.string.log_level_debug
+                            LogLevel.VERBOSE -> R.string.log_level_verbose
+                        },
+                    ),
+                    subtitle = stringResource(
+                        when (level) {
+                            LogLevel.NORMAL -> R.string.log_level_normal_desc
+                            LogLevel.DEBUG -> R.string.log_level_debug_desc
+                            LogLevel.VERBOSE -> R.string.log_level_verbose_desc
+                        },
+                    ),
+                    selected = logLevel == level,
+                    onSelect = {
+                        logLevel = level
+                        settings.logLevel = level
+                    },
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.title_logs)) },
+                    supportingContent = { Text(stringResource(R.string.logs_open_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenLogs),
                 )
             }
 

@@ -65,4 +65,29 @@
 
     <string name="about_version">Version %1$s</string>
     <string name="about_credits">GPLv3. Built on ByeDPI and hev-socks5-tunnel, with ideas from zapret and ByeByeDPI.</string>
+    <string name="action_more">More</string>
+    <string name="action_show_logs">Logs</string>
+
+    <string name="title_logs">Logs</string>
+    <string name="logs_current">Current session</string>
+    <string name="logs_previous">Previous session</string>
+    <string name="logs_filter">Filter</string>
+    <string name="logs_empty">No log yet. Connect once to create one.</string>
+    <string name="logs_no_match">No lines match the filter</string>
+    <string name="logs_share">Share log</string>
+    <string name="logs_save">Save to file</string>
+    <string name="logs_saved">Log saved</string>
+    <string name="logs_copy">Copy</string>
+    <string name="logs_copied">Copied to clipboard</string>
+    <string name="logs_clear">Delete logs</string>
+    <string name="logs_clear_confirm">Delete the current and the previous session logs?</string>
+    <string name="logs_open_desc">Engine output, settings and errors of the last two sessions</string>
+
+    <string name="section_debug">Debugging</string>
+    <string name="log_level_normal">Normal log</string>
+    <string name="log_level_normal_desc">App events, settings and errors</string>
+    <string name="log_level_debug">Detailed log</string>
+    <string name="log_level_debug_desc">Also every connection and which strategy group was used</string>
+    <string name="log_level_verbose">Maximum log</string>
+    <string name="log_level_verbose_desc">Also packet dumps. Slows the connection down, use only to investigate a problem</string>
 </resources>

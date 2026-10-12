@@ -13,12 +13,14 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.github.zapretdroid.MainActivity
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
+import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ByeDpi
+import io.github.zapretdroid.core.Diagnostics
+import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.TProxyService
 import io.github.zapretdroid.core.isIpLiteral
@@ -46,9 +48,11 @@ class ZapretVpnService : VpnService() {
     private var tun: ParcelFileDescriptor? = null
     private var engine: ByeDpi? = null
     private var engineThread: Thread? = null
+    private var startedAt = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            AppLog.i("stop requested")
             stop(null)
             return START_NOT_STICKY
         }
@@ -56,6 +60,8 @@ class ZapretVpnService : VpnService() {
         startForegroundCompat()
         if (state == VpnState.STOPPED && !used) {
             used = true
+            AppLog.rotate()
+            AppLog.i("session start (${intent?.action ?: "restart"})")
             setState(VpnState.STARTING)
             thread(name = "vpn-start") { startSession() }
         } else {
@@ -65,6 +71,7 @@ class ZapretVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        AppLog.w("VPN revoked by the system (another VPN started or permission withdrawn)")
         stop(null)
     }
 
@@ -77,29 +84,41 @@ class ZapretVpnService : VpnService() {
     private fun startSession() {
         val settings = Settings(this)
         try {
+            Diagnostics.report(this, settings).forEach { AppLog.i(it) }
+            if (!NativeLog.start(AppLog.current.absolutePath, NATIVE_LOG_LIMIT)) {
+                AppLog.w("could not capture native engine output")
+            }
+            val logLevel = settings.logLevel
             val args = buildList {
                 add("ciadpi")
                 add("--ip"); add(PROXY_HOST)
                 add("--port"); add(PROXY_PORT.toString())
+                if (logLevel.byedpiDebug > 0) {
+                    add("--debug"); add(logLevel.byedpiDebug.toString())
+                }
                 addAll(splitArgs(settings.strategyArgs))
             }
-            Log.i(TAG, "byedpi args: ${args.joinToString(" ")}")
+            AppLog.i("byedpi command: ${args.joinToString(" ") { quoteArg(it) }}")
             val proxy = ByeDpi()
             engine = proxy
             engineThread = thread(name = "byedpi") {
                 val code = proxy.startProxy(args.toTypedArray())
+                AppLog.i("byedpi exited with code $code")
                 if (state == VpnState.STARTING || state == VpnState.RUNNING) {
-                    handler.post { stop(getString(R.string.error_engine_exited, code)) }
+                    val message = withEngineOutput(getString(R.string.error_engine_exited, code))
+                    handler.post { stop(message) }
                 }
             }
             if (!awaitProxy()) {
-                throw IllegalStateException(getString(R.string.error_engine_start))
+                throw IllegalStateException(withEngineOutput(getString(R.string.error_engine_start)))
             }
+            AppLog.i("byedpi is listening on $PROXY_HOST:$PROXY_PORT")
             if (state != VpnState.STARTING) return
 
             val fd = buildTunnel(settings).establish()
                 ?: throw IllegalStateException(getString(R.string.error_vpn_permission))
             tun = fd
+            AppLog.i("tun interface established")
 
             val config = File(filesDir, "hev.yml")
             config.writeText(
@@ -112,20 +131,24 @@ class ZapretVpnService : VpnService() {
                 |  udp: 'udp'
                 |misc:
                 |  task-stack-size: 81920
-                |  log-level: warn
+                |  log-file: stderr
+                |  log-level: ${logLevel.hevLevel}
                 |""".trimMargin(),
             )
             if (!TProxyService.TProxyStartService(config.absolutePath, fd.fd)) {
                 throw IllegalStateException(getString(R.string.error_tunnel_start))
             }
+            AppLog.i("tunnel started")
             handler.post {
                 if (state == VpnState.STARTING) {
+                    startedAt = System.currentTimeMillis()
+                    AppLog.i("connected")
                     setState(VpnState.RUNNING)
                     handler.postDelayed(statsTick, STATS_INTERVAL_MS)
                 }
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "failed to start", e)
+            AppLog.e("failed to start: ${e.message}", e)
             handler.post { stop(e.message ?: e.toString()) }
         }
     }
@@ -157,13 +180,22 @@ class ZapretVpnService : VpnService() {
         }
 
         val dns = settings.dns.trim().takeIf { isIpLiteral(it) } ?: Settings.DEFAULT_DNS
-        if (settings.ipv6 || !dns.contains(':')) builder.addDnsServer(dns)
+        if (dns != settings.dns.trim()) AppLog.w("invalid DNS server '${settings.dns}', using $dns")
+        if (settings.ipv6 || !dns.contains(':')) {
+            builder.addDnsServer(dns)
+        } else {
+            AppLog.w("IPv6 DNS server $dns ignored because IPv6 is off")
+        }
 
         val selected = settings.selectedApps.filter { it != packageName && isInstalled(it) }
         val mode = settings.appFilterMode
+        if (mode != AppFilterMode.ALL) {
+            (settings.selectedApps - selected.toSet() - packageName).forEach { AppLog.w("selected app not installed: $it") }
+        }
         if (mode == AppFilterMode.ONLY_SELECTED && selected.isNotEmpty()) {
             selected.forEach { builder.addAllowedApplication(it) }
         } else {
+            if (mode == AppFilterMode.ONLY_SELECTED) AppLog.w("no apps selected, routing all apps")
             // An empty allow-list would route every app including this one, so "only selected"
             // with nothing selected falls back to routing all apps.
             builder.addDisallowedApplication(packageName)
@@ -173,6 +205,7 @@ class ZapretVpnService : VpnService() {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
+        AppLog.i("vpn: mtu $MTU, dns $dns, ipv6 ${settings.ipv6}, apps $mode (${selected.size} selected)")
         return builder
     }
 
@@ -189,11 +222,21 @@ class ZapretVpnService : VpnService() {
     private fun stop(error: String?) {
         if (state == VpnState.STOPPING) return
         val wasActive = state != VpnState.STOPPED
+        if (error != null) AppLog.e("stopping: $error")
+        if (startedAt > 0) {
+            val stats = runCatching { TProxyService.TProxyGetStats() }.getOrNull()
+            val minutes = (System.currentTimeMillis() - startedAt) / 60_000.0
+            AppLog.i(
+                "session lasted %.1f min, sent %d bytes, received %d bytes"
+                    .format(java.util.Locale.US, minutes, stats?.getOrNull(1) ?: 0L, stats?.getOrNull(3) ?: 0L),
+            )
+        }
         setState(VpnState.STOPPING)
         handler.removeCallbacks(statsTick)
         thread(name = "vpn-stop") {
             if (wasActive) teardown()
             handler.post {
+                if (wasActive) AppLog.i("session stopped")
                 state = VpnState.STOPPED
                 VpnStatus.send(this, VpnState.STOPPED, error)
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -254,6 +297,20 @@ class ZapretVpnService : VpnService() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
+    /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */
+    private fun withEngineOutput(message: String): String {
+        Thread.sleep(100) // let the log reader catch up with the engine's last words
+        val line = runCatching { AppLog.readTail(AppLog.current, 16 * 1024) }.getOrNull()
+            ?.lastOrNull { it.contains(" byedpi | ") }
+            ?.substringAfter(" byedpi | ")
+        return if (line != null) "$message\nByeDPI: $line" else message
+    }
+
+    /** Shell-style quoting so that the logged command can be copied into a terminal. */
+    private fun quoteArg(arg: String): String =
+        if (arg.isNotEmpty() && arg.none { it.isWhitespace() || it in "'\"\\$" }) arg
+        else "'" + arg.replace("'", "'\\''") + "'"
+
     private fun isInstalled(pkg: String): Boolean = try {
         packageManager.getApplicationInfo(pkg, 0)
         true
@@ -265,7 +322,7 @@ class ZapretVpnService : VpnService() {
         const val ACTION_START = "io.github.zapretdroid.START"
         const val ACTION_STOP = "io.github.zapretdroid.STOP"
 
-        private const val TAG = "ZapretVpnService"
+        private const val NATIVE_LOG_LIMIT = 20L * 1024 * 1024
         private const val CHANNEL_ID = "vpn"
         private const val NOTIFICATION_ID = 1
         private const val PROXY_HOST = "127.0.0.1"

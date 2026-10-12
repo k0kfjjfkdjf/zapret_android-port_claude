@@ -27,12 +27,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppsScreen
 import io.github.zapretdroid.ui.HomeScreen
+import io.github.zapretdroid.ui.LogsScreen
 import io.github.zapretdroid.ui.SettingsScreen
 import io.github.zapretdroid.ui.theme.ZapretTheme
 
@@ -63,13 +65,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var logsReturn by rememberSaveable { mutableStateOf(Screen.HOME) }
     var state by remember {
         mutableStateOf(if (VpnStatus.isServiceRunning(context)) VpnState.RUNNING else VpnState.STOPPED)
     }
@@ -99,6 +102,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             error = null
             VpnStatus.start(context)
         } else {
+            AppLog.w("VPN permission denied by the user")
             error = context.getString(R.string.error_vpn_permission)
         }
     }
@@ -131,7 +135,15 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     val strategyName = remember(settingsVersion) { strategyTitle(context, settings) }
 
     BackHandler(enabled = screen != Screen.HOME) {
-        screen = if (screen == Screen.APPS) Screen.SETTINGS else Screen.HOME
+        screen = when (screen) {
+            Screen.APPS -> Screen.SETTINGS
+            Screen.LOGS -> logsReturn
+            else -> Screen.HOME
+        }
+    }
+    val openLogs = { from: Screen ->
+        logsReturn = from
+        screen = Screen.LOGS
     }
 
     when (screen) {
@@ -150,6 +162,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             },
             onDismissError = { error = null },
             onOpenSettings = { screen = Screen.SETTINGS },
+            onOpenLogs = { openLogs(Screen.HOME) },
         )
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
@@ -159,11 +172,13 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
                 screen = Screen.HOME
             },
             onOpenApps = { screen = Screen.APPS },
+            onOpenLogs = { openLogs(Screen.SETTINGS) },
         )
         Screen.APPS -> AppsScreen(
             settings = settings,
             onBack = { screen = Screen.SETTINGS },
         )
+        Screen.LOGS -> LogsScreen(onBack = { screen = logsReturn })
     }
 }
 
