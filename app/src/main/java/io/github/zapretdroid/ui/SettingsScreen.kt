@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +13,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -23,6 +25,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -39,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.BuildConfig
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
+import io.github.zapretdroid.core.ArgTemplates
+import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
@@ -59,6 +65,14 @@ fun SettingsScreen(
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
     var logLevel by remember { mutableStateOf(settings.logLevel) }
+    var fakePicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val setCustomArgs = { args: String ->
+        customArgs = args
+        settings.customArgs = args
+        strategyId = Strategies.CUSTOM
+        settings.strategyId = Strategies.CUSTOM
+    }
     val selectedCount = remember { settings.selectedApps.size }
 
     Scaffold(
@@ -112,15 +126,8 @@ fun SettingsScreen(
                 val shown = Strategies.byId(strategyId)?.args ?: customArgs
                 OutlinedTextField(
                     value = shown,
-                    onValueChange = {
-                        // Editing a preset turns it into a custom strategy.
-                        customArgs = it
-                        settings.customArgs = it
-                        if (strategyId != Strategies.CUSTOM) {
-                            strategyId = Strategies.CUSTOM
-                            settings.strategyId = Strategies.CUSTOM
-                        }
-                    },
+                    // Editing a preset turns it into a custom strategy.
+                    onValueChange = setCustomArgs,
                     label = { Text(stringResource(R.string.strategy_args)) },
                     supportingText = { Text(stringResource(R.string.strategy_args_hint)) },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
@@ -129,6 +136,12 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
+            }
+
+            item {
+                TextButton(onClick = { fakePicker = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    Text(stringResource(R.string.fake_insert))
+                }
             }
 
             item { SectionHeader(R.string.section_network) }
@@ -242,6 +255,51 @@ fun SettingsScreen(
             }
         }
     }
+
+    if (fakePicker) {
+        val names = remember { FakePayloads.names(context) }
+        FakePickerDialog(
+            names = names,
+            onPick = { name ->
+                fakePicker = false
+                val current = Strategies.byId(strategyId)?.args ?: customArgs
+                setCustomArgs("${current.trimEnd()} --fake-data ${ArgTemplates.fake(name)}")
+            },
+            onDismiss = { fakePicker = false },
+        )
+    }
+}
+
+@Composable
+private fun FakePickerDialog(names: List<String>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.fake_insert)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(R.string.fake_insert_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LazyColumn(Modifier.heightIn(max = 360.dp).padding(top = 8.dp)) {
+                    items(names) { name ->
+                        Text(
+                            name.removeSuffix(".bin"),
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(selected = false, onClick = { onPick(name) })
+                                .padding(vertical = 10.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+    )
 }
 
 @Composable

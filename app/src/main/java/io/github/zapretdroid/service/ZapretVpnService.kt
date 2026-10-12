@@ -18,8 +18,11 @@ import io.github.zapretdroid.MainActivity
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
+import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.Diagnostics
+import io.github.zapretdroid.core.FakePayloads
+import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.TProxyService
@@ -96,7 +99,7 @@ class ZapretVpnService : VpnService() {
                 if (logLevel.byedpiDebug > 0) {
                     add("--debug"); add(logLevel.byedpiDebug.toString())
                 }
-                addAll(splitArgs(settings.strategyArgs))
+                addAll(resolveStrategy(settings))
             }
             AppLog.i("byedpi command: ${args.joinToString(" ") { quoteArg(it) }}")
             val proxy = ByeDpi()
@@ -296,6 +299,14 @@ class ZapretVpnService : VpnService() {
         Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+
+    /** Strategy arguments with {fake:...} and {list:...} replaced by file paths. */
+    private fun resolveStrategy(settings: Settings): List<String> = try {
+        ArgTemplates.resolve(splitArgs(settings.strategyArgs), FakePayloads.install(this), HostLists.dir(this))
+    } catch (e: ArgTemplates.UnknownReference) {
+        val res = if (e.kind == "fake") R.string.error_unknown_fake else R.string.error_unknown_list
+        throw IllegalStateException(getString(res, e.name))
+    }
 
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */
     private fun withEngineOutput(message: String): String {

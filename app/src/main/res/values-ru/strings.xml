@@ -38,7 +38,7 @@
     <string name="strategy_fake">Фейковый пакет</string>
     <string name="strategy_fake_desc">Сначала отправляет обманку с низким TTL; TTL может понадобиться подобрать под провайдера</string>
     <string name="strategy_quic">TCP + QUIC/UDP</string>
-    <string name="strategy_quic_desc">Disorder и TLS-записи для TCP, фейковые датаграммы для UDP (YouTube, звонки)</string>
+    <string name="strategy_quic_desc">Disorder и TLS-записи для TCP, фейковый QUIC Initial из zapret2 для UDP 443 (YouTube)</string>
     <string name="strategy_byebyedpi">Как в ByeByeDPI</string>
     <string name="strategy_byebyedpi_desc">Командная строка ByeByeDPI по умолчанию</string>
     <string name="strategy_custom">Своя</string>
@@ -88,4 +88,12 @@
     <string name="log_level_debug_desc">Плюс каждое соединение и какая группа стратегии сработала</string>
     <string name="log_level_verbose">Максимальный лог</string>
     <string name="log_level_verbose_desc">Плюс дампы пакетов. Замедляет соединение, включайте только для разбора проблемы</string>
+    <string name="strategy_discord">Discord и звонки</string>
+    <string name="strategy_discord_desc">TCP как выше, для UDP фейковые пакеты Discord voice, QUIC и STUN из zapret2</string>
+    <string name="strategy_fake_google">Фейковый ClientHello (google.com)</string>
+    <string name="strategy_fake_google_desc">Обманка с настоящим ClientHello google.com из zapret2, TTL 8</string>
+    <string name="error_unknown_fake">Неизвестная фейковая нагрузка \"%1$s\"</string>
+    <string name="error_unknown_list">Список хостов \"%1$s\" не найден</string>
+    <string name="fake_insert">Вставить фейковую нагрузку</string>
+    <string name="fake_insert_desc">Фейковые пакеты из zapret2. Нагрузка относится к последней группе стратегии: --fake для TCP, --udp-fake для UDP.</string>
 </resources>

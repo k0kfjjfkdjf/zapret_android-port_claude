@@ -7,3 +7,5 @@ Changes in this fork:
 
 - `engine_reset()` restores global state so that `main()` can run several times in one
   process (the strategy tester starts the engine once per candidate).
+- Fix: `--pf` port ranges compared ports in network byte order, so most ranges matched the
+  wrong ports.

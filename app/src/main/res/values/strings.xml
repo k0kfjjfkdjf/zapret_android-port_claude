@@ -40,7 +40,7 @@
     <string name="strategy_fake">Fake packet</string>
     <string name="strategy_fake_desc">Sends a decoy with low TTL first; the TTL may need tuning for your ISP</string>
     <string name="strategy_quic">TCP + QUIC/UDP</string>
-    <string name="strategy_quic_desc">Disorder and TLS records for TCP, fake datagrams for UDP (YouTube, calls)</string>
+    <string name="strategy_quic_desc">Disorder and TLS records for TCP, fake QUIC Initial from zapret2 for UDP 443 (YouTube)</string>
     <string name="strategy_byebyedpi">ByeByeDPI default</string>
     <string name="strategy_byebyedpi_desc">The default command line of ByeByeDPI</string>
     <string name="strategy_custom">Custom</string>
@@ -90,4 +90,12 @@
     <string name="log_level_debug_desc">Also every connection and which strategy group was used</string>
     <string name="log_level_verbose">Maximum log</string>
     <string name="log_level_verbose_desc">Also packet dumps. Slows the connection down, use only to investigate a problem</string>
+    <string name="strategy_discord">Discord and calls</string>
+    <string name="strategy_discord_desc">TCP like above, fake Discord voice, QUIC and STUN packets from zapret2 for UDP</string>
+    <string name="strategy_fake_google">Fake ClientHello (google.com)</string>
+    <string name="strategy_fake_google_desc">Decoy with a real google.com ClientHello from zapret2, TTL 8</string>
+    <string name="error_unknown_fake">Unknown fake payload \"%1$s\"</string>
+    <string name="error_unknown_list">Host list \"%1$s\" not found</string>
+    <string name="fake_insert">Insert fake payload</string>
+    <string name="fake_insert_desc">Fake packets from zapret2. The payload is used by the last strategy group: --fake for TCP, --udp-fake for UDP.</string>
 </resources>

@@ -288,8 +288,10 @@ static bool check_l34(struct desync_params *dp, int st, const union sockaddr_u *
             return 0;
         }
     }
+    // pf[] and sin_port are in network byte order; compare in host order so that ranges work.
     if (dp->pf[0] && 
-            (dst->in.sin_port < dp->pf[0] || dst->in.sin_port > dp->pf[1])) {
+            (ntohs(dst->in.sin_port) < ntohs(dp->pf[0]) 
+                || ntohs(dst->in.sin_port) > ntohs(dp->pf[1]))) {
         return 0;
     }
     if (dp->ipset && !check_ip(dp->ipset, dst)) {

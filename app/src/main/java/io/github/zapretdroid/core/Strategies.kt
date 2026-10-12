@@ -34,7 +34,19 @@ object Strategies {
         ),
         Strategy(
             "quic", R.string.strategy_quic, R.string.strategy_quic_desc,
-            "--proto t,h --disorder 1 --tlsrec 1+s --auto=none --proto u --udp-fake 3 --auto=none",
+            "--proto t,h --disorder 1 --tlsrec 1+s --auto=none " +
+                "--proto u --pf 443 --udp-fake 6 --fake-data {fake:quic_initial_www_google_com.bin} --auto=none",
+        ),
+        Strategy(
+            "discord", R.string.strategy_discord, R.string.strategy_discord_desc,
+            "--proto t,h --disorder 1 --tlsrec 1+s --auto=none " +
+                "--proto u --pf 50000-65535 --udp-fake 6 --fake-data {fake:discord-ip-discovery-with-port.bin} --auto=none " +
+                "--proto u --pf 443 --udp-fake 6 --fake-data {fake:quic_initial_www_google_com.bin} --auto=none " +
+                "--proto u --pf 3478-3481 --udp-fake 4 --fake-data {fake:stun.bin}",
+        ),
+        Strategy(
+            "fake_google", R.string.strategy_fake_google, R.string.strategy_fake_google_desc,
+            "--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_www_google_com.bin}",
         ),
         Strategy(
             "byebyedpi", R.string.strategy_byebyedpi, R.string.strategy_byebyedpi_desc,
