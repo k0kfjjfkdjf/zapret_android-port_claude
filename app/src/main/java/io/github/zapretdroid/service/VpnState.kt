@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import io.github.zapretdroid.core.AppLog
 
 enum class VpnState { STOPPED, STARTING, RUNNING, STOPPING }
 
@@ -41,11 +42,13 @@ object VpnStatus {
     }
 
     fun start(context: Context) {
+        AppLog.i("starting VPN service")
         val intent = Intent(context, ZapretVpnService::class.java).setAction(ZapretVpnService.ACTION_START)
         ContextCompat.startForegroundService(context, intent)
     }
 
     fun stop(context: Context) {
+        AppLog.i("stopping VPN service")
         val intent = Intent(context, ZapretVpnService::class.java).setAction(ZapretVpnService.ACTION_STOP)
         // Fails only if the service is not running, in which case there is nothing to stop.
         runCatching { context.startService(intent) }

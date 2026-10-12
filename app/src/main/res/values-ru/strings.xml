@@ -64,22 +64,20 @@
     <string name="about_version">Версия %1$s</string>
     <string name="about_credits">GPLv3. Основано на ByeDPI и hev-socks5-tunnel, с идеями из zapret и ByeByeDPI.</string>
     <string name="action_more">Ещё</string>
-    <string name="action_show_logs">Логи</string>
+    <string name="action_show_logs">Журнал</string>
 
-    <string name="title_logs">Логи</string>
-    <string name="logs_current">Текущая сессия</string>
-    <string name="logs_previous">Предыдущая сессия</string>
+    <string name="title_logs">Журнал</string>
     <string name="logs_filter">Фильтр</string>
-    <string name="logs_empty">Логов пока нет. Подключитесь хотя бы раз.</string>
+    <string name="logs_empty">Журнал пуст</string>
     <string name="logs_no_match">Нет строк, подходящих под фильтр</string>
-    <string name="logs_share">Отправить лог</string>
+    <string name="logs_share">Отправить журнал</string>
     <string name="logs_save">Сохранить в файл</string>
     <string name="logs_saved">Лог сохранён</string>
     <string name="logs_copy">Копировать</string>
     <string name="logs_copied">Скопировано в буфер обмена</string>
-    <string name="logs_clear">Удалить логи</string>
-    <string name="logs_clear_confirm">Удалить логи текущей и предыдущей сессии?</string>
-    <string name="logs_open_desc">Вывод движка, настройки и ошибки двух последних сессий</string>
+    <string name="logs_clear">Удалить журнал</string>
+    <string name="logs_clear_confirm">Удалить весь журнал?</string>
+    <string name="logs_open_desc">Всё, что делало приложение: действия, настройки, сессии VPN, вывод движка, ошибки</string>
 
     <string name="section_debug">Отладка</string>
     <string name="log_level_normal">Обычный лог</string>
@@ -161,4 +159,5 @@
     <string name="autohost_empty">Пока ничего не записано</string>
     <string name="autohost_entry">%1$d раз · %2$s · %3$s</string>
     <string name="autohost_pick_list">Добавить в список</string>
+    <string name="logs_errors_only">Ошибки</string>
 </resources>

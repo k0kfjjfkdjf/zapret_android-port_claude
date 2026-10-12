@@ -60,6 +60,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        AppLog.i("app opened")
+    }
+
+    override fun onStop() {
+        AppLog.i("app went to background")
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra(EXTRA_CONNECT, false)) connectRequest = true
@@ -103,8 +113,11 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
+    LaunchedEffect(screen) { AppLog.i("screen: ${screen.name.lowercase()}") }
+
     val vpnPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (VpnService.prepare(context) == null) {
+            AppLog.i("VPN permission granted")
             error = null
             VpnStatus.start(context)
         } else {
@@ -115,10 +128,16 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     val connect = {
         error = null
         val prepare = VpnService.prepare(context)
-        if (prepare == null) VpnStatus.start(context) else vpnPermission.launch(prepare)
+        if (prepare == null) {
+            VpnStatus.start(context)
+        } else {
+            AppLog.i("asking for VPN permission")
+            vpnPermission.launch(prepare)
+        }
     }
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         // The VPN works without notifications; the answer only affects the status notification.
+        AppLog.i("notification permission ${if (granted) "granted" else "denied"}")
         connect()
     }
     val requestConnect = {
@@ -133,6 +152,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     LaunchedEffect(connectRequest) {
         if (connectRequest) {
+            AppLog.i("connect requested from the quick settings tile")
             onConnectRequestHandled()
             if (state == VpnState.STOPPED) requestConnect()
         }
@@ -161,6 +181,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             rxBytes = rx,
             strategyName = strategyName,
             onToggle = {
+                AppLog.i("power button: ${if (state == VpnState.STOPPED) "connect" else "disconnect"} (state $state)")
                 when (state) {
                     VpnState.STOPPED -> requestConnect()
                     VpnState.STARTING, VpnState.RUNNING -> VpnStatus.stop(context)

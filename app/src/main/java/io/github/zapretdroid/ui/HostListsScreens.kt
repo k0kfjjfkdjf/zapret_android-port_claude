@@ -146,6 +146,7 @@ fun HostListsScreen(onBack: () -> Unit, onEdit: (String?) -> Unit) {
             text = { Text(stringResource(R.string.host_lists_delete_confirm, name)) },
             confirmButton = {
                 TextButton(onClick = {
+                    AppLog.i("host list '$name' deleted")
                     HostLists.delete(context, name)
                     deleting = null
                     version++
@@ -340,6 +341,7 @@ fun AutoHostScreen(enabled: Boolean, onBack: () -> Unit) {
                 },
                 actions = {
                     IconButton(onClick = {
+                        AppLog.i("autohost: detected blocks cleared")
                         AutoHost.clear(context)
                         selected = emptySet()
                         version++

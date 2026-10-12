@@ -65,7 +65,7 @@ object StrategyTester {
             try {
                 run(app, hosts, candidates, dns)
             } catch (e: Throwable) {
-                AppLog.e("strategy test failed", e)
+                AppLog.e("strategy test failed", e, source = "test")
                 message = e.message ?: e.toString()
             } finally {
                 running = false
@@ -75,11 +75,12 @@ object StrategyTester {
     }
 
     fun cancel() {
+        AppLog.i("strategy test: stop requested", source = "test", source = "test")
         cancelled = true
     }
 
     private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String) {
-        AppLog.i("strategy test: ${candidates.size} strategies, sites: ${hosts.joinToString()}")
+        AppLog.i("strategy test: ${candidates.size} strategies, sites: ${hosts.joinToString()}", source = "test")
         val addresses = resolveAll(hosts, dns)
         val fakeDir = FakePayloads.install(context)
         val listDir = HostLists.dir(context)
@@ -87,19 +88,19 @@ object StrategyTester {
         try {
             val base = test("", hosts, addresses, pool, fakeDir, listDir)
             baseline = base
-            AppLog.i("strategy test: without bypass ${base.passed}/${hosts.size}")
+            AppLog.i("strategy test: without bypass ${base.passed}/${hosts.size}", source = "test")
             progress = 1 to candidates.size + 1
             for ((index, candidate) in candidates.withIndex()) {
                 if (cancelled) break
                 val result = test(candidate, hosts, addresses, pool, fakeDir, listDir)
                 results = (results + result).sortedWith(compareByDescending<StrategyResult> { it.passed }.thenBy { it.averageMillis })
-                AppLog.i("strategy test: ${result.passed}/${hosts.size} ${candidate}")
+                AppLog.i("strategy test: ${result.passed}/${hosts.size} ${candidate}", source = "test")
                 progress = index + 2 to candidates.size + 1
             }
         } finally {
             pool.shutdownNow()
         }
-        AppLog.i("strategy test: ${if (cancelled) "cancelled" else "finished"}")
+        AppLog.i("strategy test: ${if (cancelled) "cancelled" else "finished"}", source = "test")
     }
 
     /** Resolves names through the configured DNS server; falls back to the system resolver. */
@@ -108,11 +109,11 @@ object StrategyTester {
         return hosts.associateWith { host ->
             val viaServer = server?.let { s ->
                 runCatching { DnsClient.resolve(host, s).firstOrNull() }
-                    .onFailure { AppLog.w("strategy test: DNS $dns failed for $host: ${it.message}") }
+                    .onFailure { AppLog.w("strategy test: DNS $dns failed for $host: ${it.message}", source = "test") }
                     .getOrNull()
             }
             viaServer ?: runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
-        }.also { map -> AppLog.i("strategy test: resolved " + map.entries.joinToString { "${it.key}=${it.value?.hostAddress}" }) }
+        }.also { map -> AppLog.i("strategy test: resolved " + map.entries.joinToString { "${it.key}=${it.value?.hostAddress}" }, source = "test") }
     }
 
     private fun test(

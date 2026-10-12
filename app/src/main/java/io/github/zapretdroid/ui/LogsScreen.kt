@@ -7,6 +7,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -68,13 +70,14 @@ import java.util.Locale
 @Composable
 fun LogsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var showPrevious by remember { mutableStateOf(false) }
+    var errorsOnly by remember { mutableStateOf(false) }
+    var hidden by remember { mutableStateOf(emptySet<String>()) }
     var query by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     // Bumped to force a re-read, e.g. after clearing.
     var reload by remember { mutableIntStateOf(0) }
-    val file = if (showPrevious) AppLog.previous else AppLog.current
+    val file = AppLog.file
 
     val lines by produceState(emptyList<String>(), file, reload) {
         while (true) {
@@ -82,8 +85,12 @@ fun LogsScreen(onBack: () -> Unit) {
             delay(1000)
         }
     }
-    val shown = remember(lines, query) {
-        if (query.isBlank()) lines else lines.filter { it.contains(query, ignoreCase = true) }
+    val shown = remember(lines, query, errorsOnly, hidden) {
+        lines.filter { line ->
+            (query.isBlank() || line.contains(query, ignoreCase = true)) &&
+                (!errorsOnly || isProblem(line)) &&
+                (hidden.isEmpty() || lineSource(line) !in hidden)
+        }
     }
 
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
@@ -113,7 +120,7 @@ fun LogsScreen(onBack: () -> Unit) {
                                 enabled = lines.isNotEmpty(),
                                 onClick = {
                                     menuOpen = false
-                                    saveLauncher.launch(logFileName(showPrevious))
+                                    saveLauncher.launch(logFileName())
                                 },
                             )
                             DropdownMenuItem(
@@ -140,19 +147,23 @@ fun LogsScreen(onBack: () -> Unit) {
     ) { padding ->
         Column(Modifier.padding(padding)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
             ) {
                 FilterChip(
-                    selected = !showPrevious,
-                    onClick = { showPrevious = false },
-                    label = { Text(stringResource(R.string.logs_current)) },
+                    selected = errorsOnly,
+                    onClick = { errorsOnly = !errorsOnly },
+                    label = { Text(stringResource(R.string.logs_errors_only)) },
                 )
-                FilterChip(
-                    selected = showPrevious,
-                    onClick = { showPrevious = true },
-                    label = { Text(stringResource(R.string.logs_previous)) },
-                )
+                SOURCES.forEach { source ->
+                    FilterChip(
+                        selected = source !in hidden,
+                        onClick = { hidden = if (source in hidden) hidden - source else hidden + source },
+                        label = { Text(source) },
+                    )
+                }
             }
             OutlinedTextField(
                 value = query,
@@ -185,6 +196,7 @@ fun LogsScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     confirmClear = false
                     AppLog.clear()
+                    AppLog.i("journal cleared")
                     reload++
                 }) { Text(stringResource(R.string.logs_clear)) }
             },
@@ -227,22 +239,32 @@ private fun LogLines(lines: List<String>) {
     }
 }
 
+private val SOURCES = listOf("ui", "vpn", "test", "byedpi", "hev")
+
+/** "MM-dd HH:mm:ss.SSS source | message" -> source. */
+private fun lineSource(line: String): String = line.substringBefore(" | ").substringAfterLast(' ')
+
+private fun isProblem(line: String): Boolean =
+    line.contains("| E/") || line.contains("| W/") || line.contains("| [E]") || line.contains("| [W]") ||
+        line.contains("|   ") // stack trace lines
+
 private fun lineColor(line: String, error: Color, warning: Color, normal: Color): Color = when {
     line.contains("| E/") || line.contains("| [E]") -> error
     line.contains("| W/") || line.contains("| [W]") -> warning
     else -> normal
 }
 
-private fun logFileName(previous: Boolean): String {
+private fun logFileName(): String {
     val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-    return "zapretdroid-${if (previous) "previous" else "session"}-$stamp.log"
+    return "zapretdroid-$stamp.log"
 }
 
 private fun shareLog(context: Context, file: File) {
     runCatching {
         val dir = File(context.cacheDir, "share").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
-        val copy = File(dir, logFileName(file == AppLog.previous))
+        AppLog.i("journal shared")
+        val copy = File(dir, logFileName())
         file.copyTo(copy, overwrite = true)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.logs", copy)
         val send = Intent(Intent.ACTION_SEND)
@@ -260,6 +282,7 @@ private fun shareLog(context: Context, file: File) {
 
 private fun saveLog(context: Context, file: File, uri: Uri) {
     runCatching {
+        AppLog.i("journal saved to a file")
         context.contentResolver.openOutputStream(uri)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
         Toast.makeText(context, R.string.logs_saved, Toast.LENGTH_SHORT).show()
     }.onFailure {
@@ -270,6 +293,7 @@ private fun saveLog(context: Context, file: File, uri: Uri) {
 
 private fun copyLog(context: Context, lines: List<String>) {
     // Clipboard transactions are limited in size; copy the most recent part.
+    AppLog.i("journal copied to the clipboard (${lines.size} lines)")
     val text = lines.joinToString("\n").takeLast(200_000)
     val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
     clipboard?.setPrimaryClip(ClipData.newPlainText("ZapretDroid log", text))

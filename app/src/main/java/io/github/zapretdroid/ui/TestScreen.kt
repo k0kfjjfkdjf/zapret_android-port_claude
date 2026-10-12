@@ -44,6 +44,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.R
+import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.test.StrategyResult
@@ -182,6 +183,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                 ResultCard(
                     result = result,
                     onApply = {
+                        AppLog.i("strategy test: applied '${result.args}' (${result.passed}/${result.probes.size})", source = "test")
                         settings.customArgs = result.args
                         settings.strategyId = Strategies.CUSTOM
                         onApplied()

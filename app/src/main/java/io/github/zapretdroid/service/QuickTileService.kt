@@ -12,6 +12,7 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.core.content.ContextCompat
 import io.github.zapretdroid.MainActivity
+import io.github.zapretdroid.core.AppLog
 
 class QuickTileService : TileService() {
     private var state = VpnState.STOPPED
@@ -39,6 +40,7 @@ class QuickTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
+        AppLog.i("quick settings tile tapped (state $state)")
         when {
             state == VpnState.RUNNING || state == VpnState.STARTING -> VpnStatus.stop(this)
             VpnService.prepare(this) == null -> VpnStatus.start(this)

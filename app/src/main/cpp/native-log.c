@@ -22,6 +22,7 @@
 static int log_fd = -1;
 static long long log_limit;
 static long long log_written;
+static int limit_reached;
 
 static void write_line(const char *src, const char *msg, size_t len)
 {
@@ -41,18 +42,21 @@ static void write_line(const char *src, const char *msg, size_t len)
         { (void *) msg, len },
         { "\n", 1 },
     };
-    ssize_t n = writev(log_fd, iov, sizeof(iov) / sizeof(*iov));
     __android_log_print(ANDROID_LOG_INFO, src, "%.*s", (int) len, msg);
+    if (limit_reached) {
+        return;
+    }
+    ssize_t n = writev(log_fd, iov, sizeof(iov) / sizeof(*iov));
 
     if (n > 0) {
         log_written += n;
     }
-    if (log_limit > 0 && log_written > log_limit) {
-        // Verbose logging can produce a lot of output; start over instead of filling the disk.
-        if (ftruncate(log_fd, 0) == 0) {
-            static const char note[] = "--- log truncated: size limit reached ---\n";
-            log_written = write(log_fd, note, sizeof(note) - 1);
-        }
+    if (log_limit > 0 && log_written > log_limit && !limit_reached) {
+        // The journal is shared with the app; stop adding engine output instead of growing it
+        // without bound. Lines still go to logcat.
+        static const char note[] = "--- engine output limit for this session reached, rest only in logcat ---\n";
+        if (write(log_fd, note, sizeof(note) - 1) > 0) {}
+        limit_reached = 1;
     }
 }
 
@@ -157,7 +161,7 @@ Java_io_github_zapretdroid_core_NativeLog_start(JNIEnv *env, jobject thiz, jstri
 
     log_fd = fd;
     log_limit = limit;
-    log_written = lseek(fd, 0, SEEK_END);
+    log_written = 0; // counts this session's engine output only
 
     pthread_t thread;
     pthread_attr_t attr;

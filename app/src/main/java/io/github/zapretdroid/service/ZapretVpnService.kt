@@ -7,6 +7,9 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -66,8 +69,8 @@ class ZapretVpnService : VpnService() {
         startForegroundCompat()
         if (state == VpnState.STOPPED && !used) {
             used = true
-            AppLog.rotate()
-            AppLog.i("session start (${intent?.action ?: "restart"})")
+            AppLog.trimIfLarge()
+            AppLog.i("===== VPN session start (${intent?.action ?: "restart"}) =====")
             setState(VpnState.STARTING)
             thread(name = "vpn-start") { startSession() }
         } else {
@@ -91,7 +94,7 @@ class ZapretVpnService : VpnService() {
         val settings = Settings(this)
         try {
             Diagnostics.report(this, settings).forEach { AppLog.i(it) }
-            val hevLog = NativeLog.start(AppLog.current.absolutePath, NATIVE_LOG_LIMIT)
+            val hevLog = NativeLog.start(AppLog.file.absolutePath, NATIVE_LOG_LIMIT)
             if (hevLog == null) AppLog.w("could not capture native engine output")
             val logLevel = settings.logLevel
             val args = buildList {
@@ -148,6 +151,7 @@ class ZapretVpnService : VpnService() {
                 if (state == VpnState.STARTING) {
                     startedAt = System.currentTimeMillis()
                     AppLog.i("connected")
+                    watchNetwork()
                     setState(VpnState.RUNNING)
                     handler.postDelayed(statsTick, STATS_INTERVAL_MS)
                 }
@@ -241,7 +245,7 @@ class ZapretVpnService : VpnService() {
         thread(name = "vpn-stop") {
             if (wasActive) teardown()
             handler.post {
-                if (wasActive) AppLog.i("session stopped")
+                if (wasActive) AppLog.i("===== VPN session stopped =====")
                 state = VpnState.STOPPED
                 VpnStatus.send(this, VpnState.STOPPED, error)
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -252,7 +256,43 @@ class ZapretVpnService : VpnService() {
         }
     }
 
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** Logs network changes during the session (Wi-Fi <-> mobile, loss), a common cause of drops. */
+    private fun watchNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            private var lastDescription: String? = null
+
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                val description = buildList {
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("wifi")
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("cellular")
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
+                }.ifEmpty { listOf("other") }.joinToString("+") +
+                    ", validated: ${caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}"
+                if (description != lastDescription) {
+                    lastDescription = description
+                    AppLog.i("network: $description")
+                }
+            }
+
+            override fun onLost(network: Network) {
+                lastDescription = null
+                AppLog.w("network lost")
+            }
+        }
+        // The default network of this app: the app is outside the VPN, so it is the real one.
+        runCatching { manager.registerDefaultNetworkCallback(callback) }
+            .onSuccess { networkCallback = callback }
+            .onFailure { AppLog.w("cannot watch network changes", it) }
+    }
+
     private fun teardown() {
+        networkCallback?.let { cb ->
+            runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) }
+        }
+        networkCallback = null
         runCatching { TProxyService.TProxyStopService() }
         runCatching { tun?.close() }
         tun = null
@@ -263,6 +303,7 @@ class ZapretVpnService : VpnService() {
     }
 
     private fun setState(newState: VpnState) {
+        if (newState != state) AppLog.i("state: $state -> $newState")
         state = newState
         VpnStatus.send(this, newState)
     }
@@ -327,7 +368,7 @@ class ZapretVpnService : VpnService() {
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */
     private fun withEngineOutput(message: String): String {
         Thread.sleep(100) // let the log reader catch up with the engine's last words
-        val line = runCatching { AppLog.readTail(AppLog.current, 16 * 1024) }.getOrNull()
+        val line = runCatching { AppLog.readTail(AppLog.file, 16 * 1024) }.getOrNull()
             ?.lastOrNull { it.contains(" byedpi | ") }
             ?.substringAfter(" byedpi | ")
         return if (line != null) "$message\nByeDPI: $line" else message
@@ -349,7 +390,7 @@ class ZapretVpnService : VpnService() {
         const val ACTION_START = "io.github.zapretdroid.START"
         const val ACTION_STOP = "io.github.zapretdroid.STOP"
 
-        private const val NATIVE_LOG_LIMIT = 20L * 1024 * 1024
+        private const val NATIVE_LOG_LIMIT = 8L * 1024 * 1024
         private const val CHANNEL_ID = "vpn"
         private const val NOTIFICATION_ID = 1
         private const val PROXY_HOST = "127.0.0.1"

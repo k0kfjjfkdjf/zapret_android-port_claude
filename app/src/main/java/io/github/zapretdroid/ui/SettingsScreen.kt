@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.BuildConfig
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
+import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
@@ -75,6 +77,14 @@ fun SettingsScreen(
     var hostList by remember { mutableStateOf(settings.hostList) }
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        val argsBefore = settings.customArgs
+        val dnsBefore = settings.dns
+        onDispose {
+            if (settings.customArgs != argsBefore) AppLog.i("setting customArgs: '$argsBefore' -> '${settings.customArgs}'")
+            if (settings.dns != dnsBefore) AppLog.i("setting dns: '$dnsBefore' -> '${settings.dns}'")
+        }
+    }
     val context = LocalContext.current
     val setCustomArgs = { args: String ->
         customArgs = args
@@ -336,7 +346,10 @@ fun SettingsScreen(
             onDismiss = { listPicker = false },
             onPick = { name ->
                 listPicker = false
-                if (!HostLists.file(context, name).exists()) HostLists.save(context, name, "")
+                if (!HostLists.file(context, name).exists()) {
+                    AppLog.i("host list '$name' created")
+                    HostLists.save(context, name, "")
+                }
                 hostList = name
                 settings.hostList = name
             },

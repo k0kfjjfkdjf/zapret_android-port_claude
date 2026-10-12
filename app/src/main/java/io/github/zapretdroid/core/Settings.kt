@@ -23,46 +23,87 @@ class Settings(context: Context) {
 
     var strategyId: String
         get() = prefs.getString(KEY_STRATEGY, Strategies.presets.first().id)!!
-        set(value) = prefs.edit(commit = true) { putString(KEY_STRATEGY, value) }
+        set(value) {
+            logChange("strategyId", strategyId, value)
+            prefs.edit(commit = true) { putString(KEY_STRATEGY, value) }
+        }
 
     var customArgs: String
         get() = prefs.getString(KEY_CUSTOM_ARGS, Strategies.presets.first().args)!!
-        set(value) = prefs.edit(commit = true) { putString(KEY_CUSTOM_ARGS, value) }
+        // Typed character by character: the settings screen logs the final value when it closes.
+        set(value) {
+            prefs.edit(commit = true) { putString(KEY_CUSTOM_ARGS, value) }
+        }
 
     var dns: String
         get() = prefs.getString(KEY_DNS, DEFAULT_DNS)!!
-        set(value) = prefs.edit(commit = true) { putString(KEY_DNS, value) }
+        // Typed character by character: the settings screen logs the final value when it closes.
+        set(value) {
+            prefs.edit(commit = true) { putString(KEY_DNS, value) }
+        }
 
     var ipv6: Boolean
         get() = prefs.getBoolean(KEY_IPV6, false)
-        set(value) = prefs.edit(commit = true) { putBoolean(KEY_IPV6, value) }
+        set(value) {
+            logChange("ipv6", ipv6, value)
+            prefs.edit(commit = true) { putBoolean(KEY_IPV6, value) }
+        }
 
     var appFilterMode: AppFilterMode
         get() = prefs.getString(KEY_APP_FILTER, null)
             ?.let { runCatching { AppFilterMode.valueOf(it) }.getOrNull() } ?: AppFilterMode.ALL
-        set(value) = prefs.edit(commit = true) { putString(KEY_APP_FILTER, value.name) }
+        set(value) {
+            logChange("appFilterMode", appFilterMode, value)
+            prefs.edit(commit = true) { putString(KEY_APP_FILTER, value.name) }
+        }
 
     var selectedApps: Set<String>
         get() = prefs.getStringSet(KEY_APPS, emptySet())!!.toSet()
-        set(value) = prefs.edit(commit = true) { putStringSet(KEY_APPS, value) }
+        set(value) {
+            logChange("selectedApps", selectedApps, value)
+            prefs.edit(commit = true) { putStringSet(KEY_APPS, value) }
+        }
 
     var logLevel: LogLevel
         get() = prefs.getString(KEY_LOG_LEVEL, null)
             ?.let { runCatching { LogLevel.valueOf(it) }.getOrNull() } ?: LogLevel.NORMAL
-        set(value) = prefs.edit(commit = true) { putString(KEY_LOG_LEVEL, value.name) }
+        set(value) {
+            logChange("logLevel", logLevel, value)
+            prefs.edit(commit = true) { putString(KEY_LOG_LEVEL, value.name) }
+        }
 
     var hostScope: HostScope
         get() = prefs.getString(KEY_HOST_SCOPE, null)
             ?.let { runCatching { HostScope.valueOf(it) }.getOrNull() } ?: HostScope.ALL
-        set(value) = prefs.edit(commit = true) { putString(KEY_HOST_SCOPE, value.name) }
+        set(value) {
+            logChange("hostScope", hostScope, value)
+            prefs.edit(commit = true) { putString(KEY_HOST_SCOPE, value.name) }
+        }
 
     var hostList: String
         get() = prefs.getString(KEY_HOST_LIST, "")!!
-        set(value) = prefs.edit(commit = true) { putString(KEY_HOST_LIST, value) }
+        set(value) {
+            logChange("hostList", hostList, value)
+            prefs.edit(commit = true) { putString(KEY_HOST_LIST, value) }
+        }
 
     var autohost: Boolean
         get() = prefs.getBoolean(KEY_AUTOHOST, false)
-        set(value) = prefs.edit(commit = true) { putBoolean(KEY_AUTOHOST, value) }
+        set(value) {
+            logChange("autohost", autohost, value)
+            prefs.edit(commit = true) { putBoolean(KEY_AUTOHOST, value) }
+        }
+
+    /** Every settings change goes to the journal, whichever screen made it. */
+    private fun logChange(name: String, old: Any, new: Any) {
+        if (old == new) return
+        val text = when {
+            old is Set<*> && new is Set<*> ->
+                "added ${(new - old).sortedBy { it.toString() }}, removed ${(old - new).sortedBy { it.toString() }}"
+            else -> "'$old' -> '$new'"
+        }
+        AppLog.i("setting $name: $text")
+    }
 
     /** The ByeDPI arguments of the active strategy, without listen address options. */
     val strategyArgs: String
