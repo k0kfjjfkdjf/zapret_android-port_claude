@@ -9,6 +9,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -48,3 +50,21 @@ jobs:
           name: zapretdroid-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          for apk in app/build/outputs/apk/debug/*.apk; do
+            abi=$(basename "$apk" | sed -E 's/^app-(.*)-debug\.apk$/\1/')
+            cp "$apk" "release/zapretdroid-$version-$abi.apk"
+          done
+          (cd release && sha256sum *.apk > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "ZapretDroid $version" \
+            --notes-file .github/release-notes.md
