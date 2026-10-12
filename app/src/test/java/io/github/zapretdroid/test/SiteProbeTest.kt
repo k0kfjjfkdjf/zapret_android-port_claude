@@ -24,20 +24,26 @@ class SiteProbeTest {
         lateinit var tls: SSLServerSocket
         lateinit var socks: ServerSocket
         var mode = "ok"
+        @Volatile var serverError: Throwable? = null
 
         @JvmStatic @BeforeClass fun setUp() {
             val ks = KeyStore.getInstance("JKS").apply { load(SiteProbeTest::class.java.getResourceAsStream("/probe-test.jks"), "password".toCharArray()) }
             val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(ks, "password".toCharArray()) }
             val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(ks) }
             val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, tmf.trustManagers, null) }
-            SSLContext.setDefault(ctx)
+            SiteProbe.socketFactory = ctx.socketFactory
             // The JVM's default verifier rejects everything; Android's checks the SAN like this.
             SiteProbe.hostnameVerifier = javax.net.ssl.HostnameVerifier { host, session ->
                 (session.peerCertificates[0] as java.security.cert.X509Certificate)
                     .subjectAlternativeNames.orEmpty().any { it[1] == host }
             }
             tls = ctx.serverSocketFactory.createServerSocket(0, 50, InetAddress.getLoopbackAddress()) as SSLServerSocket
-            thread(isDaemon = true) { while (true) { val s = tls.accept(); thread(isDaemon = true) { serve(s) } } }
+            thread(isDaemon = true) {
+                while (true) {
+                    val s = tls.accept()
+                    thread(isDaemon = true) { serve(s).onFailure { serverError = it } }
+                }
+            }
             // Minimal SOCKS5 relay that always connects to the TLS server.
             socks = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
             thread(isDaemon = true) {
@@ -79,12 +85,22 @@ class SiteProbeTest {
 
         @JvmStatic @AfterClass fun tearDown() {
             SiteProbe.hostnameVerifier = null
+            SiteProbe.socketFactory = null
             tls.close()
             socks.close()
         }
     }
 
-    private fun run(m: String, host: String = "localhost") = run { mode = m; SiteProbe.probe(socks.localPort, host, InetAddress.getLoopbackAddress(), 1500) }.also { println("[$m] ${it.summary()}") }
+    private fun run(m: String, host: String = "localhost") = run {
+        mode = m
+        serverError = null
+        SiteProbe.probe(socks.localPort, host, InetAddress.getLoopbackAddress(), 1500)
+    }.let { result ->
+        // Failure messages carry the server side's exception, if any.
+        val server = serverError?.let { " | server: ${it.javaClass.simpleName}: ${it.message}" }.orEmpty()
+        println("[$m] ${result.summary()}$server")
+        if (server.isEmpty()) result else result.copy(detail = result.detail + server)
+    }
 
     @Test fun ok() { val r = run("ok"); assertTrue(r.summary(), r.ok); assertEquals(r.summary(), 200, r.httpStatus); assertTrue(r.summary(), r.bytes >= 50_000) }
     @Test fun notFoundIsReachable() { val r = run("404"); assertTrue(r.summary(), r.ok); assertEquals(r.summary(), 404, r.httpStatus) }

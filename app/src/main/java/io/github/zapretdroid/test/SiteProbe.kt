@@ -64,6 +64,10 @@ object SiteProbe {
     @Volatile
     var hostnameVerifier: HostnameVerifier? = null
 
+    /** TLS socket factory; the platform default unless a test sets its own. */
+    @Volatile
+    var socketFactory: SSLSocketFactory? = null
+
     fun probe(proxyPort: Int, host: String, address: InetAddress?, timeoutMs: Int): ProbeResult {
         val start = System.currentTimeMillis()
         var stage = ProbeStage.PROXY
@@ -86,7 +90,7 @@ object SiteProbe {
                 socksConnect(raw, host, address, 443)
                 connectMs = elapsed()
                 stage = ProbeStage.TLS
-                val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+                val factory = socketFactory ?: SSLSocketFactory.getDefault() as SSLSocketFactory
                 (factory.createSocket(raw, host, 443, true) as SSLSocket).use { ssl ->
                     ssl.soTimeout = timeoutMs
                     val tlsStart = System.currentTimeMillis()
