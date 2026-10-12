@@ -46,7 +46,7 @@
     <string name="strategy_custom">Custom</string>
     <string name="strategy_custom_desc">Your own ByeDPI command line</string>
     <string name="strategy_args">ByeDPI arguments</string>
-    <string name="strategy_args_hint">Editing switches to a custom strategy. --ip and --port are set by the app.</string>
+    <string name="strategy_args_hint">Editing switches to a custom strategy. --ip and --port are set by the app. Positions accept zapret markers (host, endhost, sld, midsld, endsld, sniext, method, e.g. midsld+1); -M accepts tpws modifications (hostcase, hostdot, hosttab, hostnospace, hostpad=N, methodspace, methodeol, unixeol).</string>
 
     <string name="section_network">Network</string>
     <string name="dns_server">DNS server</string>
@@ -118,4 +118,6 @@
     <string name="test_result_score">%1$d / %2$d · %3$d ms</string>
     <string name="test_apply">Use</string>
     <string name="test_applied">Strategy applied. Reconnect to use it.</string>
+    <string name="strategy_tpws">tpws style (zapret)</string>
+    <string name="strategy_tpws_desc">HTTP: split after the method, hostcase and hostdot; TLS: split in the middle of the second-level domain and a TLS record at the SNI extension</string>
 </resources>

@@ -108,6 +108,8 @@ struct desync_params {
     struct part *parts;
     
     int mod_http;
+    char hostspell[5];
+    int hostpad;
     int tlsrec_n;
     struct part *tlsrec;
     uint8_t tlsminor;

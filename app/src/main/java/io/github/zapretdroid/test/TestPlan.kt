@@ -27,6 +27,9 @@ object TestPlan {
         "--tlsrec 0+sm",
         "--disorder 1 --tlsrec 1+s",
         "--oob 1 --disorder 1 --tlsrec 1+s",
+        "--split 1 --disorder midsld --tlsrec sniext",
+        "--disorder sniext+1",
+        "--split host+1 --disorder midsld",
         "--fake -1 --ttl 8",
         "--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_www_google_com.bin}",
         "--fake -1 --ttl 8 --fake-tls-mod rand,orig --fake-sni www.google.com",
@@ -45,6 +48,11 @@ object TestPlan {
         "--tlsrec 1+s --split 1+s --disorder 3+s",
         "--tlsrec 1+s --tlsminor 1",
         "--disorder 1 --drop-sack",
+        "--split midsld",
+        "--disorder sld+1",
+        "--oob midsld",
+        "--tlsrec sniext+4 --disorder 1",
+        "--split 1 --disorder endhost-1",
     ) + (3..12).filter { it != 8 }.map { "--fake -1 --ttl $it" } +
         listOf(4, 6, 10).map { "--disorder 1 --fake -1 --ttl $it --fake-data {fake:tls_clienthello_www_google_com.bin}" }
 }

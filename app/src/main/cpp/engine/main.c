@@ -10,6 +10,7 @@
 #include "packets.h"
 #include "error.h"
 #include "conev.h"
+#include "tpws.h"
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -551,6 +552,17 @@ bool ipv6_support(void)
 
 int parse_offset(struct part *part, const char *str)
 {
+    if (isalpha((unsigned char) *str)) {
+        // zapret position marker: method, host, endhost, sld, midsld, endsld, sniext [+-N]
+        int marker;
+        long offset;
+        if (tpws_parse_marker(str, &marker, &offset)) {
+            return -1;
+        }
+        part->flag = OFFSET_MARKER | (marker << MARKER_SHIFT);
+        part->pos = offset;
+        return 0;
+    }
     char *end = 0;
     long val = strtol(str, &end, 0);
     
@@ -1156,6 +1168,19 @@ int parse_args(int argc, char **argv)
         case 'M':
             end = optarg;
             while (end && !invalid) {
+                // tpws modifications are named tokens; the original ones are single letters.
+                const char *comma = strchr(end, ',');
+                size_t tlen = comma ? (size_t) (comma - end) : strlen(end);
+                int tp = tpws_parse_http_mod(end, tlen,
+                    &dp->mod_http, dp->hostspell, &dp->hostpad);
+                if (tp < 0) {
+                    invalid = 1;
+                    continue;
+                }
+                if (tp == 0) {
+                    end = comma ? (char *) comma + 1 : 0;
+                    continue;
+                }
                 switch (*end) {
                     case 'r': 
                         dp->mod_http |= MH_SPACE;

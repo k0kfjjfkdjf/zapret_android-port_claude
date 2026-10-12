@@ -28,6 +28,7 @@
 
 #include "packets.h"
 #include "error.h"
+#include "tpws.h"
 
 #define DEFAULT_TTL 8
 #define ERR_WAIT -12
@@ -441,6 +442,10 @@ static void init_proto_info(
 static long gen_offset(long pos, int flag,
         const char *buffer, size_t n, long lp, struct proto_info *info)
 {
+    if (flag & OFFSET_MARKER) {
+        long base = tpws_marker_pos(flag >> MARKER_SHIFT, buffer, n);
+        return base < 0 ? -1 : base + pos;
+    }
     if (flag & (OFFSET_SNI | OFFSET_HOST)) {
         init_proto_info(buffer, n, info);
         
@@ -475,9 +480,15 @@ static void tamp(char *buffer, size_t bfsize, ssize_t *n,
 {
     if (dp->mod_http && is_http(buffer, *n)) {
         LOG(LOG_S, "modify HTTP: n=%zd\n", *n);
-        if (mod_http(buffer, *n, dp->mod_http)) {
+        // The original in-place modifications need an unmodified request line, so they go first.
+        if ((dp->mod_http & ~MH_TPWS_MASK) && mod_http(buffer, *n, dp->mod_http)) {
             LOG(LOG_E, "mod http error\n");
         }
+        if (dp->mod_http & MH_TPWS_MASK) {
+            tpws_mod_http(buffer, bfsize, n, dp->mod_http, dp->hostspell, dp->hostpad);
+        }
+        // Host offsets may have moved.
+        info->init = 0;
     }
     if (dp->tlsminor_set && is_tls_chello(buffer, *n)) {
         ((uint8_t *)buffer)[2] = dp->tlsminor;

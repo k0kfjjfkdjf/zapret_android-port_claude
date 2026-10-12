@@ -9,3 +9,11 @@ Changes in this fork:
   process (the strategy tester starts the engine once per candidate).
 - Fix: `--pf` port ranges compared ports in network byte order, so most ranges matched the
   wrong ports.
+- zapret position markers in every position argument (`--split`, `--disorder`, `--oob`,
+  `--disoob`, `--fake`, `--tlsrec`, `--fake-offset`): `method`, `host`, `endhost`, `sld`,
+  `midsld`, `endsld`, `sniext`, with an optional `+N`/`-N` offset (`tpws.c`, ported from
+  zapret `tpws/protocol.c`).
+- tpws HTTP modifications as `-M` tokens: `hostcase`, `hostspell=XXXX`, `hostdot`, `hosttab`,
+  `hostnospace`, `hostpad=N`, `methodspace`, `methodeol`, `unixeol` (ported from
+  `tpws/tamper.c`, same order of operations). The original `h`, `d`, `r` flags still work.
+- Host tests: `app/src/test/native/run.sh`.

@@ -49,6 +49,11 @@ object Strategies {
             "--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_www_google_com.bin}",
         ),
         Strategy(
+            "tpws", R.string.strategy_tpws, R.string.strategy_tpws_desc,
+            "--proto h --split method+2 -M hostcase,hostdot --auto=none " +
+                "--split 1 --disorder midsld --tlsrec sniext",
+        ),
+        Strategy(
             "byebyedpi", R.string.strategy_byebyedpi, R.string.strategy_byebyedpi_desc,
             "-o1 -a1 -r-5+se",
         ),
