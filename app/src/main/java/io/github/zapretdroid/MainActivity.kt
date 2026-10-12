@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,6 +37,7 @@ import io.github.zapretdroid.ui.AppsScreen
 import io.github.zapretdroid.ui.HomeScreen
 import io.github.zapretdroid.ui.LogsScreen
 import io.github.zapretdroid.ui.SettingsScreen
+import io.github.zapretdroid.ui.TestScreen
 import io.github.zapretdroid.ui.theme.ZapretTheme
 
 class MainActivity : ComponentActivity() {
@@ -65,7 +67,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -136,7 +138,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
-            Screen.APPS -> Screen.SETTINGS
+            Screen.APPS, Screen.TEST -> Screen.SETTINGS
             Screen.LOGS -> logsReturn
             else -> Screen.HOME
         }
@@ -173,12 +175,21 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             },
             onOpenApps = { screen = Screen.APPS },
             onOpenLogs = { openLogs(Screen.SETTINGS) },
+            onOpenTest = { screen = Screen.TEST },
         )
         Screen.APPS -> AppsScreen(
             settings = settings,
             onBack = { screen = Screen.SETTINGS },
         )
         Screen.LOGS -> LogsScreen(onBack = { screen = logsReturn })
+        Screen.TEST -> TestScreen(
+            settings = settings,
+            onBack = { screen = Screen.SETTINGS },
+            onApplied = {
+                settingsVersion++
+                Toast.makeText(context, R.string.test_applied, Toast.LENGTH_LONG).show()
+            },
+        )
     }
 }
 

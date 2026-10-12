@@ -58,6 +58,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenApps: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenTest: () -> Unit,
 ) {
     var strategyId by remember { mutableStateOf(settings.strategyId) }
     var customArgs by remember { mutableStateOf(settings.customArgs) }
@@ -100,6 +101,13 @@ fun SettingsScreen(
             }
 
             item { SectionHeader(R.string.section_strategy) }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.test_open)) },
+                    supportingContent = { Text(stringResource(R.string.test_open_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
+                )
+            }
             items(Strategies.presets, key = { it.id }) { preset ->
                 RadioRow(
                     title = stringResource(preset.title),

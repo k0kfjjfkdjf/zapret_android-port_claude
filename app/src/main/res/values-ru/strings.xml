@@ -96,4 +96,24 @@
     <string name="error_unknown_list">Список хостов \"%1$s\" не найден</string>
     <string name="fake_insert">Вставить фейковую нагрузку</string>
     <string name="fake_insert_desc">Фейковые пакеты из zapret2. Нагрузка относится к последней группе стратегии: --fake для TCP, --udp-fake для UDP.</string>
+    <string name="title_test">Подбор стратегии</string>
+    <string name="test_open">Подобрать стратегию автоматически</string>
+    <string name="test_open_desc">Перебор стратегий на выбранных сайтах, как blockcheck в zapret</string>
+    <string name="test_intro">Каждая стратегия запускается как локальный прокси, и через неё открываются сайты по HTTPS. Работает и с включённым VPN, и без него. Проверяется только TCP/TLS, не QUIC.</string>
+    <string name="sites_youtube">YouTube</string>
+    <string name="sites_discord">Discord</string>
+    <string name="sites_meta">Instagram, Facebook</string>
+    <string name="sites_x">X (Twitter)</string>
+    <string name="sites_other">Другое</string>
+    <string name="test_custom_sites">Свои сайты (через пробел или запятую)</string>
+    <string name="test_quick">Быстрый (%1$d)</string>
+    <string name="test_full">Полный (%1$d)</string>
+    <string name="test_start">Начать (%1$d сайтов)</string>
+    <string name="test_stop">Остановить</string>
+    <string name="test_progress">%1$d / %2$d: %3$s</string>
+    <string name="test_baseline">Без обхода открываются %1$d из %2$d сайтов</string>
+    <string name="test_baseline_ok">Без обхода открываются все %1$d из %2$d сайтов: в этой сети они не заблокированы</string>
+    <string name="test_result_score">%1$d / %2$d · %3$d мс</string>
+    <string name="test_apply">Применить</string>
+    <string name="test_applied">Стратегия применена. Переподключитесь, чтобы она заработала.</string>
 </resources>
