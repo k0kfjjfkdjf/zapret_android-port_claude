@@ -28,28 +28,45 @@ nfqws/nfqws2 из zapret работают с сырыми пакетами че�
 доступны только техники уровня сокетов (то, что умеет tpws и ByeDPI). Поэтому часть стратегий
 zapret на Android без root не воспроизвести.
 
-## Возможности (v0.2)
+## Возможности (v0.3)
 
 - Включение одной кнопкой, плитка в шторке, уведомление с кнопкой остановки.
-- Готовые стратегии и своя командная строка ByeDPI.
-- DNS-сервер, IPv6.
-- Раздельное туннелирование: все приложения / только выбранные / все, кроме выбранных.
+- Готовые стратегии и своя командная строка движка.
+- **Из zapret:**
+  - фейковые нагрузки из zapret2 (QUIC Initial, TLS ClientHello, Discord, STUN…) —
+    `--fake-data {fake:имя}`, кнопка «Вставить фейковую нагрузку», пресеты «TCP + QUIC/UDP»
+    и «Discord и звонки»;
+  - подбор стратегии в духе `blockcheck`: перебор стратегий на выбранных сайтах, результат
+    применяется одним нажатием;
+  - маркеры позиций tpws: `method`, `host`, `endhost`, `sld`, `midsld`, `endsld`, `sniext`
+    (`--split midsld`, `--tlsrec sniext+1`…);
+  - модификации HTTP из tpws в `-M`: `hostcase`, `hostspell=`, `hostdot`, `hosttab`,
+    `hostnospace`, `hostpad=N`, `methodspace`, `methodeol`, `unixeol`;
+  - списки хостов в формате zapret (импорт, gzip, загрузка по ссылке) и область применения:
+    все сайты / только список / все, кроме списка; `{list:имя}` в аргументах;
+  - autohostlist как отладочная функция: запись доменов, где блокировка видна даже со
+    стратегией, и добавление их в список.
+- Логи сессий: вывод движка и туннеля, точная команда запуска, настройки, сведения об
+  устройстве и сети, ошибки со стеком. Три уровня подробности, фильтр, отправка/сохранение.
+- DNS-сервер, IPv6, раздельное туннелирование по приложениям.
 - Поддержка «Постоянного VPN» Android (автозапуск при загрузке:
   *Настройки → Сеть → VPN → ZapretDroid → Постоянная VPN*).
-- Логи сессий: вывод ByeDPI и hev-socks5-tunnel, точная команда запуска движка, настройки,
-  сведения об устройстве и сети, ошибки со стеком. Три уровня подробности, фильтр,
-  отправка/сохранение/копирование, хранятся текущая и предыдущая сессии.
-- Интерфейс на русском и английском, Material You.
-- Android 7.0+ (API 24).
+- Интерфейс на русском и английском, Material You. Android 7.0+ (API 24).
+
+Движок — форк ByeDPI в `app/src/main/cpp/engine` (изменения перечислены в
+[UPSTREAM.md](app/src/main/cpp/engine/UPSTREAM.md)).
 
 ## План
 
-- [ ] Перенос функций tpws в движок: модификации HTTP (hostcase, hostdot, hostpad, methodeol…),
-      маркеры позиций (sniext, midsld…), autohostlist, хостлисты (в т.ч. gzip), профили.
-- [ ] Fake-нагрузки из zapret2 (QUIC Initial, Discord, STUN…) для `--fake-data`.
-- [ ] Встроенный подбор стратегии (аналог `blockcheck`) по списку сайтов.
+- [ ] Проверка QUIC/UDP в подборе стратегии.
 - [ ] Асинхронный резолвер в движке и mapped DNS (имена доменов вместо IP в SOCKS).
-- [ ] Импорт/экспорт настроек, логи в приложении.
+- [ ] Импорт/экспорт настроек.
+
+## Тесты
+
+- `app/src/test/native/run.sh` — нативные тесты движка на хосте (ASan/UBSan) и проверка, что
+  каждый пресет и кандидат подбора принимается движком.
+- `./gradlew testDebugUnitTest` — unit-тесты Kotlin.
 
 ## Сборка
 
@@ -71,8 +88,9 @@ CI (GitHub Actions) собирает их на каждый push — смотр�
 ZapretDroid is a rootless DPI bypass for Android. It runs a local VPN (`VpnService`) that feeds
 traffic through [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) into the
 [ByeDPI](https://github.com/hufrea/byedpi) desync engine; nothing leaves the device through a
-remote server. Packet-level zapret techniques (nfqws) require root and are out of scope; socket-level
-techniques from tpws are planned to be ported into the engine. Build with `./gradlew assembleDebug`
+remote server. Packet-level zapret techniques (nfqws) require root and are out of scope; tpws position
+markers and HTTP modifications, zapret2 fake payloads, zapret-style host lists, autohostlist
+and a blockcheck-like strategy finder are included. Build with `./gradlew assembleDebug`
 after a recursive clone (JDK 17, SDK 36, NDK 27.2.12479018, CMake 3.22.1).
 
 ## Лицензия
