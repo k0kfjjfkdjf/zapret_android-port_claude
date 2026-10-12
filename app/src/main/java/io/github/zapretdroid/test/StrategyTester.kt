@@ -75,7 +75,7 @@ object StrategyTester {
     }
 
     fun cancel() {
-        AppLog.i("strategy test: stop requested", source = "test", source = "test")
+        AppLog.i("strategy test: stop requested", source = "test")
         cancelled = true
     }
 
