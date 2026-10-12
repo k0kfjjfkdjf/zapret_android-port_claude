@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -13,6 +14,10 @@
 #endif
 
 #include "params.h"
+
+/* Where diagnostics go; the Android app points it at the session log, stderr otherwise. */
+extern FILE *engine_log;
+#define ENGINE_LOG (engine_log ? engine_log : stderr)
 
 #ifdef _WIN32
 #define get_e() \
@@ -32,7 +37,7 @@
             "%s: %s\n", str, strerror(errno))
     #else
     #define uniperror(str) \
-        perror(str)
+        fprintf(ENGINE_LOG, "%s: %s\n", str, strerror(errno))
     #endif
 #endif
 
@@ -72,7 +77,7 @@ static int unie(int e)
         if (params.debug >= s) {
             va_list args;
             va_start(args, str);
-            vfprintf(stderr, str, args);
+            vfprintf(ENGINE_LOG, str, args);
             va_end(args);
         }
     }

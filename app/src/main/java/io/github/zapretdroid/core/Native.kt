@@ -21,9 +21,12 @@ object NativeLog {
         System.loadLibrary("byedpi")
     }
 
-    /** Starts capturing; the file is truncated when it grows beyond [limitBytes]. */
+    /**
+     * Starts capturing into [path], truncated when it grows beyond [limitBytes]. Returns the
+     * path that hev-socks5-tunnel should use as its log file, or null on failure.
+     */
     @JvmStatic
-    external fun start(path: String, limitBytes: Long): Boolean
+    external fun start(path: String, limitBytes: Long): String?
 }
 
 /**

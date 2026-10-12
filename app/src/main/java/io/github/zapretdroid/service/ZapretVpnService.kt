@@ -91,9 +91,8 @@ class ZapretVpnService : VpnService() {
         val settings = Settings(this)
         try {
             Diagnostics.report(this, settings).forEach { AppLog.i(it) }
-            if (!NativeLog.start(AppLog.current.absolutePath, NATIVE_LOG_LIMIT)) {
-                AppLog.w("could not capture native engine output")
-            }
+            val hevLog = NativeLog.start(AppLog.current.absolutePath, NATIVE_LOG_LIMIT)
+            if (hevLog == null) AppLog.w("could not capture native engine output")
             val logLevel = settings.logLevel
             val args = buildList {
                 add("ciadpi")
@@ -137,7 +136,7 @@ class ZapretVpnService : VpnService() {
                 |  udp: 'udp'
                 |misc:
                 |  task-stack-size: 81920
-                |  log-file: stderr
+                |  log-file: ${hevLog ?: "null"}
                 |  log-level: ${logLevel.hevLevel}
                 |""".trimMargin(),
             )

@@ -1,8 +1,8 @@
 /*
- * Captures stdout/stderr of the native engines into the session log file.
+ * Captures the diagnostics of the native engines into the session log file.
  *
- * ByeDPI prints its diagnostics to stderr (verbosity set with --debug) and
- * hev-socks5-tunnel is configured with "log-file: stderr", so both end up in a pipe.
+ * ByeDPI prints its diagnostics to engine_log (verbosity set with --debug) and
+ * hev-socks5-tunnel is configured with "log-file: /proc/self/fd/N", so both end up in a pipe.
  * A reader thread timestamps every line, tags its source and appends it to the log
  * file; lines are mirrored to logcat for adb users.
  */
@@ -117,40 +117,47 @@ static void *reader(void *arg)
     return NULL;
 }
 
-JNIEXPORT jboolean JNICALL
+/*
+ * Starts capturing. The engines do not write to the process stdout/stderr (whose descriptors
+ * may be closed or reused in an app process): ByeDPI writes to engine_log, hev-socks5-tunnel
+ * opens the returned /proc/self/fd path. Both lead into the pipe read by the thread above.
+ * Returns that path, or null if capturing could not start.
+ */
+extern FILE *engine_log;
+
+JNIEXPORT jstring JNICALL
 Java_io_github_zapretdroid_core_NativeLog_start(JNIEnv *env, jobject thiz, jstring path, jlong limit)
 {
+    static char hev_path[32];
     if (log_fd >= 0) {
-        return JNI_TRUE;
+        return (*env)->NewStringUTF(env, hev_path);
     }
     const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
     if (!cpath) {
-        return JNI_FALSE;
+        return NULL;
     }
     int fd = open(cpath, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     (*env)->ReleaseStringUTFChars(env, path, cpath);
     if (fd < 0) {
-        return JNI_FALSE;
+        return NULL;
     }
-
     int pipefd[2];
     if (pipe(pipefd) < 0) {
         close(fd);
-        return JNI_FALSE;
+        return NULL;
     }
+    FILE *out = fdopen(pipefd[1], "w");
+    if (!out) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        close(fd);
+        return NULL;
+    }
+    setvbuf(out, NULL, _IOLBF, 0);
+
     log_fd = fd;
     log_limit = limit;
     log_written = lseek(fd, 0, SEEK_END);
-
-    fflush(stdout);
-    fflush(stderr);
-    dup2(pipefd[1], STDOUT_FILENO);
-    dup2(pipefd[1], STDERR_FILENO);
-    if (pipefd[1] != STDOUT_FILENO && pipefd[1] != STDERR_FILENO) {
-        close(pipefd[1]);
-    }
-    setvbuf(stdout, NULL, _IOLBF, 0);
-    setvbuf(stderr, NULL, _IONBF, 0);
 
     pthread_t thread;
     pthread_attr_t attr;
@@ -158,5 +165,16 @@ Java_io_github_zapretdroid_core_NativeLog_start(JNIEnv *env, jobject thiz, jstri
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     int res = pthread_create(&thread, &attr, reader, (void *) (intptr_t) pipefd[0]);
     pthread_attr_destroy(&attr);
-    return res == 0 ? JNI_TRUE : JNI_FALSE;
+    if (res != 0) {
+        fclose(out);
+        close(pipefd[0]);
+        close(fd);
+        log_fd = -1;
+        return NULL;
+    }
+    engine_log = out;
+    // Its presence in the session log shows that capture works.
+    fprintf(engine_log, "native output capture started\n");
+    snprintf(hev_path, sizeof(hev_path), "/proc/self/fd/%d", pipefd[1]);
+    return (*env)->NewStringUTF(env, hev_path);
 }

@@ -45,6 +45,9 @@ fake_udp = {
 };
 
 
+FILE *engine_log;
+
+
 struct params params = {
     .await_int = 10,
     
@@ -79,6 +82,7 @@ void engine_reset(void)
     else {
         params = pristine;
     }
+    opterr = 0; // parse_args reports errors itself, through ENGINE_LOG
     #ifdef __BIONIC__
     optreset = 1;
     optind = 1;
@@ -857,7 +861,7 @@ int parse_args(int argc, char **argv)
             }
             FILE *file = fopen(dp->cache_file, "r");
             if (!file)
-                perror("fopen");
+                uniperror("fopen");
             else {
                 load_cache(params.mempool, file, dp);
                 fclose(file);
@@ -1313,15 +1317,17 @@ int parse_args(int argc, char **argv)
             break;
             
         case '?':
+            fprintf(ENGINE_LOG, "unknown option or missing value: %s\n",
+                optind > 0 && optind <= argc ? argv[optind - 1] : "?");
             return -1;
             
         default: 
-            printf("?: %c\n", rez);
+            fprintf(ENGINE_LOG, "?: %c\n", rez);
             return -1;
         }
     }
     if (invalid) {
-        fprintf(stderr, "invalid value: -%c %s\n", rez, optarg);
+        fprintf(ENGINE_LOG, "invalid value: -%c %s\n", rez, optarg);
         return -1;
     }
     if (all_limited) {
@@ -1352,7 +1358,7 @@ void dump_all_cache(void)
             else {
                 FILE *f = fopen(dp->cache_file, "w");
                 if (!f) {
-                    perror("fopen");
+                    uniperror("fopen");
                     return;
                 }
                 dump_cache(params.mempool, f, dp);

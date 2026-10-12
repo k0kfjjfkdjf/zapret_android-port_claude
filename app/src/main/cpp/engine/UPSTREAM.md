@@ -20,3 +20,6 @@ Changes in this fork:
 - autohostlist as a debugging aid: `--autohost-log <file>` appends `<time> <host> <reason>`
   for every detected block (torst, redirect, ssl_err, connect). Detection needs an `--auto`
   group; the app adds an empty one at the end when the feature is on.
+- Diagnostics go to `engine_log` (stderr by default) instead of stderr directly, and option
+  errors are reported there with the offending argument; the app captures them without
+  touching the process stdio descriptors.

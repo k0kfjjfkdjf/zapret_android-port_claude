@@ -81,7 +81,7 @@ static bool sock_has_notsent(int sfd)
     
     if (getsockopt(sfd, IPPROTO_TCP,
             TCP_INFO, (char *)&tcpi, &ts) < 0) {
-        perror("getsockopt TCP_INFO");
+        uniperror("getsockopt TCP_INFO");
         return 0;
     }
     if (tcpi.tcpi_state != 1) {
