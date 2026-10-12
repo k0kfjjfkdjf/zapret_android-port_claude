@@ -7,7 +7,8 @@ import java.io.File
  * {fake:name} is a zapret2 fake payload (".bin" may be omitted), {list:name} a host list.
  */
 object ArgTemplates {
-    private val PLACEHOLDER = Regex("""\{(fake|list):([^{}\s]+)}""")
+    // Braces are escaped everywhere: Android's ICU regex engine rejects a bare "}".
+    private val PLACEHOLDER = Regex("""\{(fake|list):([^\{\}\s]+)\}""")
 
     class UnknownReference(val kind: String, val name: String) :
         IllegalArgumentException("unknown $kind '$name'")
