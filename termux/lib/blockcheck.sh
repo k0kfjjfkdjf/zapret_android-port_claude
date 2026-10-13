@@ -48,7 +48,7 @@ bc_targets() {
                 else
                     echo "Нет списка $lf. Выполните: zapret lists-update" >&2
                 fi ;;
-            http://*|https://*) echo "$t" ;;
+            http://*|https://*|big:http://*|big:https://*) echo "$t" ;;
             *.*) echo "https://$t/" ;;
         esac
     done
