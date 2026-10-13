@@ -20,6 +20,20 @@ bc_targets() {
                     "https://cdn.discordapp.com/embed/avatars/0.png" \
                     "https://media.discordapp.net/" \
                     "https://discord.gg/" ;;
+            discord-full)
+                # полный набор: сайт, API, шлюз, CDN, медиа, обновления + большой файл (16-20 КБ "заморозка" у ТСПУ)
+                printf '%s\n' \
+                    "https://discord.com/" \
+                    "https://discord.com/app" \
+                    "https://discord.com/api/v9/gateway" \
+                    "https://gateway.discord.gg/" \
+                    "https://cdn.discordapp.com/embed/avatars/0.png" \
+                    "https://media.discordapp.net/" \
+                    "https://discordapp.com/" \
+                    "https://discord.gg/" \
+                    "https://updates.discord.com/" \
+                    "https://dl.discordapp.net/" \
+                    "big:https://discord.com/api/download?platform=linux&format=tar.gz" ;;
             youtube)
                 printf '%s\n' \
                     "https://www.youtube.com/" \
@@ -65,9 +79,11 @@ bc_probe_all() {
     dir=$(mktemp -d)
     for url in "${BC_URLS[@]}"; do
         local -a tlsopt=()
+        # большой файл: первые 256 КБ (Range), с переходом по редиректам
+        [[ "${BC_BIG[$i]}" == "1" ]] && tlsopt+=(-L -r 0-262143)
         case "${BC_TLS[$i]}" in
-            12) tlsopt=(--tlsv1.2 --tls-max 1.2) ;;
-            13) tlsopt=(--tlsv1.3) ;;
+            12) tlsopt+=(--tlsv1.2 --tls-max 1.2) ;;
+            13) tlsopt+=(--tlsv1.3) ;;
         esac
         (
             local errf=/dev/null
@@ -86,8 +102,17 @@ bc_probe_all() {
     BC_OK=0; BC_DETAIL=""
     local tsum=0
     for ((i=0; i<${#BC_URLS[@]}; i++)); do
-        read -r rc code t _ < "$dir/$i"
-        if [[ "$rc" == "0" && "$code" != "000" ]]; then
+        local size ok=0
+        read -r rc code t size < "$dir/$i"
+        if [[ "${BC_BIG[$i]}" == "1" ]]; then
+            # большой файл: важен объём (заморозка после 16-20 КБ), а не код завершения
+            [[ "${size%.*}" =~ ^[0-9]+$ ]] && (( ${size%.*} >= 200000 )) && ok=1
+            [[ $ok -eq 0 && "$rc" == "0" ]] && rc=99
+        elif [[ "$rc" == "0" && "$code" != "000" ]]; then
+            ok=1
+        fi
+        if [[ $ok -eq 1 ]]; then
+            rc=0
             BC_OK=$((BC_OK+1))
             tsum=$(awk -v a="$tsum" -v b="$t" 'BEGIN{printf "%.3f", a+b}')
             BC_DETAIL+="+"
@@ -105,11 +130,12 @@ bc_probe_all() {
 }
 
 bc_label() {
-    local i="$1"
+    local i="$1" sfx=""
+    [[ "${BC_BIG[$i]}" == "1" ]] && sfx=" [256KB]"
     case "${BC_TLS[$i]}" in
-        12) echo "${BC_URLS[$i]} [TLS1.2]" ;;
-        13) echo "${BC_URLS[$i]} [TLS1.3]" ;;
-        *)  echo "${BC_URLS[$i]}" ;;
+        12) echo "${BC_URLS[$i]} [TLS1.2]$sfx" ;;
+        13) echo "${BC_URLS[$i]} [TLS1.3]$sfx" ;;
+        *)  echo "${BC_URLS[$i]}$sfx" ;;
     esac
 }
 
@@ -122,6 +148,7 @@ bc_rc_text() {
         35|56) echo "обрыв TLS/соединения (типично для DPI)" ;;
         60) echo "подмена сертификата" ;;
         97) echo "SOCKS: ошибка прокси" ;;
+        99) echo "большой файл не докачан (заморозка на 16-20 КБ?)" ;;
         *) echo "curl код $1" ;;
     esac
 }
@@ -182,16 +209,18 @@ blockcheck_zapret() {
 
     local -a raw_urls=()
     mapfile -t raw_urls < <(bc_targets "${targets[@]}" | awk '!seen[$0]++')
-    BC_URLS=(); BC_TLS=()
-    local u
+    BC_URLS=(); BC_TLS=(); BC_BIG=()
+    local u big
     for u in "${raw_urls[@]}"; do
+        big=0
+        [[ "$u" == big:* ]] && { big=1; u="${u#big:}"; }
         if [[ "$u" == https://* ]]; then
             case "$tlsmode" in
-                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13) ;;
-                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode") ;;
+                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13); BC_BIG+=($big $big) ;;
+                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode"); BC_BIG+=($big) ;;
             esac
         else
-            BC_URLS+=("$u"); BC_TLS+=("")
+            BC_URLS+=("$u"); BC_TLS+=(""); BC_BIG+=($big)
         fi
     done
     if [[ ${#BC_URLS[@]} -eq 0 ]]; then

@@ -189,7 +189,7 @@ index 69e6d39..f28aa33 100644
  	VPRINT("adding low-priority default empty desync profile\n");
  	// add default empty profile
 diff --git a/tpws/tpws_conn.c b/tpws/tpws_conn.c
-index f74952a..4909566 100644
+index f74952a..c8b2e65 100644
 --- a/tpws/tpws_conn.c
 +++ b/tpws/tpws_conn.c
 @@ -66,6 +66,27 @@ static bool socks5_send_rep(int fd,uint8_t rep)
@@ -220,7 +220,25 @@ index f74952a..4909566 100644
  static bool socks5_send_rep_errno(int fd,int errn)
  {
  	uint8_t rep;
-@@ -535,6 +556,7 @@ static void free_conn(tproxy_conn_t *conn)
+@@ -355,6 +376,17 @@ static bool proxy_remote_conn_ack(tproxy_conn_t *conn, int sock_err)
+ 			{
+ 				conn->partner->socks_state=S_TCP;
+ 				bres = socks_send_rep_errno(conn->partner->socks_ver,conn->partner->fd,sock_err);
++				if (params.debug>=1)
++				{
++					char ip_port[48];
++					ntop46_port((struct sockaddr *)&conn->partner->dest, ip_port, sizeof(ip_port));
++					VPRINT("%s socks tcp %s : %s%s%s in %llums (resolve+connect)%s%s\n", zt_ts(),
++						sock_err ? "FAILED" : "connected",
++						conn->partner->track.hostname ? conn->partner->track.hostname : "",
++						conn->partner->track.hostname ? " " : "", ip_port,
++						(unsigned long long)(zt_now_ms() - conn->partner->t_accept_ms),
++						sock_err ? " err=" : "", sock_err ? strerror(sock_err) : "");
++				}
+ 				DBGPRINT("socks connection acknowledgement. bres=%d remote_errn=%d remote_fd=%d local_fd=%d\n",bres,sock_err,conn->fd,conn->partner->fd);
+ 			}
+ 			break;
+@@ -535,6 +567,7 @@ static void free_conn(tproxy_conn_t *conn)
  	if (conn->partner) conn->partner->partner=NULL;
  	free(conn->track.hostname);
  	if (conn->socks_ri) conn->socks_ri->ptr = NULL; // detach conn
@@ -228,7 +246,15 @@ index f74952a..4909566 100644
  	free(conn);
  }
  static tproxy_conn_t *new_conn(int fd, bool remote)
-@@ -988,9 +1010,30 @@ static bool handle_proxy_mode(tproxy_conn_t *conn, struct tailhead *conn_list)
+@@ -551,6 +584,7 @@ static tproxy_conn_t *new_conn(int fd, bool remote)
+ 	conn->state = CONN_UNAVAILABLE;
+ 	conn->fd = fd;
+ 	conn->remote = remote;
++	conn->t_accept_ms = zt_now_ms();
+ 
+ #ifdef SPLICE_PRESENT
+ 	// if dont tamper - both legs are spliced, create 2 pipes
+@@ -988,9 +1022,30 @@ static bool handle_proxy_mode(tproxy_conn_t *conn, struct tailhead *conn_list)
  							DBGPRINT("socks5 request invalid\n");
  							return false;
  						}
@@ -260,7 +286,7 @@ index f74952a..4909566 100644
  							DBGPRINT("socks5 unsupported command %02X\n", m->cmd);
  							socks5_send_rep(conn->fd,S5_REP_COMMAND_NOT_SUPPORTED);
  							return false;
-@@ -1053,6 +1096,10 @@ static bool handle_proxy_mode(tproxy_conn_t *conn, struct tailhead *conn_list)
+@@ -1053,6 +1108,10 @@ static bool handle_proxy_mode(tproxy_conn_t *conn, struct tailhead *conn_list)
  						return proxy_mode_connect_remote(conn,conn_list);
  					}
  					break;
@@ -271,7 +297,7 @@ index f74952a..4909566 100644
  				case S_WAIT_RESOLVE:
  					DBGPRINT("socks received message while in S_WAIT_RESOLVE. hanging up\n");
  					break;
-@@ -1430,6 +1477,11 @@ static void conn_close_timed_out(struct tailhead *conn_list, struct tailhead *cl
+@@ -1430,6 +1489,11 @@ static void conn_close_timed_out(struct tailhead *conn_list, struct tailhead *cl
  			DBGPRINT("closing timed out connection: fd=%d remote=%d\n",c->fd,c->remote);
  			close_tcp_conn(conn_list,close_list,c);
  		}
@@ -283,7 +309,7 @@ index f74952a..4909566 100644
  		c = cnext;
  	}
  }
-@@ -1471,6 +1523,13 @@ static bool handle_resolve_pipe(tproxy_conn_t **conn, struct tailhead *conn_list
+@@ -1471,6 +1535,13 @@ static bool handle_resolve_pipe(tproxy_conn_t **conn, struct tailhead *conn_list
  		DLOG_ERR("resolve_pipe not full read %zd\n",rd);
  		exit(1000);
  	}
@@ -297,7 +323,7 @@ index f74952a..4909566 100644
  	b = resolve_complete(ri, conn_list);
  	*conn = (tproxy_conn_t *)ri->ptr;
  	if (*conn) (*conn)->socks_ri = NULL;
-@@ -1564,7 +1623,7 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
+@@ -1564,7 +1635,7 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
  
  		DBGPRINT("epoll_wait\n");
  
@@ -306,7 +332,7 @@ index f74952a..4909566 100644
  		{
  			if (errno == EINTR) continue; // system call was interrupted
  			DLOG_PERROR("epoll_wait");
-@@ -1574,6 +1633,14 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
+@@ -1574,6 +1645,14 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
  
  		for (i = 0; i < num_events; i++)
  		{
@@ -322,7 +348,7 @@ index f74952a..4909566 100644
  			if (!conn)
  			{
 diff --git a/tpws/tpws_conn.h b/tpws/tpws_conn.h
-index 9c81550..45e600f 100644
+index 9c81550..41a5d13 100644
 --- a/tpws/tpws_conn.h
 +++ b/tpws/tpws_conn.h
 @@ -7,6 +7,7 @@
@@ -333,7 +359,7 @@ index 9c81550..45e600f 100644
  
  #define BACKLOG 10
  #define MAX_EPOLL_EVENTS 64
-@@ -65,10 +66,12 @@ struct tproxy_conn
+@@ -65,10 +66,13 @@ struct tproxy_conn
  		S_WAIT_REQUEST,
  		S_WAIT_RESOLVE,
  		S_WAIT_CONNECTION,
@@ -344,15 +370,16 @@ index 9c81550..45e600f 100644
  	uint8_t socks_ver;
  	struct resolve_item *socks_ri;
 +	struct udp_assoc *udp; // udp associate bound to this control connection
++	uint64_t t_accept_ms; // monotonic ms when local leg was accepted (socks timing log)
  
  	// these value are used in flow control. we do not use ET (edge triggered) polling
  	// if we dont disable notifications they will come endlessly until condition becomes false and will eat all cpu time
 diff --git a/tpws/udp.c b/tpws/udp.c
 new file mode 100644
-index 0000000..f78aaf4
+index 0000000..8651671
 --- /dev/null
 +++ b/tpws/udp.c
-@@ -0,0 +1,775 @@
+@@ -0,0 +1,821 @@
 +#define _GNU_SOURCE
 +#include <stdio.h>
 +#include <stdlib.h>
@@ -364,6 +391,7 @@ index 0000000..f78aaf4
 +#include <arpa/inet.h>
 +#include <netinet/in.h>
 +#include <sys/epoll.h>
++#include <time.h>
 +
 +#include "udp.h"
 +#include "params.h"
@@ -375,6 +403,23 @@ index 0000000..f78aaf4
 +#define S5_UDP_HDR_MAX	(4+1+255+2)
 +
 +static uint8_t udpbuf[UDP_BUF_SIZE + S5_UDP_HDR_MAX];
++
++uint64_t zt_now_ms(void)
++{
++	struct timespec ts;
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	return (uint64_t)ts.tv_sec*1000 + ts.tv_nsec/1000000;
++}
++const char *zt_ts(void)
++{
++	static char buf[16];
++	struct timespec ts;
++	struct tm tm;
++	clock_gettime(CLOCK_REALTIME, &ts);
++	localtime_r(&ts.tv_sec, &tm);
++	snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03ld", tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec/1000000);
++	return buf;
++}
 +
 +// global domain -> ip cache for socks5 udp requests with ATYP=domain
 +// (hev-socks5-tunnel / SocksTun with "Remote DNS" sends domain names instead of ips)
@@ -637,8 +682,13 @@ index 0000000..f78aaf4
 +	{
 +		char s[48];
 +		ntop46_port((const struct sockaddr*)&f->dst,s,sizeof(s));
-+		VPRINT("udp flow end (%s) : -> %s proto=%s out=%u pkts/%llu bytes in=%u pkts/%llu bytes%s\n",
++		char fr[32];
++		if (f->t_first_in_ms) snprintf(fr,sizeof(fr),"%llums",(unsigned long long)(f->t_first_in_ms - f->t_start_ms));
++		else snprintf(fr,sizeof(fr),"none");
++		VPRINT("udp flow end (%s) : -> %s proto=%s out=%u pkts/%llu bytes in=%u pkts/%llu bytes first_reply=%s fakes=%u%s%s\n",
 +			why, s, udp_proto_name(f->proto), f->out_count, (unsigned long long)f->out_bytes, f->in_count, (unsigned long long)f->in_bytes,
++			fr, f->fakes,
++			f->disc_sent>1 ? " DISCOVERY_RETRIES" : "",
 +			f->out_count && !f->in_count ? "  <-- NO REPLY" : "");
 +	}
 +}
@@ -749,14 +799,14 @@ index 0000000..f78aaf4
 +		return setsockopt(fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl))!=-1;
 +}
 +
-+static void udp_send_fakes(struct udp_assoc *ua, int fd, const sockaddr_in46 *dst, uint8_t proto)
++static int udp_send_fakes(struct udp_assoc *ua, int fd, const sockaddr_in46 *dst, uint8_t proto)
 +{
 +	const uint8_t *fake = params.udp_fake;
 +	size_t fake_size = params.udp_fake_size;
 +	int ttl, k;
 +
 +	ttl = dst->sa_family==AF_INET6 ? params.udp_fake_ttl6 : params.udp_fake_ttl;
-+	if (!ttl) return;
++	if (!ttl) return 0;
 +
 +	switch(proto)
 +	{
@@ -770,12 +820,12 @@ index 0000000..f78aaf4
 +			if (params.udp_fake_stun_size) { fake=params.udp_fake_stun; fake_size=params.udp_fake_stun_size; }
 +			break;
 +	}
-+	if (!fake_size) return;
++	if (!fake_size) return 0;
 +
 +	if (!udp_set_ttl(fd, dst->sa_family, ttl))
 +	{
 +		DLOG_PERROR("udp setsockopt (fake ttl)");
-+		return;
++		return 0;
 +	}
 +	for (k=0;k<params.udp_fake_repeats;k++)
 +	{
@@ -795,6 +845,7 @@ index 0000000..f78aaf4
 +		ntop46_port((struct sockaddr*)dst,s,sizeof(s));
 +		DBGPRINT("udp desync : %d fake(s) size=%zu ttl=%d proto=%s -> %s\n", k, fake_size, ttl, udp_proto_name(proto), s);
 +	}
++	return k;
 +}
 +
 +// parse socks5 udp request header. returns header length or 0 if invalid
@@ -890,20 +941,31 @@ index 0000000..f78aaf4
 +	{
 +		uint8_t proto = udp_detect_proto(data,len);
 +		bool desync = params.udp_desync && port_filters_in_range(&params.udp_pf, ntohs(sa46_port(&dst)));
-+		if (!f->out_count)
++		int nf = 0;
++		bool first = !f->out_count;
++		if (first)
 +		{
 +			f->proto = proto;
-+			if (params.debug>=1)
-+			{
-+				char s[48];
-+				ntop46_port((struct sockaddr*)&dst,s,sizeof(s));
-+				VPRINT("udp flow start : -> %s proto=%s len=%zu desync=%s\n", s, udp_proto_name(proto), len, desync ? "yes" : "no");
-+			}
++			f->t_start_ms = zt_now_ms();
 +		}
 +		f->last = now;
 +		if (desync && f->out_count < params.udp_desync_count)
 +			// packet's own protocol first, else flow's protocol (rtp after discord ip discovery)
-+			udp_send_fakes(ua,fd,&dst,proto ? proto : f->proto);
++			nf = udp_send_fakes(ua,fd,&dst,proto ? proto : f->proto);
++		f->fakes += nf;
++		if (proto==UDP_PROTO_DISCORD) f->disc_sent++;
++		if (params.debug>=1)
++		{
++			char s[48];
++			ntop46_port((struct sockaddr*)&dst,s,sizeof(s));
++			if (first)
++				// fakes (if any) are already sent at this point - before the real first datagram
++				VPRINT("%s udp flow start : -> %s proto=%s len=%zu desync=%s fakes_before_first=%d\n",
++					zt_ts(), s, udp_proto_name(proto), len, desync ? "yes" : "no", nf);
++			else if (proto==UDP_PROTO_DISCORD && !f->in_count)
++				VPRINT("%s udp discord ip discovery RETRY #%u -> %s after %llums without reply\n",
++					zt_ts(), f->disc_sent-1, s, (unsigned long long)(zt_now_ms()-f->t_start_ms));
++		}
 +		f->out_count++;
 +		f->out_bytes += len;
 +	}
@@ -1082,6 +1144,17 @@ index 0000000..f78aaf4
 +			for (f=ua->flows;f;f=f->next)
 +				if (sa46_eq(&f->dst,&src))
 +				{
++					if (!f->in_count)
++					{
++						f->t_first_in_ms = zt_now_ms();
++						if (params.debug>=1)
++						{
++							char s[48];
++							ntop46_port((struct sockaddr*)&src,s,sizeof(s));
++							VPRINT("%s udp flow first reply : <- %s after %llums (out=%u before reply)\n",
++								zt_ts(), s, (unsigned long long)(f->t_first_in_ms - f->t_start_ms), f->out_count);
++						}
++					}
 +					f->in_count++;
 +					f->in_bytes += rd;
 +					f->last = time(NULL);
@@ -1130,10 +1203,10 @@ index 0000000..f78aaf4
 +}
 diff --git a/tpws/udp.h b/tpws/udp.h
 new file mode 100644
-index 0000000..ed6de64
+index 0000000..9bcfccd
 --- /dev/null
 +++ b/tpws/udp.h
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,92 @@
 +#pragma once
 +
 +// SOCKS5 UDP ASSOCIATE support for tpws
@@ -1171,6 +1244,9 @@ index 0000000..ed6de64
 +	unsigned int in_count;		// datagrams received from dst
 +	uint64_t out_bytes, in_bytes;
 +	uint8_t proto;			// detected from first datagram
++	uint64_t t_start_ms, t_first_in_ms;	// monotonic ms: first datagram out, first datagram in (0 = none)
++	unsigned int disc_sent;		// discord ip discovery requests sent (>1 means client retried)
++	unsigned int fakes;		// fakes sent in this flow
 +	struct udp_flow *next;
 +};
 +
@@ -1214,6 +1290,10 @@ index 0000000..ed6de64
 +// returns false if association should be closed
 +bool udp_handle_event(struct udp_sock *us, uint32_t events);
 +bool udp_assoc_expired(const struct udp_assoc *ua, time_t now);
++// monotonic milliseconds and wall clock "HH:MM:SS.mmm" for timing logs
++uint64_t zt_now_ms(void);
++const char *zt_ts(void);
++
 +// called from main loop when resolver finishes an item whose ptr is udp-tagged. does not free ri.
 +void udp_resolve_complete(struct resolve_item *ri);
 +
