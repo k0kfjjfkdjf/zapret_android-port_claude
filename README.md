@@ -4,6 +4,8 @@
 (`VpnService`). Трафик никуда не уходит — «VPN» локальный, он нужен только чтобы перехватить
 соединения и применить к ним техники обхода в духе [zapret](https://github.com/bol-van/zapret).
 
+> Отдельный проект в этом же репозитории: **[zapret-termux](https://github.com/k0kfjjfkdjf/zapret_android-port_claude/tree/termux-zapret-udp-script)**, tpws из zapret с поддержкой UDP в Termux + proot-distro (ветка `termux-zapret-udp-script`).
+
 *English summary below.*
 
 ## Как это устроено
