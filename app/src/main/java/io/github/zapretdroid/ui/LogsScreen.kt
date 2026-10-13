@@ -259,12 +259,15 @@ private fun logFileName(): String {
     return "zapretdroid-$stamp.log"
 }
 
-private fun shareLog(context: Context, file: File) {
+private fun shareLog(context: Context, file: File) = shareFile(context, file, logFileName(), "journal shared")
+
+/** Shares a copy of [file] under [name] through the FileProvider. */
+internal fun shareFile(context: Context, file: File, name: String, logLine: String) {
     runCatching {
         val dir = File(context.cacheDir, "share").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
-        AppLog.i("journal shared")
-        val copy = File(dir, logFileName())
+        AppLog.i(logLine)
+        val copy = File(dir, name)
         file.copyTo(copy, overwrite = true)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.logs", copy)
         val send = Intent(Intent.ACTION_SEND)

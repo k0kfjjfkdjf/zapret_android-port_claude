@@ -97,7 +97,7 @@
     <string name="title_test">Подбор стратегии</string>
     <string name="test_open">Подобрать стратегию автоматически</string>
     <string name="test_open_desc">Перебор стратегий на выбранных сайтах, как blockcheck в zapret</string>
-    <string name="test_intro">Каждая стратегия запускается как локальный прокси, и через неё открываются сайты по HTTPS: соединение, TLS-рукопожатие с проверкой сертификата, HTTP-ответ и до 128 КБ тела. Работает и с включённым VPN, и без него. Проверяется только TCP/TLS, не QUIC.</string>
+    <string name="test_intro">Каждая стратегия запускается как локальный прокси, и через неё открываются сайты по HTTPS: соединение, TLS-рукопожатие с проверкой сертификата, HTTP-ответ и до 128 КБ тела. Работает и с включённым VPN, и без него. QUIC и звонки (UDP) проверяются в режиме «UDP».</string>
     <string name="sites_youtube">YouTube</string>
     <string name="sites_discord">Discord</string>
     <string name="sites_other">Другое</string>
@@ -171,4 +171,7 @@
     <string name="test_total_ms">всего %1$d мс</string>
     <string name="test_probe_ok">✓ %1$s: доступен, сервер ответил %2$s · %3$s</string>
     <string name="test_probe_fail">✗ %1$s: %2$s · %3$s</string>
+    <string name="test_udp">UDP: QUIC и звонки (%1$d)</string>
+    <string name="test_udp_hint">Каждый сайт проверяется по QUIC (HTTP/3, UDP 443): отправляется QUIC Initial с именем сайта, любой ответ сервера засчитывается. Также проверяются STUN-серверы, которые используют звонки: %1$s. Без root обход для UDP — это фейковые датаграммы с малым TTL перед настоящими.</string>
+    <string name="test_share_report">Поделиться отчётом подбора</string>
 </resources>

@@ -25,6 +25,12 @@ strategies += re.findall(r'^\s*"(-[^"]*)",?\s*$', plan, re.M)
 strategies += ["--fake -1 --ttl %d" % t for t in range(3, 13)]
 strategies += ["--disorder 1 --fake -1 --ttl %d --fake-data {fake:tls_clienthello_www_google_com.bin}" % t
                for t in (4, 6, 10)]
+# UDP candidates: keep in sync with TestPlan.udp.
+u = consts["UDP_FAKES"]
+strategies += ["--proto u " + c for c in [
+    "--udp-fake 1 --ttl 4", "--udp-fake 3 --ttl 4", "--udp-fake 6 --ttl 4", "--udp-fake 6 --ttl 8", u,
+    u.replace("--udp-desync 4", "--udp-desync 4:50"), u.replace("--ttl 4", "--ttl 2"),
+    u.replace("--ttl 4", "--ttl 6"), u.replace("--udp-fake 6", "--udp-fake 10")]]
 
 # ByeByeDPI community strategies, with {sni} as the tester substitutes it.
 community = root + "/src/main/assets/strategies/byebyedpi.list"

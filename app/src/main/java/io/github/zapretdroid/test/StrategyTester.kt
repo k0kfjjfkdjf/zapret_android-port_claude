@@ -15,6 +15,9 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
@@ -31,7 +34,8 @@ data class StrategyResult(val args: String, val probes: List<ProbeResult>) {
 /**
  * Tries strategies one by one against a list of sites, the way zapret's blockcheck does, but
  * through the ByeDPI engine as a local SOCKS proxy in the app process. The app is excluded from
- * the VPN, so the tests reach the network directly even while the VPN is on.
+ * the VPN, so the tests reach the network directly even while the VPN is on. In UDP mode the
+ * sites are checked over QUIC and STUN servers with a Binding request (see [UdpProbe]).
  *
  * State is held in Compose snapshot state, so the screen follows the run and the run survives
  * leaving the screen.
@@ -50,6 +54,11 @@ object StrategyTester {
     var message by mutableStateOf<String?>(null)
         private set
 
+    /** Report of the last run: settings, every probe and the ranking. */
+    var report by mutableStateOf<java.io.File?>(null)
+        private set
+    private val reportLines = mutableListOf<String>()
+
     @Volatile
     private var cancelled = false
 
@@ -58,7 +67,7 @@ object StrategyTester {
     private const val PARALLEL = 8
     private const val TEST_LOG_LIMIT = 8L * 1024 * 1024
 
-    fun start(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int = 1) {
+    fun start(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int = 1, udp: Boolean = false) {
         if (running) return
         val app = context.applicationContext
         running = true
@@ -66,14 +75,18 @@ object StrategyTester {
         baseline = null
         results = emptyList()
         message = null
+        report = null
+        synchronized(reportLines) { reportLines.clear() }
         progress = 0 to candidates.size + 1
         thread(name = "strategy-test") {
             try {
-                run(app, hosts, candidates, dns, attempts.coerceIn(1, 5))
+                run(app, hosts, candidates, dns, attempts.coerceIn(1, 5), udp)
             } catch (e: Throwable) {
                 AppLog.e("strategy test failed", e, source = "test")
+                note("ERROR: $e")
                 message = e.message ?: e.toString()
             } finally {
+                writeReport(app)
                 running = false
                 currentArgs = ""
             }
@@ -85,36 +98,72 @@ object StrategyTester {
         cancelled = true
     }
 
-    private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int) {
-        AppLog.i(
-            "strategy test: ${candidates.size} strategies, $attempts attempt(s) per site, timeout ${TIMEOUT_MS} ms, " +
-                "DNS $dns, sites: ${hosts.joinToString()}",
-            source = "test",
+    /** A line for both the journal and the run report. */
+    private fun log(line: String, warn: Boolean = false) {
+        if (warn) AppLog.w("strategy test: $line", source = "test") else AppLog.i("strategy test: $line", source = "test")
+        note(line)
+    }
+
+    private fun note(line: String) {
+        val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        synchronized(reportLines) { reportLines += "$stamp $line" }
+    }
+
+    private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int, udp: Boolean) {
+        val udpTargets = if (udp) TestPlan.udpTargets(hosts) else emptyList()
+        log(
+            "${if (udp) "UDP" else "TCP"} mode, ${candidates.size} strategies, $attempts attempt(s) per target, " +
+                "timeout ${TIMEOUT_MS} ms, DNS $dns, " +
+                if (udp) "targets: ${udpTargets.joinToString { it.label }}" else "sites: ${hosts.joinToString()}",
         )
         // Engine output of the test proxy (connections, groups, detected blocks) goes to the journal too.
         if (NativeLog.start(AppLog.file.absolutePath, TEST_LOG_LIMIT) == null) {
             AppLog.w("strategy test: engine output is not captured", source = "test")
         }
-        val addresses = resolveAll(hosts, dns)
+        val addresses = resolveAll((hosts + udpTargets.map { it.host }).distinct(), dns)
         val fakeDir = FakePayloads.install(context)
         val listDir = HostLists.dir(context)
         val pool = Executors.newFixedThreadPool(PARALLEL)
         try {
-            val base = test("", hosts, addresses, attempts, pool, fakeDir, listDir)
+            val base = test("", hosts, udpTargets, addresses, attempts, pool, fakeDir, listDir)
             baseline = base
-            AppLog.i("strategy test: result without bypass ${base.passed}/${base.probes.size}", source = "test")
+            log("result without bypass ${base.passed}/${base.probes.size}")
             progress = 1 to candidates.size + 1
             for ((index, candidate) in candidates.withIndex()) {
                 if (cancelled) break
-                val result = test(candidate, hosts, addresses, attempts, pool, fakeDir, listDir)
+                val result = test(candidate, hosts, udpTargets, addresses, attempts, pool, fakeDir, listDir)
                 results = (results + result).sortedWith(compareByDescending<StrategyResult> { it.passed }.thenBy { it.averageMillis })
-                AppLog.i("strategy test: result ${result.passed}/${result.probes.size} for $candidate", source = "test")
+                log("result ${result.passed}/${result.probes.size} for $candidate")
                 progress = index + 2 to candidates.size + 1
             }
         } finally {
             pool.shutdownNow()
         }
-        AppLog.i("strategy test: ${if (cancelled) "cancelled" else "finished"}", source = "test")
+        log(if (cancelled) "cancelled" else "finished")
+    }
+
+    /** Writes the run report next to the journal: the log of this run and the final ranking. */
+    private fun writeReport(context: Context) {
+        runCatching {
+            val file = java.io.File(AppLog.file.parentFile, "test-report.txt")
+            file.bufferedWriter().use { out ->
+                out.appendLine("ZapretDroid strategy test, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+                out.appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                out.appendLine()
+                out.appendLine("== Ranking ==")
+                baseline?.let { out.appendLine("without bypass: ${it.passed}/${it.probes.size}") }
+                results.forEach { r ->
+                    out.appendLine("${r.passed}/${r.probes.size}, avg ${r.averageMillis} ms: ${r.args}")
+                    r.bySite.forEach { (target, probes) ->
+                        out.appendLine("    $target: " + probes.joinToString(" ") { if (it.ok) "ok" else it.stage.name.lowercase() })
+                    }
+                }
+                out.appendLine()
+                out.appendLine("== Log ==")
+                synchronized(reportLines) { reportLines.forEach { out.appendLine(it) } }
+            }
+            report = file
+        }.onFailure { AppLog.e("strategy test: report not written", it, source = "test") }
     }
 
     /** Resolves names through the configured DNS server; falls back to the system resolver. */
@@ -123,16 +172,17 @@ object StrategyTester {
         return hosts.associateWith { host ->
             val viaServer = server?.let { s ->
                 runCatching { DnsClient.resolve(host, s).firstOrNull() }
-                    .onFailure { AppLog.w("strategy test: DNS $dns failed for $host: ${it.message}", source = "test") }
+                    .onFailure { log("DNS $dns failed for $host: ${it.message}", warn = true) }
                     .getOrNull()
             }
             viaServer ?: runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
-        }.also { map -> AppLog.i("strategy test: resolved " + map.entries.joinToString { "${it.key}=${it.value?.hostAddress}" }, source = "test") }
+        }.also { map -> log("resolved " + map.entries.joinToString { "${it.key}=${it.value?.hostAddress}" }) }
     }
 
     private fun test(
         candidate: String,
         hosts: List<String>,
+        udpTargets: List<UdpTarget>,
         addresses: Map<String, InetAddress?>,
         attempts: Int,
         pool: java.util.concurrent.ExecutorService,
@@ -140,7 +190,7 @@ object StrategyTester {
         listDir: java.io.File,
     ): StrategyResult {
         currentArgs = candidate
-        AppLog.i("strategy test: --- ${candidate.ifEmpty { "without bypass" }} ---", source = "test")
+        log("--- ${candidate.ifEmpty { "without bypass" }} ---")
         val args = listOf("ciadpi", "--ip", "127.0.0.1", "--port", PORT.toString(), "--conn-log") +
             ArgTemplates.resolve(splitArgs(candidate), fakeDir, listDir)
         val engine = ByeDpi()
@@ -148,20 +198,22 @@ object StrategyTester {
         val engineThread = thread(name = "test-engine") { exitCode = engine.startProxy(args.toTypedArray()) }
         try {
             if (!awaitListening(engineThread)) {
-                AppLog.e("strategy test: engine did not start for '$candidate' (code $exitCode)", source = "test")
-                return StrategyResult(candidate, hosts.map {
+                log("engine did not start for '$candidate' (code $exitCode)", warn = true)
+                val names = if (udpTargets.isEmpty()) hosts else udpTargets.map { it.label }
+                return StrategyResult(candidate, names.map {
                     ProbeResult(it, null, false, "engine did not start (code $exitCode)", ProbeStage.PROXY, totalMs = 0)
                 })
             }
             val probes = mutableListOf<ProbeResult>()
             repeat(attempts) { attempt ->
-                val tasks = hosts.map { host ->
-                    Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) }
+                val tasks = if (udpTargets.isEmpty()) {
+                    hosts.map { host -> Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) } }
+                } else {
+                    udpTargets.map { target -> Callable { UdpProbe.probe(PORT, target, addresses[target.host], TIMEOUT_MS) } }
                 }
                 pool.invokeAll(tasks).map { it.get() }.forEach { probe ->
                     val prefix = if (attempts > 1) "attempt ${attempt + 1}: " else ""
-                    if (probe.ok) AppLog.i("strategy test: $prefix${probe.summary()}", source = "test")
-                    else AppLog.w("strategy test: $prefix${probe.summary()}", source = "test")
+                    log(prefix + probe.summary(), warn = !probe.ok)
                     probes += probe
                 }
             }

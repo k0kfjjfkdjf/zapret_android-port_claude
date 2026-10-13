@@ -3,12 +3,13 @@ package io.github.zapretdroid.test
 import android.content.Context
 import androidx.annotation.StringRes
 import io.github.zapretdroid.R
+import io.github.zapretdroid.core.Strategies
 
 /** A group of sites that are usually blocked together (assets/sites/<id>.sites, from ByeByeDPI). */
 data class SiteGroup(val id: String, @StringRes val title: Int, val hosts: List<String>)
 
 /** A set of strategies to try. */
-enum class StrategySet { QUICK, FULL, COMMUNITY }
+enum class StrategySet { QUICK, FULL, COMMUNITY, UDP }
 
 object TestPlan {
     private val GROUPS = listOf(
@@ -34,7 +35,31 @@ object TestPlan {
         // Strategies collected by the ByeByeDPI community (assets/strategies/byebyedpi.list).
         StrategySet.COMMUNITY -> readLines(context, "strategies/byebyedpi.list")
             .map { it.replace("{sni}", sni.ifBlank { DEFAULT_SNI }) }
+        StrategySet.UDP -> udp
     }
+
+    /** STUN servers used by calls (Google Meet, WebRTC, Discord voice also talks STUN). */
+    val stunServers = listOf(
+        UdpTarget(UdpTarget.Kind.STUN, "stun.l.google.com", 19302),
+        UdpTarget(UdpTarget.Kind.STUN, "stun.cloudflare.com", 3478),
+    )
+
+    /** UDP targets for a site list: QUIC (HTTP/3) on port 443 of every site, plus STUN servers. */
+    fun udpTargets(hosts: List<String>): List<UdpTarget> =
+        hosts.map { UdpTarget(UdpTarget.Kind.QUIC, it, 443) } + stunServers
+
+    /** UDP strategies: fake datagrams with a low TTL before the real ones, then more of them. */
+    val udp = listOf(
+        "--udp-fake 1 --ttl 4",
+        "--udp-fake 3 --ttl 4",
+        "--udp-fake 6 --ttl 4",
+        "--udp-fake 6 --ttl 8",
+        Strategies.UDP_FAKES,
+        Strategies.UDP_FAKES.replace("--udp-desync 4", "--udp-desync 4:50"),
+        Strategies.UDP_FAKES.replace("--ttl 4", "--ttl 2"),
+        Strategies.UDP_FAKES.replace("--ttl 4", "--ttl 6"),
+        Strategies.UDP_FAKES.replace("--udp-fake 6", "--udp-fake 10"),
+    ).map { "--proto u $it" }
 
     private fun readLines(context: Context, asset: String): List<String> =
         context.assets.open(asset).bufferedReader().useLines { lines ->

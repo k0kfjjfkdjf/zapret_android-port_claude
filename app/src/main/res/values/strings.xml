@@ -99,7 +99,7 @@
     <string name="title_test">Find a strategy</string>
     <string name="test_open">Find a strategy automatically</string>
     <string name="test_open_desc">Try strategies one by one against chosen sites, like zapret\'s blockcheck</string>
-    <string name="test_intro">Each strategy is started as a local proxy and the sites are opened over HTTPS through it: connection, TLS handshake with certificate check, HTTP response and up to 128 KB of the body. Works with the VPN on or off. Only TCP/TLS is checked, not QUIC.</string>
+    <string name="test_intro">Each strategy is started as a local proxy and the sites are opened over HTTPS through it: connection, TLS handshake with certificate check, HTTP response and up to 128 KB of the body. Works with the VPN on or off. QUIC and calls (UDP) are checked in the UDP mode.</string>
     <string name="sites_youtube">YouTube</string>
     <string name="sites_discord">Discord</string>
     <string name="sites_other">Other</string>
@@ -173,4 +173,7 @@
     <string name="test_total_ms">total %1$d ms</string>
     <string name="test_probe_ok">✓ %1$s: reachable, server replied %2$s · %3$s</string>
     <string name="test_probe_fail">✗ %1$s: %2$s · %3$s</string>
+    <string name="test_udp">UDP: QUIC and calls (%1$d)</string>
+    <string name="test_udp_hint">Each site is checked over QUIC (HTTP/3, UDP 443): a QUIC Initial with the site name is sent and any server reply counts as passed. STUN servers used by calls are checked too: %1$s. Without root, UDP desync means fake datagrams with a low TTL before the real ones.</string>
+    <string name="test_share_report">Share test report</string>
 </resources>

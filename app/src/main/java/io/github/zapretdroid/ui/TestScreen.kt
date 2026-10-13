@@ -51,6 +51,9 @@ import io.github.zapretdroid.test.StrategyResult
 import io.github.zapretdroid.test.StrategySet
 import io.github.zapretdroid.test.StrategyTester
 import io.github.zapretdroid.test.TestPlan
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -132,6 +135,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                                             StrategySet.QUICK -> R.string.test_quick
                                             StrategySet.FULL -> R.string.test_full
                                             StrategySet.COMMUNITY -> R.string.test_community
+                                            StrategySet.UDP -> R.string.test_udp
                                         },
                                         count,
                                     ),
@@ -139,6 +143,15 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                             },
                         )
                     }
+                }
+            }
+            if (set == StrategySet.UDP) {
+                item {
+                    Text(
+                        stringResource(R.string.test_udp_hint, TestPlan.stunServers.joinToString { "${it.host}:${it.port}" }),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             if (set == StrategySet.COMMUNITY) {
@@ -174,11 +187,25 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                     }
                 } else {
                     Button(
-                        onClick = { StrategyTester.start(context, hosts, candidates, settings.dns, attempts) },
+                        onClick = { StrategyTester.start(context, hosts, candidates, settings.dns, attempts, udp = set == StrategySet.UDP) },
                         enabled = hosts.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.test_start, hosts.size, candidates.size))
+                        val targets = if (set == StrategySet.UDP) TestPlan.udpTargets(hosts).size else hosts.size
+                        Text(stringResource(R.string.test_start, targets, candidates.size))
+                    }
+                }
+            }
+            StrategyTester.report?.takeIf { !running }?.let { file ->
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(file.lastModified()))
+                            shareFile(context, file, "zapretdroid-test-$stamp.txt", "strategy test report shared")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.test_share_report))
                     }
                 }
             }
