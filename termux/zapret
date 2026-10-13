@@ -1,0 +1,1270 @@
+#!/usr/bin/env bash
+
+# ============================================
+# Управление zapret (SOCKS5/tpws) в Termux+proot
+# ============================================
+
+ZAPRET_DIR="/opt/zapret"
+TPWS_BIN="$ZAPRET_DIR/tpws/tpws"
+STRATEGY_FILE="$HOME/.zapret_strategy"
+STRATEGIES_FILE="$HOME/.zapret_strategies"
+BASHRC="$HOME/.bashrc"
+SCRIPT_PATH="/usr/local/bin/zapret"
+
+PORT_FILE="$HOME/.zapret_port"
+HOSTLIST_FILE="$HOME/.zapret_use_hostlist"
+HOSTLIST_SELECT_FILE="$HOME/.zapret_selected_hostlist"
+HOSTLIST_DIR="$ZAPRET_DIR/ipset"
+
+UDP_FILE="$HOME/.zapret_use_udp"
+UDP_PROFILE_FILE="$HOME/.zapret_udp_profile"
+UDP_CUSTOM_FILE="$HOME/.zapret_udp_custom"
+FAKE_DIR="$ZAPRET_DIR/files/fake"
+ZAPRET_REPO="https://github.com/bol-van/zapret.git"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+declare -A STRATEGIES
+declare -a STRATEGY_NAMES
+INTERACTIVE=0   # 1 — меню, 0 — CLI (без вопросов)
+
+# -------------------------------------------------------------------
+# Вспомогательные функции
+# -------------------------------------------------------------------
+press_any_key() {
+    echo ""
+    read -n 1 -s -r -p "Нажмите любую клавишу для продолжения..."
+    echo ""
+}
+
+run_with_sudo() {
+    if [[ $EUID -eq 0 ]]; then
+        "$@"
+    elif command -v sudo &>/dev/null; then
+        sudo "$@"
+    else
+        echo -e "${RED}Ошибка: требуется sudo, но он не установлен.${NC}"
+        return 1
+    fi
+}
+
+can_write_to_dir() {
+    local dir="$1"
+    if [[ -d "$dir" && -w "$dir" ]] || [[ ! -d "$dir" && -w "$(dirname "$dir")" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+is_zapret_installed() {
+    [[ -f "$TPWS_BIN" ]]
+}
+
+# -------------------------------------------------------------------
+# Настройки порта и hostlist
+# -------------------------------------------------------------------
+get_current_port() {
+    if [[ -f "$PORT_FILE" ]]; then
+        cat "$PORT_FILE"
+    else
+        echo "1080" > "$PORT_FILE"
+        echo "1080"
+    fi
+}
+
+set_port() {
+    echo "$1" > "$PORT_FILE"
+}
+
+get_use_hostlist() {
+    if [[ -f "$HOSTLIST_FILE" ]]; then
+        cat "$HOSTLIST_FILE"
+    else
+        echo "0" > "$HOSTLIST_FILE"
+        echo "0"
+    fi
+}
+
+set_use_hostlist() {
+    echo "$1" > "$HOSTLIST_FILE"
+}
+
+get_selected_hostlist() {
+    if [[ -f "$HOSTLIST_SELECT_FILE" ]]; then
+        cat "$HOSTLIST_SELECT_FILE"
+    else
+        echo ""
+    fi
+}
+
+set_selected_hostlist() {
+    echo "$1" > "$HOSTLIST_SELECT_FILE"
+}
+
+get_hostlist_files() {
+    if [[ -d "$HOSTLIST_DIR" ]]; then
+        find "$HOSTLIST_DIR" -maxdepth 1 -type f -printf "%f\n" 2>/dev/null | sort
+    else
+        echo ""
+    fi
+}
+
+# -------------------------------------------------------------------
+# UDP (SOCKS5 UDP ASSOCIATE, нужен патченый tpws)
+# -------------------------------------------------------------------
+declare -A UDP_PROFILES
+declare -a UDP_PROFILE_NAMES
+
+init_udp_profiles() {
+    local q="--udp-fake-quic=$FAKE_DIR/quic_initial_www_google_com.bin"
+    local fk="$q --udp-fake-discord=$FAKE_DIR/discord-ip-discovery-with-port.bin --udp-fake-stun=$FAKE_DIR/stun.bin"
+    # порты голоса Discord: 19294-19344 и 50000-65535, 3478 - STUN
+    local dports="443,3478,19294-19344,50000-65535"
+    UDP_PROFILES=(
+        ["relay"]=""
+        ["discord"]="--udp-desync-ports=$dports --udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=4 $fk"
+        ["discord_low_ttl"]="--udp-desync-ports=$dports --udp-fake-ttl=2 --udp-fake-repeats=8 --udp-desync-count=6 $fk"
+        ["discord_high_ttl"]="--udp-desync-ports=$dports --udp-fake-ttl=6 --udp-fake-repeats=6 --udp-desync-count=4 $fk"
+        ["quic"]="--udp-desync-ports=443 --udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=2 $q"
+        ["all_ports"]="--udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=4 $fk"
+    )
+    UDP_PROFILE_NAMES=("discord" "discord_low_ttl" "discord_high_ttl" "quic" "all_ports" "relay")
+    if [[ -f "$UDP_CUSTOM_FILE" ]] && [[ -n "$(cat "$UDP_CUSTOM_FILE")" ]]; then
+        UDP_PROFILES["custom"]="$(cat "$UDP_CUSTOM_FILE")"
+        UDP_PROFILE_NAMES+=("custom")
+    fi
+}
+
+get_use_udp() {
+    if [[ -f "$UDP_FILE" ]]; then
+        cat "$UDP_FILE"
+    else
+        echo "0"
+    fi
+}
+
+set_use_udp() {
+    echo "$1" > "$UDP_FILE"
+}
+
+get_udp_profile() {
+    local p="discord"
+    [[ -f "$UDP_PROFILE_FILE" ]] && p=$(cat "$UDP_PROFILE_FILE")
+    [[ "$p" == "quic_discord" || "$p" == "low_ttl" ]] && p="discord"   # профили старой версии
+    [[ -z "${UDP_PROFILES[$p]+x}" ]] && p="discord"
+    echo "$p"
+}
+
+tpws_supports_udp() {
+    [[ -x "$TPWS_BIN" ]] && "$TPWS_BIN" --help 2>&1 | grep -q -- "--socks-udp"
+}
+
+restart_if_running() {
+    if pgrep -f "tpws.*--socks" > /dev/null; then
+        restart_zapret
+    fi
+}
+
+toggle_udp() {
+    if [[ "$(get_use_udp)" == "1" ]]; then
+        set_use_udp "0"
+        echo -e "${GREEN}UDP выключен.${NC}"
+    else
+        if ! tpws_supports_udp; then
+            echo -e "${RED}Установленный tpws не поддерживает UDP. Выполните: zapret update${NC}" >&2
+            return 1
+        fi
+        set_use_udp "1"
+        echo -e "${GREEN}UDP включён (профиль: $(get_udp_profile)).${NC}"
+    fi
+    restart_if_running
+}
+
+set_udp_profile() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        if [[ $INTERACTIVE -eq 0 ]]; then
+            echo "Error: profile name required. Use: udp-profile <name>" >&2
+            return 1
+        fi
+        echo -e "${BLUE}UDP-профили:${NC}"
+        local i=1 cur
+        cur=$(get_udp_profile)
+        for n in "${UDP_PROFILE_NAMES[@]}"; do
+            if [[ "$n" == "$cur" ]]; then
+                echo -e "  $i) $n ${GREEN}(текущий)${NC}"
+            else
+                echo "  $i) $n"
+            fi
+            echo "       ${UDP_PROFILES[$n]:-(без десинхронизации, только проксирование)}"
+            ((i++))
+        done
+        echo "  $i) задать свои параметры (custom)"
+        read -p "Номер (0 для отмены): " num
+        [[ "$num" == "0" || -z "$num" ]] && return 0
+        if [[ "$num" == "$i" ]]; then
+            echo "Пример: --udp-desync-ports=443 --udp-fake-ttl=5 --udp-fake-repeats=4"
+            read -p "Параметры: " custom
+            custom=$(echo "$custom" | xargs)
+            [[ -z "$custom" ]] && { echo -e "${RED}Пусто.${NC}"; return 1; }
+            echo "$custom" > "$UDP_CUSTOM_FILE"
+            init_udp_profiles
+            name="custom"
+        elif [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num < i )); then
+            name="${UDP_PROFILE_NAMES[$((num-1))]}"
+        else
+            echo -e "${RED}Неверный номер.${NC}"
+            return 1
+        fi
+    fi
+    if [[ -z "${UDP_PROFILES[$name]+x}" ]]; then
+        echo -e "${RED}Нет UDP-профиля '$name'. Доступны: ${UDP_PROFILE_NAMES[*]}${NC}" >&2
+        return 1
+    fi
+    echo "$name" > "$UDP_PROFILE_FILE"
+    echo -e "${GREEN}UDP-профиль: $name${NC}"
+    [[ "$(get_use_udp)" == "1" ]] && restart_if_running
+    return 0
+}
+
+set_udp_custom() {
+    local params="$*"
+    if [[ -z "$params" ]]; then
+        echo "Error: use: udp-custom \"--udp-fake-ttl=5 ...\"" >&2
+        return 1
+    fi
+    echo "$params" > "$UDP_CUSTOM_FILE"
+    init_udp_profiles
+    set_udp_profile custom
+}
+
+# -------------------------------------------------------------------
+# Управление стратегиями
+# -------------------------------------------------------------------
+create_default_strategies() {
+    STRATEGIES=(
+        ["default"]="--filter-tcp=80,443 --split-pos=1,midsld --disorder"
+        ["oob"]="--filter-tcp=80,443 --split-pos=1,midsld --disorder --oob"
+        ["simple"]="--filter-tcp=80,443 --split-pos=1 --disorder"
+        ["advanced"]="--filter-tcp=80,443 --split-pos=1,3,5,7,9 --disorder --oob"
+        ["discord"]="--filter-tcp=80,443 --split-pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1 --disorder --oob"
+        ["discord_ultimate"]="--filter-tcp=80,443 --split-pos=1,sniext,sniext+1,sniext+2,host,host+1,host+2,midsld,midsld+1,midsld+2,endhost-2,endhost-1,endhost --oob --disorder --tlsrec=sniext+1,sniext+2,sniext+3"
+        ["ultimate_universal"]="--filter-tcp=80 --split-pos=host,host+1,host+2,endhost-1,endhost --oob --disorder --methodspace --methodeol --hostcase --new --filter-tcp=443 --split-pos=1,sniext,sniext+1,sniext+2,midsld,midsld+1,midsld+2,endhost-1,endhost --oob --disorder --tlsrec=sniext+1,sniext+2"
+        ["aggressive_16"]="--filter-tcp=80 --split-pos=host,host+1,host+2,endhost-2,endhost-1,endhost --oob --disorder --methodspace --methodeol --hostcase --filter-tcp=443 --split-pos=1,sniext,sniext+1,sniext+2,midsld,midsld+1,midsld+2,endhost-2,endhost-1,endhost --oob --disorder"
+        ["classic_advanced"]="--filter-tcp=80,443 --split-pos=1,2,3,4,5,6,7,8 --disorder --oob"
+    )
+    STRATEGY_NAMES=(
+        "default" "oob" "simple" "advanced" "discord" "discord_ultimate"
+        "ultimate_universal" "aggressive_16" "classic_advanced"
+    )
+}
+
+save_strategies() {
+    > "$STRATEGIES_FILE"
+    for name in "${STRATEGY_NAMES[@]}"; do
+        echo "$name|${STRATEGIES[$name]}" >> "$STRATEGIES_FILE"
+    done
+}
+
+load_strategies() {
+    STRATEGIES=()
+    STRATEGY_NAMES=()
+    if [[ -f "$STRATEGIES_FILE" ]]; then
+        while IFS='|' read -r name params; do
+            name=$(echo "$name" | xargs)
+            params=$(echo "$params" | xargs)
+            if [[ -n "$name" && -n "$params" ]]; then
+                STRATEGIES["$name"]="$params"
+                STRATEGY_NAMES+=("$name")
+            fi
+        done < "$STRATEGIES_FILE"
+    else
+        create_default_strategies
+        save_strategies
+    fi
+}
+
+get_current_strategy_name() {
+    if [[ -f "$STRATEGY_FILE" ]]; then
+        cat "$STRATEGY_FILE"
+    else
+        echo "${STRATEGY_NAMES[0]:-default}" > "$STRATEGY_FILE"
+        cat "$STRATEGY_FILE"
+    fi
+}
+
+get_command() {
+    local strategy
+    strategy=$(get_current_strategy_name)
+    if [[ -z "${STRATEGIES[$strategy]}" ]]; then
+        strategy="${STRATEGY_NAMES[0]:-default}"
+        echo "$strategy" > "$STRATEGY_FILE"
+    fi
+
+    local port
+    port=$(get_current_port)
+    local cmd="$TPWS_BIN --port=$port --bind-addr=127.0.0.1 --socks ${STRATEGIES[$strategy]} --daemon"
+
+    if [[ "$(get_use_udp)" == "1" ]]; then
+        if tpws_supports_udp; then
+            cmd="$cmd --socks-udp ${UDP_PROFILES[$(get_udp_profile)]}"
+        else
+            >&2 echo -e "${YELLOW}Warning: UDP включён, но tpws собран без поддержки UDP (zapret update)${NC}"
+        fi
+    fi
+
+    if [[ "$(get_use_hostlist)" == "1" ]]; then
+        local selected
+        selected=$(get_selected_hostlist)
+        if [[ -n "$selected" && -f "$HOSTLIST_DIR/$selected" ]]; then
+            cmd="$cmd --hostlist=$HOSTLIST_DIR/$selected"
+        else
+            # Если выбранного файла нет, попробуем взять первый попавшийся
+            local first_file
+            first_file=$(get_hostlist_files | head -1)
+            if [[ -n "$first_file" ]]; then
+                set_selected_hostlist "$first_file"
+                cmd="$cmd --hostlist=$HOSTLIST_DIR/$first_file"
+            else
+                # Нет ни одного файла — просто игнорируем hostlist
+                >&2 echo -e "${YELLOW}Warning: hostlist enabled but no files found in $HOSTLIST_DIR${NC}"
+            fi
+        fi
+    fi
+
+    echo "$cmd"
+}
+
+# -------------------------------------------------------------------
+# Управление процессом
+# -------------------------------------------------------------------
+start_zapret() {
+    if ! is_zapret_installed; then
+        echo -e "${RED}Ошибка: zapret не установлен.${NC}"
+        return 1
+    fi
+
+    if pgrep -f "tpws.*--socks" > /dev/null; then
+        echo -e "${YELLOW}Zapret уже запущен.${NC}"
+    else
+        local cmd
+        cmd=$(get_command)
+        eval "$cmd &>/dev/null"
+        if pgrep -f "tpws.*--socks" > /dev/null; then
+            echo -e "${GREEN}Zapret запущен с стратегией '$(get_current_strategy_name)' на порту $(get_current_port)${NC}"
+        else
+            echo -e "${RED}Ошибка при запуске tpws.${NC}"
+        fi
+    fi
+}
+
+stop_zapret() {
+    if pgrep -f "tpws.*--socks" > /dev/null; then
+        pkill -f "tpws.*--socks"
+        echo -e "${GREEN}Zapret остановлен.${NC}"
+    else
+        echo -e "${YELLOW}Zapret не запущен.${NC}"
+    fi
+}
+
+restart_zapret() {
+    stop_zapret
+    sleep 1
+    start_zapret
+}
+
+status_zapret() {
+    echo -e "${BLUE}═════════════════════════════════════════════════${NC}"
+    if pgrep -f "tpws.*--socks" > /dev/null; then
+        local pid
+        pid=$(pgrep -f "tpws.*--socks" | head -1)
+        echo -e "Статус:             ${GREEN}Запущен${NC} (PID: $pid)"
+    else
+        echo -e "Статус:             ${RED}Остановлен${NC}"
+    fi
+
+    if grep -q "zapret start" "$BASHRC" 2>/dev/null; then
+        echo -e "Автозапуск:         ${GREEN}Включён${NC}"
+    else
+        echo -e "Автозапуск:         ${RED}Выключен${NC}"
+    fi
+
+    echo -e "Текущая стратегия:  ${YELLOW}$(get_current_strategy_name)${NC}"
+    echo -e "Порт:               ${YELLOW}$(get_current_port)${NC}"
+    
+    if [[ "$(get_use_hostlist)" == "1" ]]; then
+        local sel
+        sel=$(get_selected_hostlist)
+        if [[ -n "$sel" ]]; then
+            echo -e "Hostlist:           ${GREEN}Включён${NC} (файл: $sel)"
+        else
+            echo -e "Hostlist:           ${YELLOW}Включён, но файл не выбран${NC}"
+        fi
+    else
+        echo -e "Hostlist:           ${RED}Выключен${NC}"
+    fi
+
+    if [[ "$(get_use_udp)" == "1" ]]; then
+        echo -e "UDP:                ${GREEN}Включён${NC} (профиль: $(get_udp_profile))"
+    else
+        echo -e "UDP:                ${RED}Выключен${NC}"
+    fi
+    if ! tpws_supports_udp && is_zapret_installed; then
+        echo -e "                    ${YELLOW}tpws без поддержки UDP, нужен zapret update${NC}"
+    fi
+    echo -e "${BLUE}═════════════════════════════════════════════════${NC}"
+}
+
+# -------------------------------------------------------------------
+# Новые функции для автоматизации
+# -------------------------------------------------------------------
+list_strategies() {
+    for name in "${STRATEGY_NAMES[@]}"; do
+        echo "$name"
+    done
+}
+
+info_zapret() {
+    local running=0
+    local pid=""
+    if pgrep -f "tpws.*--socks" > /dev/null; then
+        running=1
+        pid=$(pgrep -f "tpws.*--socks" | head -1)
+    fi
+
+    echo "status=$running"
+    echo "pid=$pid"
+    echo "bind_addr=127.0.0.1"
+    echo "port=$(get_current_port)"
+    echo "strategy=$(get_current_strategy_name)"
+    echo "hostlist=$(get_use_hostlist)"
+    echo "hostlist_file=$(get_selected_hostlist)"
+    echo "autostart=$(grep -q "zapret start" "$BASHRC" 2>/dev/null && echo "1" || echo "0")"
+    echo "udp=$(get_use_udp)"
+    echo "udp_profile=$(get_udp_profile)"
+    echo "udp_supported=$(tpws_supports_udp && echo 1 || echo 0)"
+}
+
+list_hostlist_files() {
+    local files
+    files=$(get_hostlist_files)
+    if [[ -z "$files" ]]; then
+        echo -e "${YELLOW}No hostlist files found in $HOSTLIST_DIR${NC}" >&2
+        return 1
+    else
+        echo "$files"
+        return 0
+    fi
+}
+
+check_hostlist() {
+    local files
+    files=$(get_hostlist_files)
+    if [[ -z "$files" ]]; then
+        echo -e "${RED}No hostlist files found in $HOSTLIST_DIR${NC}"
+        return 1
+    else
+        echo -e "${GREEN}Available hostlist files:${NC}"
+        local i=1
+        local selected
+        selected=$(get_selected_hostlist)
+        for f in $files; do
+            if [[ "$f" == "$selected" ]]; then
+                echo -e "  $i) $f ${GREEN}(current)${NC}"
+            else
+                echo "  $i) $f"
+            fi
+            ((i++))
+        done
+        return 0
+    fi
+}
+
+select_hostlist_file() {
+    local choice="$1"
+    if [[ -z "$choice" ]]; then
+        if [[ $INTERACTIVE -eq 0 ]]; then
+            echo "Error: no hostlist file specified. Use: hostlist-select <filename>" >&2
+            return 1
+        fi
+        echo -e "${BLUE}Available files:${NC}"
+        local files
+        files=$(get_hostlist_files)
+        if [[ -z "$files" ]]; then
+            echo -e "${RED}No files in $HOSTLIST_DIR${NC}"
+            return 1
+        fi
+        local i=1
+        for f in $files; do
+            echo "  $i) $f"
+            ((i++))
+        done
+        read -p "Select file number (0 to cancel): " num
+        if [[ "$num" == "0" || -z "$num" ]]; then
+            return 0
+        fi
+        if [[ "$num" =~ ^[0-9]+$ ]]; then
+            local file_name
+            file_name=$(echo "$files" | sed -n "${num}p")
+            if [[ -n "$file_name" ]]; then
+                set_selected_hostlist "$file_name"
+                echo -e "${GREEN}Selected: $file_name${NC}"
+                if pgrep -f "tpws.*--socks" > /dev/null; then
+                    if [[ $INTERACTIVE -eq 1 ]]; then
+                        read -p "Restart zapret now? (y/n) " -n 1 -r
+                        echo
+                        if [[ $REPLY =~ ^[Yy]$ ]]; then
+                            restart_zapret
+                        fi
+                    else
+                        restart_zapret
+                    fi
+                fi
+                return 0
+            fi
+        fi
+        echo -e "${RED}Invalid selection.${NC}"
+        return 1
+    else
+        # Non‑interactive: select by exact filename
+        if [[ -f "$HOSTLIST_DIR/$choice" ]]; then
+            set_selected_hostlist "$choice"
+            echo -e "${GREEN}Selected: $choice${NC}"
+            if pgrep -f "tpws.*--socks" > /dev/null; then
+                restart_zapret
+            fi
+            return 0
+        else
+            echo -e "${RED}Error: file '$choice' not found in $HOSTLIST_DIR${NC}" >&2
+            return 1
+        fi
+    fi
+}
+
+# -------------------------------------------------------------------
+# Автозапуск
+# -------------------------------------------------------------------
+enable_autostart() {
+    if ! grep -q "zapret start" "$BASHRC" 2>/dev/null; then
+        echo "" >> "$BASHRC"
+        echo "# Автозапуск zapret" >> "$BASHRC"
+        echo "if ! pgrep -f 'tpws.*--socks' > /dev/null; then $SCRIPT_PATH start; fi" >> "$BASHRC"
+        echo -e "${GREEN}Автозапуск включён.${NC}"
+    else
+        echo -e "${YELLOW}Автозапуск уже включён.${NC}"
+    fi
+}
+
+disable_autostart() {
+    if grep -q "zapret start" "$BASHRC" 2>/dev/null; then
+        sed -i '/# Автозапуск zapret/d' "$BASHRC"
+        sed -i '/pgrep.*tpws.*--socks.*zapret start/d' "$BASHRC"
+        echo -e "${GREEN}Автозапуск отключён.${NC}"
+    else
+        echo -e "${YELLOW}Автозапуск не был включён.${NC}"
+    fi
+}
+
+# -------------------------------------------------------------------
+# Меню выбора и создания стратегий
+# -------------------------------------------------------------------
+add_strategy() {
+    echo -e "${BLUE}Добавление новой стратегии${NC}"
+    read -p "Введите имя стратегии: " new_name
+    new_name=$(echo "$new_name" | xargs)
+    
+    if [[ -z "$new_name" ]]; then
+        echo -e "${RED}Имя не может быть пустым.${NC}"
+        return 1
+    fi
+    if [[ -n "${STRATEGIES[$new_name]}" ]]; then
+        echo -e "${RED}Стратегия с таким именем уже существует.${NC}"
+        return 1
+    fi
+
+    echo "Введите параметры для tpws (например: --filter-tcp=80,443 --split-pos=1,midsld --disorder)"
+    read -p "Параметры: " new_params
+    new_params=$(echo "$new_params" | xargs)
+    
+    if [[ -z "$new_params" ]]; then
+        echo -e "${RED}Параметры не могут быть пустыми.${NC}"
+        return 1
+    fi
+
+    STRATEGIES["$new_name"]="$new_params"
+    STRATEGY_NAMES+=("$new_name")
+    save_strategies
+    echo -e "${GREEN}Стратегия '$new_name' добавлена.${NC}"
+}
+
+select_strategy() {
+    echo -e "${BLUE}Доступные стратегии:${NC}"
+    local i=1
+    for name in "${STRATEGY_NAMES[@]}"; do
+        echo "  $i) $name"
+        ((i++))
+    done
+    echo ""
+    read -p "Выберите номер стратегии (0 для отмены): " num
+    if [[ "$num" == "0" || -z "$num" ]]; then
+        return 0
+    fi
+
+    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#STRATEGY_NAMES[@]} )); then
+        local selected="${STRATEGY_NAMES[$((num-1))]}"
+        echo "$selected" > "$STRATEGY_FILE"
+        echo -e "${GREEN}Текущая стратегия изменена на '$selected'${NC}"
+        if pgrep -f "tpws.*--socks" > /dev/null; then
+            restart_zapret
+        fi
+    else
+        echo -e "${RED}Неверный номер.${NC}"
+    fi
+}
+
+# -------------------------------------------------------------------
+# Конфигурация порта и hostlist (с поддержкой -y)
+# -------------------------------------------------------------------
+change_port() {
+    local new_port="$1"
+    local force="$2"
+    if [[ -z "$new_port" ]]; then
+        if [[ $INTERACTIVE -eq 0 ]]; then
+            echo "Error: port number required. Use: set-port <port> [-y]" >&2
+            return 1
+        fi
+        echo -e "${BLUE}Текущий порт: $(get_current_port)${NC}"
+        read -p "Введите новый номер порта (1025-65535): " new_port
+    fi
+
+    if [[ "$new_port" =~ ^[0-9]+$ ]] && (( new_port >= 1025 && new_port <= 65535 )); then
+        set_port "$new_port"
+        echo -e "${GREEN}Порт изменён на $new_port${NC}"
+        if pgrep -f "tpws.*--socks" > /dev/null; then
+            if [[ "$force" == "-y" || "$force" == "--yes" ]]; then
+                restart_zapret
+            elif [[ $INTERACTIVE -eq 1 ]]; then
+                read -p "Перезапустить zapret сейчас? (y/n) " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    restart_zapret
+                fi
+            else
+                echo -e "${YELLOW}Порт изменён. Для применения перезапустите zapret (restart) или используйте -y.${NC}"
+            fi
+        fi
+    else
+        echo -e "${RED}Неверный порт. Допустимы значения от 1025 до 65535.${NC}"
+        return 1
+    fi
+}
+
+toggle_hostlist() {
+    local force="$1"
+    local current
+    current=$(get_use_hostlist)
+
+    if [[ "$current" == "1" ]]; then
+        set_use_hostlist "0"
+        echo -e "${GREEN}Hostlist disabled.${NC}"
+        # Перезапускаем только если процесс запущен и мы в неинтерактивном режиме
+        if pgrep -f "tpws.*--socks" > /dev/null; then
+            if [[ "$force" == "-y" || "$force" == "--yes" ]] || [[ $INTERACTIVE -eq 0 ]]; then
+                restart_zapret
+            else
+                read -p "Restart zapret now? (y/n) " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    restart_zapret
+                fi
+            fi
+        fi
+    else
+        # Включаем hostlist
+        local files
+        files=$(get_hostlist_files)
+        if [[ -z "$files" ]]; then
+            echo -e "${RED}Error: no hostlist files found in $HOSTLIST_DIR${NC}" >&2
+            return 1
+        fi
+
+        # Если нет выбранного файла, берём первый
+        local selected
+        selected=$(get_selected_hostlist)
+        if [[ -z "$selected" || ! -f "$HOSTLIST_DIR/$selected" ]]; then
+            selected=$(echo "$files" | head -1)
+            set_selected_hostlist "$selected"
+            echo -e "${YELLOW}No specific file selected, using: $selected${NC}"
+        fi
+
+        set_use_hostlist "1"
+        echo -e "${GREEN}Hostlist enabled.${NC}"
+
+        if pgrep -f "tpws.*--socks" > /dev/null; then
+            if [[ "$force" == "-y" || "$force" == "--yes" ]] || [[ $INTERACTIVE -eq 0 ]]; then
+                restart_zapret
+            else
+                read -p "Restart zapret now? (y/n) " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    restart_zapret
+                fi
+            fi
+        fi
+    fi
+}
+
+# -------------------------------------------------------------------
+# Установка / Удаление / Обновление
+# -------------------------------------------------------------------
+remove_zapret() {
+    echo -e "${YELLOW}Удаление zapret из $ZAPRET_DIR...${NC}"
+    stop_zapret &>/dev/null
+    disable_autostart &>/dev/null
+
+    if [[ -d "$ZAPRET_DIR" ]]; then
+        if can_write_to_dir "$ZAPRET_DIR"; then
+            rm -rf "$ZAPRET_DIR"
+        else
+            run_with_sudo rm -rf "$ZAPRET_DIR" || {
+                echo -e "${RED}Не удалось удалить $ZAPRET_DIR.${NC}"
+                return 1
+            }
+        fi
+        echo -e "${GREEN}Zapret удалён.${NC}"
+    else
+        echo -e "${YELLOW}Zapret не установлен.${NC}"
+    fi
+}
+
+
+# -------------------------------------------------------------------
+# Патч tpws: SOCKS5 UDP ASSOCIATE + UDP-десинхронизация без root
+# (gzip + base64 от tpws-socks-udp.patch)
+# -------------------------------------------------------------------
+udp_patch_blob() {
+cat <<'PATCH_EOF'
+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
+PATCH_EOF
+}
+
+apply_udp_patch() {
+    local tmp
+    tmp=$(mktemp)
+    udp_patch_blob | base64 -d | gunzip > "$tmp" || {
+        echo -e "${RED}Не удалось распаковать встроенный патч.${NC}"
+        rm -f "$tmp"; return 1
+    }
+    if git -C "$ZAPRET_DIR" apply --check "$tmp" 2>/dev/null; then
+        git -C "$ZAPRET_DIR" apply "$tmp"
+    elif git -C "$ZAPRET_DIR" apply --3way "$tmp" 2>/dev/null; then
+        echo -e "${YELLOW}Патч применён с 3-way слиянием (upstream изменился).${NC}"
+    else
+        echo -e "${RED}Патч UDP не накладывается на текущую версию zapret. Будет собран tpws без UDP.${NC}"
+        rm -f "$tmp"; return 1
+    fi
+    rm -f "$tmp"
+    echo -e "${GREEN}Патч UDP применён.${NC}"
+}
+
+build_tpws() {
+    echo -e "${GREEN}Сборка tpws...${NC}"
+    make -C "$ZAPRET_DIR/tpws" clean &>/dev/null
+    if ! make -C "$ZAPRET_DIR/tpws" -j"$(nproc 2>/dev/null || echo 2)"; then
+        echo -e "${RED}Ошибка сборки tpws.${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}tpws собран: $TPWS_BIN${NC}"
+    tpws_supports_udp && echo -e "${GREEN}Поддержка UDP: есть${NC}" || echo -e "${YELLOW}Поддержка UDP: нет${NC}"
+}
+
+check_deps() {
+    # tpws нужны компилятор, make, git, zlib и libcap (netfilter не нужен — это для nfqws)
+    # учитываем голый rootfs proot-distro: там может не быть procps (pgrep/pkill) и ca-certificates
+    local pm="" missing=()
+    if command -v apt-get &>/dev/null; then pm="apt"
+    elif command -v pacman &>/dev/null; then pm="pacman"
+    elif command -v apk &>/dev/null; then pm="apk"
+    fi
+
+    case "$pm" in
+        apt)
+            local p
+            for p in git make gcc libc6-dev zlib1g-dev libcap-dev procps ca-certificates gzip; do
+                dpkg -s "$p" &>/dev/null || missing+=("$p")
+            done ;;
+        pacman)
+            local p
+            for p in git make gcc zlib libcap procps-ng ca-certificates gzip; do
+                pacman -Q "$p" &>/dev/null || missing+=("$p")
+            done ;;
+        apk)
+            local p
+            for p in git make gcc musl-dev zlib-dev libcap-dev procps ca-certificates gzip coreutils bash; do
+                apk info -e "$p" &>/dev/null || missing+=("$p")
+            done ;;
+        *)
+            local c
+            for c in git make gcc pgrep pkill base64 gunzip; do
+                command -v "$c" &>/dev/null || missing+=("$c")
+            done
+            if [[ ${#missing[@]} -gt 0 ]]; then
+                echo -e "${RED}Неизвестный пакетный менеджер. Установите вручную: ${missing[*]} + zlib и libcap (dev)${NC}"
+                return 1
+            fi
+            return 0 ;;
+    esac
+
+    [[ ${#missing[@]} -eq 0 ]] && return 0
+
+    echo -e "${YELLOW}Отсутствуют пакеты: ${missing[*]}${NC}"
+    if [[ $INTERACTIVE -eq 1 ]]; then
+        read -p "Установить их через $pm? (y/n) " -n 1 -r
+        echo
+        [[ $REPLY =~ ^[Yy]$ ]] || { echo -e "${RED}Установка прервана.${NC}"; return 1; }
+    fi
+    case "$pm" in
+        apt)    run_with_sudo apt-get update && DEBIAN_FRONTEND=noninteractive run_with_sudo apt-get install -y "${missing[@]}" ;;
+        pacman) run_with_sudo pacman -Sy --needed --noconfirm "${missing[@]}" ;;
+        apk)    run_with_sudo apk add "${missing[@]}" ;;
+    esac || {
+        echo -e "${RED}Ошибка установки зависимостей.${NC}"
+        return 1
+    }
+}
+
+install_self() {
+    local self
+    self=$(readlink -f "$0")
+    if [[ "$self" != "$SCRIPT_PATH" ]]; then
+        # через временный файл + mv: работающий экземпляр bash продолжит читать старый файл
+        if can_write_to_dir "$(dirname "$SCRIPT_PATH")"; then
+            cp "$self" "$SCRIPT_PATH.new" && chmod +x "$SCRIPT_PATH.new" && mv -f "$SCRIPT_PATH.new" "$SCRIPT_PATH"
+        else
+            run_with_sudo cp "$self" "$SCRIPT_PATH.new" && run_with_sudo chmod +x "$SCRIPT_PATH.new" && run_with_sudo mv -f "$SCRIPT_PATH.new" "$SCRIPT_PATH"
+        fi
+        echo -e "${GREEN}Скрипт установлен: $SCRIPT_PATH${NC}"
+    fi
+}
+
+install_zapret() {
+    echo -e "${BLUE}Установка zapret в $ZAPRET_DIR${NC}"
+
+    if ! can_write_to_dir "/opt"; then
+        echo -e "${RED}Нет прав на запись в /opt. Выполните скрипт с sudo или от root.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Проверка зависимостей...${NC}"
+    check_deps || return 1
+
+    # клонируем во временную папку, чтобы при ошибке сети не потерять рабочую установку
+    local tmpdir="$ZAPRET_DIR.new"
+    rm -rf "$tmpdir"
+    echo -e "${GREEN}Клонирование репозитория zapret...${NC}"
+    git clone --depth 1 "$ZAPRET_REPO" "$tmpdir" || {
+        rm -rf "$tmpdir"
+        echo -e "${RED}Ошибка клонирования. Текущая установка не тронута.${NC}"
+        return 1
+    }
+    if [[ -d "$ZAPRET_DIR" ]]; then
+        remove_zapret
+    fi
+    mv "$tmpdir" "$ZAPRET_DIR" || return 1
+
+    apply_udp_patch
+    build_tpws || return 1
+    install_self
+
+    load_strategies
+    if tpws_supports_udp && [[ ! -f "$UDP_FILE" ]]; then
+        set_use_udp "1"
+        echo -e "${GREEN}UDP включён по умолчанию (профиль: $(get_udp_profile)).${NC}"
+    fi
+    echo -e "${GREEN}Установка завершена. Запуск: zapret start${NC}"
+}
+
+update_zapret() {
+    if ! is_zapret_installed || [[ ! -d "$ZAPRET_DIR/.git" ]]; then
+        echo -e "${YELLOW}zapret не установлен, выполняю установку.${NC}"
+        install_zapret
+        return
+    fi
+    local was_running=0
+    pgrep -f "tpws.*--socks" > /dev/null && was_running=1
+
+    check_deps || return 1
+    echo -e "${GREEN}Обновление репозитория...${NC}"
+    # откатываем прошлый патч, иначе pull упрётся в локальные изменения
+    git -C "$ZAPRET_DIR" checkout -- . &>/dev/null
+    git -C "$ZAPRET_DIR" clean -fdq tpws &>/dev/null
+    git -C "$ZAPRET_DIR" pull --ff-only || {
+        echo -e "${RED}Ошибка git pull.${NC}"
+        return 1
+    }
+    apply_udp_patch
+    [[ $was_running -eq 1 ]] && stop_zapret
+    build_tpws || return 1
+    install_self
+    [[ $was_running -eq 1 ]] && start_zapret
+    return 0
+}
+
+# -------------------------------------------------------------------
+# Отладка: tpws на переднем плане с логом
+# -------------------------------------------------------------------
+debug_zapret() {
+    local log="$HOME/zapret-debug.log"
+    if ! is_zapret_installed; then
+        echo -e "${RED}zapret не установлен.${NC}"; return 1
+    fi
+    local was_running=0
+    if pgrep -f "tpws.*--socks" > /dev/null; then
+        was_running=1
+        pkill -f "tpws.*--socks"; sleep 1
+    fi
+    local cmd
+    cmd=$(get_command)
+    cmd="${cmd/ --daemon/} --debug=1"
+    echo -e "${BLUE}Отладочный запуск. Повторите проблему (звонок, загрузку), затем нажмите Ctrl+C.${NC}"
+    echo -e "${BLUE}Лог: $log${NC}"
+    echo ""
+    : > "$log"
+    eval "$cmd" >> "$log" 2>&1 &
+    local tp=$!
+    trap 'kill $tp 2>/dev/null' INT TERM
+    tail -n +1 -f --pid=$tp "$log" 2>/dev/null | grep --line-buffered -E "udp flow|udp resolv|could not|error|ERROR" &
+    local tl=$!
+    wait $tp 2>/dev/null
+    while kill -0 $tp 2>/dev/null; do wait $tp 2>/dev/null; done
+    kill $tl 2>/dev/null; wait $tl 2>/dev/null
+    trap - INT TERM
+    echo ""
+    echo -e "${GREEN}Сводка по UDP-потокам:${NC}"
+    grep -E "udp flow end" "$log" | sed -E 's/^udp flow end \([a-z]+\) : //' | sort | uniq -c | sort -rn | head -40
+    echo ""
+    echo -e "${YELLOW}Потоки с пометкой NO REPLY: пакеты ушли, но ответа не было.${NC}"
+    [[ $was_running -eq 1 ]] && start_zapret
+    return 0
+}
+
+# -------------------------------------------------------------------
+# Меню
+# -------------------------------------------------------------------
+show_menu() {
+    INTERACTIVE=1
+    while true; do
+        clear
+        echo -e "${BLUE}══════════════ zapret (tpws SOCKS5) ══════════════${NC}"
+        status_zapret
+        echo " 1) Запустить"
+        echo " 2) Остановить"
+        echo " 3) Перезапустить"
+        echo " 4) Выбрать стратегию (TCP)"
+        echo " 5) Добавить стратегию (TCP)"
+        echo " 6) Вкл/выкл UDP"
+        echo " 7) Выбрать UDP-профиль"
+        echo " 8) Изменить порт"
+        echo " 9) Вкл/выкл hostlist"
+        echo "10) Выбрать файл hostlist"
+        echo "11) Вкл/выкл автозапуск"
+        echo "12) Установить / переустановить"
+        echo "13) Обновить (git pull + патч + сборка)"
+        echo "14) Удалить"
+        echo "15) Отладка (лог + сводка UDP)"
+        echo " 0) Выход"
+        echo ""
+        read -p "Выбор: " ch
+        case "$ch" in
+            1) start_zapret ;;
+            2) stop_zapret ;;
+            3) restart_zapret ;;
+            4) select_strategy ;;
+            5) add_strategy ;;
+            6) toggle_udp ;;
+            7) set_udp_profile ;;
+            8) change_port ;;
+            9) toggle_hostlist ;;
+            10) select_hostlist_file ;;
+            11) if grep -q "zapret start" "$BASHRC" 2>/dev/null; then disable_autostart; else enable_autostart; fi ;;
+            12) install_zapret ;;
+            13) update_zapret ;;
+            14) read -p "Точно удалить? (y/n) " -n 1 -r; echo; [[ $REPLY =~ ^[Yy]$ ]] && remove_zapret ;;
+            15) debug_zapret ;;
+            0|q) exit 0 ;;
+            *) echo -e "${RED}Неверный выбор.${NC}" ;;
+        esac
+        press_any_key
+    done
+}
+
+show_help() {
+    cat <<HELP
+Использование: zapret [команда]
+
+  (без аргументов) | menu      интерактивное меню
+  start | stop | restart | status | info
+  strategies                   список TCP-стратегий
+  strategy <name>              выбрать TCP-стратегию
+  set-port <port> [-y]         сменить порт SOCKS
+  hostlist [-y]                вкл/выкл hostlist
+  hostlist-list | hostlist-check
+  hostlist-select <file>
+  udp on|off|toggle            UDP через SOCKS5 UDP ASSOCIATE
+  udp-profiles                 список UDP-профилей
+  udp-profile <name>           выбрать UDP-профиль
+  udp-custom "<параметры>"     свой UDP-профиль
+  autostart on|off
+  install | update | remove
+  cmd                          показать итоговую команду tpws
+  debug                        запустить с логом (Ctrl+C - стоп), показать сводку UDP
+HELP
+}
+
+# -------------------------------------------------------------------
+# main
+# -------------------------------------------------------------------
+load_strategies
+init_udp_profiles
+
+case "$1" in
+    ""|menu)        show_menu ;;
+    start)          start_zapret ;;
+    stop)           stop_zapret ;;
+    restart)        restart_zapret ;;
+    status)         status_zapret ;;
+    info)           info_zapret ;;
+    cmd)            get_command ;;
+    debug)          debug_zapret ;;
+    strategies)     list_strategies ;;
+    strategy)
+        if [[ -n "$2" && -n "${STRATEGIES[$2]}" ]]; then
+            echo "$2" > "$STRATEGY_FILE"
+            echo -e "${GREEN}Стратегия: $2${NC}"
+            restart_if_running
+        else
+            echo -e "${RED}Нет стратегии '$2'.${NC}" >&2; exit 1
+        fi ;;
+    set-port)       change_port "$2" "$3" ;;
+    hostlist)       toggle_hostlist "$2" ;;
+    hostlist-list)  list_hostlist_files ;;
+    hostlist-check) check_hostlist ;;
+    hostlist-select) select_hostlist_file "$2" ;;
+    udp)
+        case "$2" in
+            on)  [[ "$(get_use_udp)" == "1" ]] && echo -e "${YELLOW}UDP уже включён.${NC}" || toggle_udp ;;
+            off) [[ "$(get_use_udp)" == "0" ]] && echo -e "${YELLOW}UDP уже выключен.${NC}" || toggle_udp ;;
+            ""|toggle) toggle_udp ;;
+            *) echo "Use: udp on|off|toggle" >&2; exit 1 ;;
+        esac ;;
+    udp-profiles)   for n in "${UDP_PROFILE_NAMES[@]}"; do echo "$n"; done ;;
+    udp-profile)    set_udp_profile "$2" ;;
+    udp-custom)     shift; set_udp_custom "$@" ;;
+    autostart)
+        case "$2" in
+            on)  enable_autostart ;;
+            off) disable_autostart ;;
+            *) echo "Use: autostart on|off" >&2; exit 1 ;;
+        esac ;;
+    install)        install_zapret ;;
+    update)         update_zapret ;;
+    remove)         remove_zapret ;;
+    help|-h|--help) show_help ;;
+    *)              show_help; exit 1 ;;
+esac
