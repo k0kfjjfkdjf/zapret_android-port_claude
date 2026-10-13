@@ -6,12 +6,14 @@ BCM_TARGETS_FILE="$HOME/.zapret_blockcheck_targets"  # цели проверки
 
 bcm_load() {
     BCM_MODE=quick; BCM_TLS=both; BCM_TIMEOUT=8; BCM_LIMIT=40; BCM_DEBUG=0; BCM_DIR="$HOME"
+    BCM_SAMPLE=8; BCM_TOP=5; BCM_PAR=12
     if [[ -f "$BCM_CONF" ]]; then
         local k v
         while IFS='=' read -r k v; do
             case "$k" in
                 mode) BCM_MODE="$v" ;; tls) BCM_TLS="$v" ;; timeout) BCM_TIMEOUT="$v" ;;
                 limit) BCM_LIMIT="$v" ;; debug) BCM_DEBUG="$v" ;; dir) BCM_DIR="$v" ;;
+                sample) BCM_SAMPLE="$v" ;; top) BCM_TOP="$v" ;; par) BCM_PAR="$v" ;;
             esac
         done < "$BCM_CONF"
     fi
@@ -23,8 +25,8 @@ bcm_load() {
 }
 
 bcm_save() {
-    printf 'mode=%s\ntls=%s\ntimeout=%s\nlimit=%s\ndebug=%s\ndir=%s\n' \
-        "$BCM_MODE" "$BCM_TLS" "$BCM_TIMEOUT" "$BCM_LIMIT" "$BCM_DEBUG" "$BCM_DIR" > "$BCM_CONF"
+    printf 'mode=%s\ntls=%s\ntimeout=%s\nlimit=%s\ndebug=%s\ndir=%s\nsample=%s\ntop=%s\npar=%s\n' \
+        "$BCM_MODE" "$BCM_TLS" "$BCM_TIMEOUT" "$BCM_LIMIT" "$BCM_DEBUG" "$BCM_DIR" "$BCM_SAMPLE" "$BCM_TOP" "$BCM_PAR" > "$BCM_CONF"
     printf '%s\n' "${BCM_TARGETS[@]}" > "$BCM_TARGETS_FILE"
 }
 
@@ -64,11 +66,17 @@ bcm_show() {
     esac
     echo "Таймаут:          ${BCM_TIMEOUT} с на адрес"
     echo "Лимит из списков: $BCM_LIMIT записей с файла"
-    if [[ "$BCM_DEBUG" == "1" ]]; then
-        echo -e "Отладка:          ${GREEN}вкл${NC} (логи tpws и curl, архив)"
+    if [[ "$BCM_SAMPLE" -gt 0 ]]; then
+        echo "Два этапа:        вкл (выборка $BCM_SAMPLE адресов, затем $BCM_TOP лучших на всём списке)"
     else
-        echo "Отладка:          выкл"
+        echo "Два этапа:        выкл (все стратегии на всех адресах)"
     fi
+    echo "Параллельно:      $BCM_PAR запросов curl"
+    case "$BCM_DEBUG" in
+        1) echo -e "Отладка:          ${GREEN}компактная${NC} (curl -v только неудачных, лог tpws финалистов)" ;;
+        2) echo -e "Отладка:          ${YELLOW}полная${NC} (всё; при больших списках архив будет большим)" ;;
+        *) echo "Отладка:          выкл" ;;
+    esac
     echo "Папка отчёта:     $BCM_DIR"
     echo -e "${BLUE}════════════════════════════════════════════════════${NC}"
 }
@@ -176,9 +184,9 @@ bcm_run() {
     if [[ ${#BCM_TARGETS[@]} -eq 0 ]]; then
         echo -e "${RED}Список целей пуст.${NC}"; return 1
     fi
-    local -a args=("$BCM_MODE" "dir=$BCM_DIR" "timeout=$BCM_TIMEOUT" "limit=$BCM_LIMIT")
+    local -a args=("$BCM_MODE" "dir=$BCM_DIR" "timeout=$BCM_TIMEOUT" "limit=$BCM_LIMIT" "sample=$BCM_SAMPLE" "top=$BCM_TOP" "par=$BCM_PAR")
     case "$BCM_TLS" in 12) args+=(tls12) ;; 13) args+=(tls13) ;; esac
-    [[ "$BCM_DEBUG" == "1" ]] && args+=(debug)
+    case "$BCM_DEBUG" in 1) args+=(debug) ;; 2) args+=(debug=full) ;; esac
     args+=("${BCM_TARGETS[@]}")
     blockcheck_zapret "${args[@]}"
 }
@@ -198,9 +206,11 @@ blockcheck_menu() {
         echo " 7) Версии TLS"
         echo " 8) Таймаут"
         echo " 9) Лимит записей из списков"
-        echo "10) Отладка вкл/выкл"
+        echo "10) Отладка: выкл / компактная / полная"
         echo "11) Папка для отчёта и логов"
-        echo "12) ▶ Запустить проверку"
+        echo "12) Два этапа: размер выборки и число финалистов"
+        echo "13) Параллельность curl"
+        echo "14) ▶ Запустить проверку"
         echo " 0) Назад"
         echo ""
         read -p "Выбор: " ch || { echo; bcm_save; return 0; }   # EOF: выйти, а не крутиться
@@ -216,9 +226,17 @@ blockcheck_menu() {
                [[ "$v" =~ ^[0-9]+$ ]] && (( v>=3 && v<=30 )) && BCM_TIMEOUT=$v ;;
             9) read -p "Сколько записей брать из каждого списка (1-500): " v
                [[ "$v" =~ ^[0-9]+$ ]] && (( v>=1 && v<=500 )) && BCM_LIMIT=$v ;;
-            10) [[ "$BCM_DEBUG" == "1" ]] && BCM_DEBUG=0 || BCM_DEBUG=1 ;;
+            10) case "$BCM_DEBUG" in 0) BCM_DEBUG=1 ;; 1) BCM_DEBUG=2 ;; *) BCM_DEBUG=0 ;; esac ;;
             11) bcm_pick_dir ;;
-            12) bcm_save; bcm_run; press_any_key ;;
+            12) read -p "Адресов в выборке первого этапа (0 - выключить два этапа, 3-50): " v
+                [[ "$v" =~ ^[0-9]+$ ]] && (( v==0 || (v>=3 && v<=50) )) && BCM_SAMPLE=$v
+                if [[ "$BCM_SAMPLE" -gt 0 ]]; then
+                    read -p "Сколько лучших стратегий проверять на полном списке (1-20): " v
+                    [[ "$v" =~ ^[0-9]+$ ]] && (( v>=1 && v<=20 )) && BCM_TOP=$v
+                fi ;;
+            13) read -p "Сколько запросов curl одновременно (2-64): " v
+                [[ "$v" =~ ^[0-9]+$ ]] && (( v>=2 && v<=64 )) && BCM_PAR=$v ;;
+            14) bcm_save; bcm_run; press_any_key ;;
             0|q) bcm_save; return 0 ;;
             *) ;;
         esac

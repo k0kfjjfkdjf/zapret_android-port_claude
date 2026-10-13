@@ -7,6 +7,9 @@
 # основной zapret при этом продолжает работать.
 # -------------------------------------------------------------------
 BC_TIMEOUT=8
+BC_SAMPLE=8     # двухэтапная проверка: сколько адресов в выборке первого этапа (0 - выключить)
+BC_TOP=5        # сколько лучших стратегий проверять на полном списке
+BC_PAR=12       # сколько curl одновременно
 BC_OUTDIR="${BC_OUTDIR:-$HOME}"   # куда класть отчёт и отладочный архив
 BC_LOG="$BC_OUTDIR/zapret-blockcheck.log"
 
@@ -130,7 +133,7 @@ bc_probe_all() {
     local port="$1" label="$2" i=0 url rc out code t
     local -a verbose=() cpids=()
     local ddir=""
-    if [[ $BC_DEBUG -eq 1 && -n "$label" ]]; then
+    if [[ $BC_DEBUG -ge 1 && -n "$label" ]]; then
         ddir="$BC_DBGDIR/$label"; mkdir -p "$ddir"
         verbose=(-v)
     fi
@@ -148,6 +151,13 @@ bc_probe_all() {
             12) tlsopt+=(--tlsv1.2 --tls-max 1.2) ;;
             13) tlsopt+=(--tlsv1.3) ;;
         esac
+        # не больше BC_PAR запросов одновременно (телефону тяжело запускать сотни curl разом)
+        while :; do
+            local alive=0 cp
+            for cp in "${cpids[@]}"; do kill -0 "$cp" 2>/dev/null && alive=$((alive+1)); done
+            (( alive < ${BC_PAR:-12} )) && break
+            sleep 0.05
+        done
         (
             local errf=/dev/null
             [[ -n "$ddir" ]] && errf="$ddir/curl_$i.txt" && echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$errf"
@@ -155,7 +165,13 @@ bc_probe_all() {
                 curl -s "${verbose[@]}" "${tlsopt[@]}" -o /dev/null --connect-timeout 5 --max-time "$BC_TIMEOUT" "${proxy[@]}" \
                 -w '%{http_code} %{time_total} %{size_download} %{time_namelookup} %{time_connect} %{time_appconnect}' "$url" 2>>"$errf")
             rc=$?
-            [[ -n "$ddir" ]] && echo "RESULT: rc=$rc $out" >> "$errf"
+            if [[ -n "$ddir" ]]; then
+                # компактная отладка: у успешных запросов оставляем только строку результата
+                if [[ $rc -eq 0 && $BC_DEBUG -eq 1 ]]; then
+                    echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$errf"
+                fi
+                echo "RESULT: rc=$rc $out" >> "$errf"
+            fi
             echo "$rc $out" > "$dir/$i"
         ) &
         cpids+=($!)
@@ -198,6 +214,12 @@ bc_probe_all() {
         BC_RC[$i]="$rc"
     done
     rm -rf "$dir"
+    # строка матрицы результатов: 1/0 по каждому адресу
+    if [[ -n "$port" && -n "$BC_MATRIX" ]]; then
+        local row="" k
+        for ((k=0; k<${#BC_URLS[@]}; k++)); do [[ "${BC_RC[$k]}" == "0" ]] && row+=";1" || row+=";0"; done
+        echo "${BC_CUR_NAME};${BC_ROUND};$BC_OK/${#BC_URLS[@]}${row}" >> "$BC_MATRIX"
+    fi
     if [[ $BC_OK -gt 0 ]]; then
         BC_TIME=$(awk -v a="$tsum" -v n="$BC_OK" 'BEGIN{printf "%.2f", a/n}')
     else
@@ -213,6 +235,91 @@ bc_label() {
         13) echo "${BC_URLS[$i]} [TLS1.3]$sfx" ;;
         *)  echo "${BC_URLS[$i]}$sfx" ;;
     esac
+}
+
+# raw-адреса -> BC_URLS/BC_TLS/BC_BIG/BC_IP (https раскладывается на TLS 1.2 и 1.3)
+bc_expand() {
+    local tlsmode="$1"; shift
+    BC_URLS=(); BC_TLS=(); BC_BIG=(); BC_IP=(); BC_STAGE=(); BC_RC=()
+    local u big isip
+    for u in "$@"; do
+        big=0; isip=0
+        [[ "$u" == big:* ]] && { big=1; u="${u#big:}"; }
+        [[ "$u" == ip:* ]] && { isip=1; u="${u#ip:}"; }
+        if [[ "$u" == https://* ]]; then
+            case "$tlsmode" in
+                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13); BC_BIG+=("$big" "$big"); BC_IP+=("$isip" "$isip") ;;
+                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode"); BC_BIG+=("$big"); BC_IP+=("$isip") ;;
+            esac
+        else
+            BC_URLS+=("$u"); BC_TLS+=(""); BC_BIG+=("$big"); BC_IP+=("$isip")
+        fi
+    done
+}
+
+bc_matrix_header() {
+    [[ -n "$BC_MATRIX" ]] || return 0
+    local h="strategy;round;ok" k
+    for ((k=0; k<${#BC_URLS[@]}; k++)); do h+=";$(bc_label $k)"; done
+    echo "$h" >> "$BC_MATRIX"
+}
+
+# один раунд: проверить стратегии с индексами $@ (из cand_names/cand_opts вызывающей функции) на текущих BC_URLS.
+# результаты добавляются в массив res вызывающей функции: "ok|время|индекс"
+bc_round() {
+    local -a ids=("$@")
+    local total=${#BC_URLS[@]} cnt=${#ids[@]} pos=0 idx n o
+    bc_matrix_header
+    for idx in "${ids[@]}"; do
+        pos=$((pos+1))
+        [[ $stop -eq 1 ]] && break
+        n="${cand_names[$idx]}"; o="${cand_opts[$idx]}"
+        # shellcheck disable=SC2086
+        if ! "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $o --dry-run &>/dev/null; then
+            printf '[%3d/%d] %-20s %s\n' $pos $cnt "$n" "неверные параметры, пропуск"
+            continue
+        fi
+        local label tlog=/dev/null dbgopt=""
+        label=$(printf 'r%s_%03d_%s' "$BC_ROUND" $((idx+1)) "$n")
+        if [[ $BC_DEBUG -ge 1 ]]; then
+            mkdir -p "$BC_DBGDIR/$label"
+            echo "$o" > "$BC_DBGDIR/$label/strategy.txt"
+            # компактная отладка: лог tpws только во втором раунде (финалисты) или если раунд один
+            if [[ $BC_DEBUG -ge 2 || "$BC_ROUND" != "1" || $BC_ROUNDS -eq 1 ]]; then
+                tlog="$BC_DBGDIR/$label/tpws.log"
+                dbgopt="--debug=1"
+            fi
+        fi
+        # shellcheck disable=SC2086
+        "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $o $dbgopt &>"$tlog" &
+        pid=$!
+        local w
+        for w in $(seq 1 30); do
+            (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null && break
+            sleep 0.1
+        done
+        if ! kill -0 $pid 2>/dev/null; then
+            printf '[%3d/%d] %-20s %s\n' $pos $cnt "$n" "tpws не запустился"
+            pid=""; continue
+        fi
+        BC_CUR_NAME="$n"
+        bc_probe_all "$port" "$label"
+        kill $pid 2>/dev/null; wait $pid 2>/dev/null; pid=""
+        [[ $stop -eq 1 ]] && break
+        local color="$RED"
+        [[ $BC_OK -gt 0 ]] && color="$YELLOW"
+        [[ $BC_OK -eq $total ]] && color="$GREEN"
+        local det="$BC_DETAIL"
+        [[ ${#det} -gt 40 ]] && det="${det:0:40}…"
+        printf "[%3d/%d] %-20s ${color}%3d/%d${NC} %s %5ss\n" $pos $cnt "$n" $BC_OK $total "$det" "$BC_TIME"
+        echo "round$BC_ROUND $BC_OK/$total $BC_DETAIL ${BC_TIME}s $n | $o" >> "$BC_LOG"
+        res+=("$BC_OK|$BC_TIME|$idx")
+    done
+}
+
+# сортировка массива результатов "ok|время|индекс": больше успешных, затем быстрее
+bc_sort_res() {
+    printf '%s\n' "$@" | awk -F'|' '{t=($2=="-")?999:$2; printf "%d|%s|%s\n", $1, t, $3}' | sort -s -t'|' -k1,1nr -k2,2n
 }
 
 bc_rc_text() {
@@ -252,8 +359,9 @@ bc_generated() {
 }
 
 bc_pack_debug() {
-    [[ $BC_DEBUG -eq 1 && -d "$BC_DBGDIR" ]] || return 0
+    [[ $BC_DEBUG -ge 1 && -d "$BC_DBGDIR" ]] || return 0
     cp "$BC_LOG" "$BC_DBGDIR/summary.log" 2>/dev/null
+    cp "$BC_MATRIX" "$BC_DBGDIR/matrix.csv" 2>/dev/null
     local arc="$BC_OUTDIR/zapret-blockcheck-debug.tar.gz"
     tar -czf "$arc" -C "$(dirname "$BC_DBGDIR")" "$(basename "$BC_DBGDIR")" 2>/dev/null
     echo -e "${YELLOW}Архив с логами: $arc ($(du -h "$arc" | cut -f1))${NC}"
@@ -266,13 +374,18 @@ bc_pack_debug() {
 blockcheck_zapret() {
     local mode="quick" apply=0 tlsmode=both
     local -a targets=()
-    BC_DEBUG=0
+    BC_DEBUG=0; BC_EXCLUDE=1
     local a
     for a in "$@"; do
         case "$a" in
             full|quick) mode="$a" ;;
             --apply|-y) apply=1 ;;
             debug|--debug) BC_DEBUG=1 ;;
+            debug=full|debug-full) BC_DEBUG=2 ;;
+            sample=*)  BC_SAMPLE="${a#sample=}" ;;
+            top=*)     BC_TOP="${a#top=}" ;;
+            par=*)     BC_PAR="${a#par=}" ;;
+            keepdead)  BC_EXCLUDE=0 ;;
             tls12|--tls=12) tlsmode=12 ;;
             tls13|--tls=13) tlsmode=13 ;;
             tlsboth|--tls=both) tlsmode=both ;;
@@ -300,21 +413,7 @@ blockcheck_zapret() {
 
     local -a raw_urls=()
     mapfile -t raw_urls < <(bc_targets "${targets[@]}" | awk '!seen[$0]++')
-    BC_URLS=(); BC_TLS=(); BC_BIG=(); BC_IP=(); BC_STAGE=()
-    local u big isip
-    for u in "${raw_urls[@]}"; do
-        big=0; isip=0
-        [[ "$u" == big:* ]] && { big=1; u="${u#big:}"; }
-        [[ "$u" == ip:* ]] && { isip=1; u="${u#ip:}"; }
-        if [[ "$u" == https://* ]]; then
-            case "$tlsmode" in
-                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13); BC_BIG+=($big $big); BC_IP+=($isip $isip) ;;
-                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode"); BC_BIG+=($big); BC_IP+=($isip) ;;
-            esac
-        else
-            BC_URLS+=("$u"); BC_TLS+=(""); BC_BIG+=($big); BC_IP+=($isip)
-        fi
-    done
+    bc_expand "$tlsmode" "${raw_urls[@]}"
     if [[ ${#BC_URLS[@]} -eq 0 ]]; then
         echo -e "${RED}Нет адресов для проверки. Пример: zapret blockcheck discord youtube example.com${NC}"
         return 1
@@ -343,7 +442,7 @@ blockcheck_zapret() {
         for ((i=0; i<${#BC_URLS[@]}; i++)); do echo "  $(bc_label $i)"; done
     } > "$BC_LOG"
 
-    if [[ $BC_DEBUG -eq 1 ]]; then
+    if [[ $BC_DEBUG -ge 1 ]]; then
         BC_DBGDIR="$BC_OUTDIR/zapret-blockcheck-debug"
         rm -rf "$BC_DBGDIR"; mkdir -p "$BC_DBGDIR"
         {
@@ -372,70 +471,125 @@ blockcheck_zapret() {
     echo ""
     echo -e "${BLUE}Без zapret (напрямую):${NC}"
     bc_probe_all "" "00_direct"
-    # уточнить этап для таймаутов: TCP прошёл -> обрыв на TLS
+    # уточнить этап для таймаутов: TCP прошёл -> обрыв на TLS.
+    # проверка параллельно и по одному разу на каждый адрес (TLS 1.2 и 1.3 - один и тот же хост)
+    local tdir; tdir=$(mktemp -d)
+    local -A tcp_seen=()
+    local -a tpids=()
     for ((i=0; i<total; i++)); do
-        if [[ "${BC_STAGE[$i]}" == "tcp" ]] && bc_tcp_ok "${BC_URLS[$i]}"; then
+        [[ "${BC_STAGE[$i]}" == "tcp" ]] || continue
+        local key; key=$(printf '%s' "${BC_URLS[$i]}" | md5sum | cut -c1-12)
+        [[ -n "${tcp_seen[$key]}" ]] && continue
+        tcp_seen[$key]=1
+        ( bc_tcp_ok "${BC_URLS[$i]}" && touch "$tdir/$key" ) &
+        tpids+=($!)
+    done
+    [[ ${#tpids[@]} -gt 0 ]] && wait "${tpids[@]}"
+    for ((i=0; i<total; i++)); do
+        [[ "${BC_STAGE[$i]}" == "tcp" ]] || continue
+        local key; key=$(printf '%s' "${BC_URLS[$i]}" | md5sum | cut -c1-12)
+        if [[ -f "$tdir/$key" ]]; then
             [[ "${BC_URLS[$i]}" == https://* ]] && BC_STAGE[$i]="tls" || BC_STAGE[$i]="data"
         fi
     done
+    rm -rf "$tdir"
     for ((i=0; i<total; i++)); do
         printf '  %-62s %s\n' "$(bc_label $i)" "$(bc_rc_text "${BC_RC[$i]}" "${BC_STAGE[$i]}")"
     done | tee -a "$BC_LOG"
     if [[ $BC_OK -eq $total ]]; then
         echo -e "${YELLOW}Все адреса открываются и без zapret. Либо блокировки нет, либо она срабатывает не сразу.${NC}"
     fi
-    echo ""
-    echo -e "${BLUE}Проверка ${#cand_names[@]} стратегий (порт $port, таймаут ${BC_TIMEOUT}с). Ctrl+C - прервать.${NC}"
-    echo -e "${BLUE}+ адрес открылся, - не открылся${NC}"
 
+    # адреса, которые без zapret не проходят DNS или TCP (блокировка по имени/IP, адрес не существует),
+    # стратегиями tpws не лечатся: убираем их из перебора, иначе каждая стратегия ждёт на них полный таймаут
+    if [[ ${BC_EXCLUDE:-1} -eq 1 ]]; then
+        local -a keep=() dropped=()
+        local ei=0 ru st n2 j bad
+        for ru in "${raw_urls[@]}"; do
+            st="${ru#big:}"; st="${st#ip:}"
+            n2=1; [[ "$st" == https://* && "$tlsmode" == both ]] && n2=2
+            bad=1
+            for ((j=ei; j<ei+n2; j++)); do
+                case "${BC_RC[$j]}:${BC_STAGE[$j]}" in
+                    *:dns|*:tcp|6:*|7:*) ;;
+                    *) bad=0 ;;
+                esac
+            done
+            ei=$((ei+n2))
+            if [[ $bad -eq 1 ]]; then dropped+=("$st"); else keep+=("$ru"); fi
+        done
+        if [[ ${#dropped[@]} -gt 0 ]]; then
+            echo -e "${YELLOW}Исключено из перебора: ${#dropped[@]} адресов. Они не открываются и без zapret на этапе DNS/TCP, стратегии tpws тут не помогут.${NC}"
+            printf '   %s\n' "${dropped[@]:0:8}"
+            [[ ${#dropped[@]} -gt 8 ]] && echo "   … и ещё $(( ${#dropped[@]}-8 )) (полный список в отчёте)"
+            printf 'excluded (dns/tcp): %s\n' "${dropped[@]}" >> "$BC_LOG"
+            echo "   Оставить их в проверке: параметр keepdead"
+            if [[ ${#keep[@]} -eq 0 ]]; then
+                echo -e "${RED}Проверять нечего: все адреса недоступны ещё до DPI.${NC}"
+                bc_pack_debug; return 1
+            fi
+            raw_urls=("${keep[@]}")
+            bc_expand "$tlsmode" "${raw_urls[@]}"
+            total=${#BC_URLS[@]}
+        fi
+    fi
+    echo ""
     local pid="" stop=0
     trap 'stop=1; [[ -n "$pid" ]] && kill $pid 2>/dev/null' INT TERM
-    local -a res=()
-    local idx=0
-    for ((idx=0; idx<${#cand_names[@]}; idx++)); do
-        [[ $stop -eq 1 ]] && break
-        n="${cand_names[$idx]}"; o="${cand_opts[$idx]}"
-        # shellcheck disable=SC2086
-        if ! "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $o --dry-run &>/dev/null; then
-            printf '[%3d/%d] %-20s %s\n' $((idx+1)) ${#cand_names[@]} "$n" "неверные параметры, пропуск"
-            continue
-        fi
-        local label tlog=/dev/null dbgopt=""
-        label=$(printf '%03d_%s' $((idx+1)) "$n")
-        if [[ $BC_DEBUG -eq 1 ]]; then
-            mkdir -p "$BC_DBGDIR/$label"
-            echo "$o" > "$BC_DBGDIR/$label/strategy.txt"
-            tlog="$BC_DBGDIR/$label/tpws.log"
-            dbgopt="--debug=1"
-        fi
-        # shellcheck disable=SC2086
-        "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $o $dbgopt &>"$tlog" &
-        pid=$!
-        for i in $(seq 1 30); do
-            (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null && break
-            sleep 0.1
+    local -a res=() all_ids=()
+    for ((i=0; i<${#cand_names[@]}; i++)); do all_ids+=("$i"); done
+    BC_MATRIX="$BC_OUTDIR/zapret-blockcheck-matrix.csv"
+    : > "$BC_MATRIX"
+
+    # двухэтапная проверка, если адресов много: 1) все стратегии на выборке, 2) лучшие на полном списке
+    BC_ROUNDS=1
+    if [[ ${BC_SAMPLE:-0} -gt 0 && ${#raw_urls[@]} -gt $BC_SAMPLE && ${#cand_names[@]} -gt ${BC_TOP:-5} ]]; then
+        BC_ROUNDS=2
+        local -a sample=()
+        local step k
+        step=$(awk -v a=${#raw_urls[@]} -v b=$BC_SAMPLE 'BEGIN{print a/b}')
+        for ((k=0; k<BC_SAMPLE; k++)); do
+            sample+=("${raw_urls[$(awk -v s="$step" -v k=$k 'BEGIN{print int(s*k)}')]}")
         done
-        if ! kill -0 $pid 2>/dev/null; then
-            printf '[%3d/%d] %-20s %s\n' $((idx+1)) ${#cand_names[@]} "$n" "tpws не запустился"
-            pid=""; continue
+        bc_expand "$tlsmode" "${sample[@]}"
+        echo -e "${BLUE}Этап 1: ${#cand_names[@]} стратегий на выборке из ${#sample[@]} адресов (${#BC_URLS[@]} проверок на стратегию). Ctrl+C - прервать.${NC}"
+        echo -e "${BLUE}+ адрес открылся, - не открылся${NC}"
+        BC_ROUND=1
+        bc_round "${all_ids[@]}"
+        local -a s1 fin=()
+        mapfile -t s1 < <(bc_sort_res "${res[@]}")
+        local r ok tm id cur
+        cur=$(get_current_strategy_name)
+        for r in "${s1[@]}"; do
+            IFS='|' read -r ok tm id <<< "$r"
+            [[ $ok -gt 0 && ${#fin[@]} -lt $BC_TOP ]] && fin+=("$id")
+        done
+        # текущая стратегия тоже идёт в финал, чтобы было с чем сравнить
+        for ((k=0; k<${#cand_names[@]}; k++)); do
+            [[ "${cand_names[$k]}" == "$cur" && " ${fin[*]} " != *" $k "* ]] && fin+=("$k")
+        done
+        res=()
+        bc_expand "$tlsmode" "${raw_urls[@]}"
+        total=${#BC_URLS[@]}
+        if [[ $stop -eq 0 && ${#fin[@]} -gt 0 ]]; then
+            echo ""
+            echo -e "${BLUE}Этап 2: ${#fin[@]} финалистов на полном списке (${total} проверок).${NC}"
+            BC_ROUND=2
+            bc_round "${fin[@]}"
         fi
-        bc_probe_all "$port" "$label"
-        kill $pid 2>/dev/null; wait $pid 2>/dev/null; pid=""
-        [[ $stop -eq 1 ]] && break
-        local color="$RED"
-        [[ $BC_OK -gt 0 ]] && color="$YELLOW"
-        [[ $BC_OK -eq $total ]] && color="$GREEN"
-        printf "[%3d/%d] %-20s ${color}%2d/%d${NC} %s %5ss\n" $((idx+1)) ${#cand_names[@]} "$n" $BC_OK $total "$BC_DETAIL" "$BC_TIME"
-        echo "$BC_OK/$total $BC_DETAIL ${BC_TIME}s $n | $o" >> "$BC_LOG"
-        res+=("$BC_OK|$BC_TIME|$idx")
-    done
+    else
+        echo -e "${BLUE}Проверка ${#cand_names[@]} стратегий (порт $port, таймаут ${BC_TIMEOUT}с, ${total} проверок на стратегию). Ctrl+C - прервать.${NC}"
+        echo -e "${BLUE}+ адрес открылся, - не открылся${NC}"
+        BC_ROUND=1
+        bc_round "${all_ids[@]}"
+    fi
     trap - INT TERM
 
     [[ ${#res[@]} -eq 0 ]] && { echo -e "${RED}Нет результатов.${NC}"; bc_pack_debug; return 1; }
 
     # сортировка: больше успешных, затем быстрее
     local -a sorted
-    mapfile -t sorted < <(printf '%s\n' "${res[@]}" | awk -F'|' '{t=($2=="-")?999:$2; printf "%d|%s|%s\n", $1, t, $3}' | sort -s -t'|' -k1,1nr -k2,2n)
+    mapfile -t sorted < <(bc_sort_res "${res[@]}")
 
     echo ""
     echo -e "${GREEN}Лучшие стратегии:${NC}"
@@ -448,6 +602,7 @@ blockcheck_zapret() {
         [[ $shown -ge 5 ]] && break
     done
     echo -e "${BLUE}Полный отчёт: $BC_LOG${NC}"
+    echo -e "${BLUE}Матрица результатов (стратегия x адрес): $BC_MATRIX${NC}"
     bc_pack_debug
     if [[ $shown -eq 0 ]]; then
         echo -e "${RED}Ни одна стратегия не открыла адреса.${NC}"
