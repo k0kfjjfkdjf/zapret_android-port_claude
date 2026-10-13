@@ -1,10 +1,10 @@
 #!/bin/sh
 # zapret-termux: установка одной командой (внутри proot-distro, от root)
 #
-#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/<ветка>/termux/install.sh)"
+#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
 #
 # Переменные (необязательно):
-#   ZT_BRANCH  ветка репозитория (по умолчанию - основная ветка репозитория)
+#   ZT_BRANCH  ветка репозитория (по умолчанию termux-zapret-udp-script - ветка проекта zapret-termux)
 #   ZT_REPO    адрес репозитория
 #   ZT_DEST    куда клонировать (по умолчанию /opt/zapret-termux)
 #
@@ -13,7 +13,7 @@
 set -e
 
 REPO="${ZT_REPO:-https://github.com/k0kfjjfkdjf/zapret_android-port_claude.git}"
-BRANCH="${ZT_BRANCH:-}"
+BRANCH="${ZT_BRANCH:-termux-zapret-udp-script}"
 DEST="${ZT_DEST:-/opt/zapret-termux}"
 
 if [ "$(id -u)" -ne 0 ]; then

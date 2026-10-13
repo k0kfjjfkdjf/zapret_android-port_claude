@@ -3,7 +3,7 @@
 Обход DPI на Android **без root** с помощью [zapret](https://github.com/bol-van/zapret) (tpws) в Termux + proot-distro.
 Работает и для TCP (сайты, YouTube, Discord), и для **UDP** (QUIC/HTTP3, голос Discord, STUN), благодаря собственному патчу tpws.
 
-> Это отдельный от Android-приложения ZapretDroid инструмент: он живёт в папке `termux/` и не зависит от остального репозитория.
+> Это отдельный проект в ветке [`termux-zapret-udp-script`](https://github.com/k0kfjjfkdjf/zapret_android-port_claude/tree/termux-zapret-udp-script). Android-приложение ZapretDroid живёт в основной ветке этого же репозитория. Это два разных подхода к одной задаче.
 
 ## Содержание
 
@@ -64,7 +64,7 @@ proot-distro login ubuntu
 
 ```sh
 apt update && apt install -y curl
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/claude/zapret-android-no-root-632xp0/termux/install.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
 zapret start
 ```
 
@@ -78,15 +78,9 @@ zapret start
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
-| `ZT_BRANCH` | основная ветка репозитория | ставить из другой ветки |
+| `ZT_BRANCH` | `termux-zapret-udp-script` | ставить из другой ветки (например, тестовой) |
 | `ZT_REPO` | этот репозиторий | ставить из форка |
 | `ZT_DEST` | `/opt/zapret-termux` | куда клонировать |
-
-Пример установки из ветки:
-
-```sh
-ZT_BRANCH=termux-zapret-udp-script sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
-```
 
 Если раньше стоял старый однофайловый скрипт `zapret`, установщик заменит его. Настройки (`~/.zapret_*`) сохранятся.
 
@@ -233,7 +227,7 @@ zapret update        # или пункт 13 в меню
 3. Патч из `patches/` накладывается заново, tpws пересобирается.
 4. Если zapret был запущен, он запускается снова. Настройки сохраняются.
 
-Если вы ставили из ветки, а её потом слили и удалили, переустановите из основной ветки (см. [Установка](#установка)).
+`update` следит за той веткой, из которой была установка (по умолчанию `termux-zapret-udp-script`). Если ветку переименуют, переустановите командой из раздела [Установка](#установка).
 
 ## Если что-то не работает
 
@@ -251,7 +245,7 @@ zapret update        # или пункт 13 в меню
 
 ## Ограничения
 
-- **Нет фейкового TLS для TCP.** Самые сильные стратегии nfqws (fake ClientHello, `fooling=badseq`, `seqovl`) требуют сырых пакетов, то есть root. tpws умеет только разрезы и disorder. Без root фейки для TCP делает ByeDPI: он встроен в приложение ZapretDroid из этого репозитория.
+- **Нет фейкового TLS для TCP.** Самые сильные стратегии nfqws (fake ClientHello, `fooling=badseq`, `seqovl`) требуют сырых пакетов, то есть root. tpws умеет только разрезы и disorder. Без root фейки для TCP делает ByeDPI: он встроен в приложение ZapretDroid из основной ветки этого репозитория.
 - Блокировки по IP и DNS tpws не обходит, `blockcheck` их распознаёт.
 - tpws не подключается к локальным и частным адресам: это встроенная защита.
 - IPv6 в UDP-патче реализован, но на реальной сети не проверялся.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================
 # zapret-termux: tpws (zapret) как SOCKS5-прокси в Termux + proot-distro, без root
-# Установка:  sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/<ветка>/termux/install.sh)"
+# Установка:  sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
 # ============================================
 
 ZT_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"

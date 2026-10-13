@@ -1,103 +1,66 @@
-# ZapretDroid
+# zapret-termux
 
-Обход DPI на Android **без root**: обычное приложение, которое работает через системный VPN
-(`VpnService`). Трафик никуда не уходит — «VPN» локальный, он нужен только чтобы перехватить
-соединения и применить к ним техники обхода в духе [zapret](https://github.com/bol-van/zapret).
+**Обход DPI на Android без root: [zapret](https://github.com/bol-van/zapret) (tpws) в Termux + proot-distro, с поддержкой UDP.**
 
-*English summary below.*
+> Это ветка `termux-zapret-udp-script`: отдельный проект в репозитории.
+> Android-приложение **ZapretDroid** (VpnService + ByeDPI) находится в [основной ветке](https://github.com/k0kfjjfkdjf/zapret_android-port_claude).
+> Это два разных подхода к одной задаче.
 
-## Как это устроено
+| | zapret-termux (эта ветка) | ZapretDroid (основная ветка) |
+|---|---|---|
+| Что это | скрипты + tpws в Termux/proot | готовое Android-приложение |
+| Движок | tpws из zapret с UDP-патчем | ByeDPI + hev-socks5-tunnel |
+| Перехват трафика | внешний VPN-клиент (SocksTun) → SOCKS5 | встроенный VpnService |
+| TCP | разрезы, disorder, oob, tlsrec | плюс фейковые пакеты |
+| UDP | фейки с низким TTL: QUIC, голос Discord, STUN | фейки для QUIC |
+| Подбор стратегий | `zapret blockcheck` в терминале | в приложении |
 
-```
-Приложения ─► VpnService (TUN) ─► hev-socks5-tunnel ─► ByeDPI (SOCKS5 на 127.0.0.1)
-                                                        └─► сеть через обычные сокеты
-```
+## Возможности
 
-- **[ByeDPI](https://github.com/hufrea/byedpi)** — движок десинхронизации: split, disorder, OOB,
-  разбиение TLS-записей, фейковые пакеты с низким TTL (через `vmsplice`/`splice`, root не нужен),
-  фейковые UDP-датаграммы для QUIC, автоматическое переключение стратегий при сбоях.
-- **[hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel)** — переводит пакеты из TUN
-  в SOCKS5-соединения (TCP и UDP).
-- Само приложение исключено из VPN, поэтому сокеты движка идут в сеть напрямую.
-- VPN-сервис работает в отдельном процессе `:engine`, который завершается после каждой сессии:
-  у обеих нативных библиотек глобальное состояние.
+- **UDP через SOCKS5 UDP ASSOCIATE**: QUIC/HTTP3, голос Discord, звонки, STUN. Фейковые датаграммы с низким TTL без root, по протоколу (QUIC Initial, IP discovery Discord, STUN).
+- **`zapret blockcheck`**: подбор TCP-стратегии в терминале. TLS 1.2 и 1.3 проверяются отдельно, есть проверка большого файла против «заморозки» на 16–20 КБ и режим отладки с архивом логов.
+- **`zapret debug`**: лог по этапам (время до первого ответа, повторы IP discovery Discord, время TCP-подключений) и итоговый отчёт.
+- **Профили UDP** для Discord и YouTube, **26 TCP-стратегий**, списки доменов из [zapret.cfgs](https://github.com/Snowy-Fluffy/zapret.cfgs).
+- **Установка одной командой**; `zapret update` обновляет скрипты из этой ветки, zapret и пересобирает tpws.
 
-### Почему не nfqws
+## Быстрый старт
 
-nfqws/nfqws2 из zapret работают с сырыми пакетами через NFQUEUE — это требует root. Без root
-доступны только техники уровня сокетов (то, что умеет tpws и ByeDPI). Поэтому часть стратегий
-zapret на Android без root не воспроизвести.
-
-## Возможности (v0.5)
-
-- Включение одной кнопкой, плитка в шторке, уведомление с кнопкой остановки.
-- Готовые стратегии и своя командная строка движка.
-- **Из zapret:**
-  - фейковые нагрузки из zapret2 (QUIC Initial, TLS ClientHello, Discord, STUN…) —
-    `--fake-data {fake:имя}`, кнопка «Вставить фейковую нагрузку», пресеты «TCP + QUIC/UDP»
-    и «Discord и звонки»;
-  - подбор стратегии в духе `blockcheck`: перебор стратегий на выбранных сайтах (в том числе
-    59 стратегий сообщества ByeByeDPI и списки сайтов: видеосерверы YouTube, Telegram,
-    Discord, соцсети, Cloudflare), по каждому сайту — этап, на котором случился сбой, тайминги,
-    статус HTTP, обрезка или зависание ответа, редирект на страницу блокировки; результат
-    применяется одним нажатием;
-  - маркеры позиций tpws: `method`, `host`, `endhost`, `sld`, `midsld`, `endsld`, `sniext`
-    (`--split midsld`, `--tlsrec sniext+1`…);
-  - модификации HTTP из tpws в `-M`: `hostcase`, `hostspell=`, `hostdot`, `hosttab`,
-    `hostnospace`, `hostpad=N`, `methodspace`, `methodeol`, `unixeol`;
-  - списки хостов в формате zapret (импорт, gzip, загрузка по ссылке) и область применения:
-    все сайты / только список / все, кроме списка; `{list:имя}` в аргументах;
-  - autohostlist как отладочная функция: запись доменов, где блокировка видна даже со
-    стратегией, и добавление их в список.
-- Журнал всего приложения в одном файле: действия в интерфейсе, изменения настроек, сессии
-  VPN, смены сети, подбор стратегии, вывод движка и туннеля, точная команда запуска, ошибки
-  со стеком и падения. Источник каждой строки (`ui`, `vpn`, `test`, `byedpi`, `hev`), фильтры,
-  отправка/сохранение; старые записи обрезаются, остаются последние ~2 МБ.
-- DNS-сервер, IPv6, раздельное туннелирование по приложениям.
-- Поддержка «Постоянного VPN» Android (автозапуск при загрузке:
-  *Настройки → Сеть → VPN → ZapretDroid → Постоянная VPN*).
-- Интерфейс на русском и английском, Material You. Android 7.0+ (API 24).
-
-Движок — форк ByeDPI в `app/src/main/cpp/engine` (изменения перечислены в
-[UPSTREAM.md](app/src/main/cpp/engine/UPSTREAM.md)).
-
-## План
-
-- [ ] Проверка QUIC/UDP в подборе стратегии.
-- [ ] Асинхронный резолвер в движке и mapped DNS (имена доменов вместо IP в SOCKS).
-- [ ] Импорт/экспорт настроек.
-
-## Тесты
-
-- `app/src/test/native/run.sh` — нативные тесты движка на хосте (ASan/UBSan) и проверка, что
-  каждый пресет и кандидат подбора принимается движком.
-- `./gradlew testDebugUnitTest` — unit-тесты Kotlin.
-
-## Сборка
+В Termux:
 
 ```sh
-git clone --recursive https://github.com/k0kfjjfkdjf/zapret_android-port_claude.git
-cd zapret_android-port_claude
-./gradlew assembleDebug
+pkg install proot-distro
+proot-distro install ubuntu
+proot-distro login ubuntu
 ```
 
-Нужны JDK 21 (или 17), Android SDK (platform 36), NDK 27.2.12479018 и CMake 3.22.1.
-APK для всех ABI и универсальный APK появятся в `app/build/outputs/apk/debug/`.
-CI (GitHub Actions) собирает их на каждый push — смотрите артефакты сборки.
+Внутри Ubuntu:
 
-Подписанный релиз: задайте переменные `ZAPRETDROID_KEYSTORE`, `ZAPRETDROID_KEYSTORE_PASSWORD`,
-`ZAPRETDROID_KEY_ALIAS`, `ZAPRETDROID_KEY_PASSWORD` и запустите `./gradlew assembleRelease`.
+```sh
+apt update && apt install -y curl
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
+zapret start
+```
 
-## English
+Затем настройте VPN-клиент [SocksTun](https://f-droid.org/packages/hev.sockstun): адрес `127.0.0.1:1080`, «UDP relay over TCP» выключить, режим per-App **без Termux**.
 
-ZapretDroid is a rootless DPI bypass for Android. It runs a local VPN (`VpnService`) that feeds
-traffic through [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) into the
-[ByeDPI](https://github.com/hufrea/byedpi) desync engine; nothing leaves the device through a
-remote server. Packet-level zapret techniques (nfqws) require root and are out of scope; tpws position
-markers and HTTP modifications, zapret2 fake payloads, zapret-style host lists, autohostlist
-and a blockcheck-like strategy finder are included. Build with `./gradlew assembleDebug`
-after a recursive clone (JDK 17, SDK 36, NDK 27.2.12479018, CMake 3.22.1).
+## Документация
 
-## Лицензия
+Полное руководство: **[termux/README.md](termux/README.md)**. Там установка, настройка SocksTun, все команды, TCP-стратегии и UDP-профили, blockcheck, отладка, обновление, решение проблем, устройство проекта и описание патча tpws.
 
-GPLv3, см. [LICENSE](LICENSE). Сторонние компоненты — в [THIRD_PARTY.md](THIRD_PARTY.md).
+## Структура
+
+```
+termux/
+├── install.sh                   установка одной командой
+├── zapret                       точка входа
+├── lib/                         модули
+├── patches/tpws-socks-udp.patch патч tpws (SOCKS5 UDP ASSOCIATE)
+├── data/strategies.txt          TCP-стратегии
+└── README.md                    документация
+```
+
+Остальные файлы ветки (`app/`, Gradle) достались от основной ветки и к zapret-termux отношения не имеют.
+
+## Благодарности
+
+[bol-van/zapret](https://github.com/bol-van/zapret) · [heiher/hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) / [SocksTun](https://github.com/heiher/sockstun) · [Snowy-Fluffy/zapret.cfgs](https://github.com/Snowy-Fluffy/zapret.cfgs) · [Snowy-Fluffy/zapret.installer](https://github.com/Snowy-Fluffy/zapret.installer)
