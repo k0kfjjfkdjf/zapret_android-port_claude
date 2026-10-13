@@ -1,0 +1,1221 @@
+diff --git a/tpws/params.c b/tpws/params.c
+index 0690e68..2aaeece 100644
+--- a/tpws/params.c
++++ b/tpws/params.c
+@@ -277,5 +277,6 @@ void cleanup_params(struct params_s *params)
+ 	hostlist_files_destroy(&params->hostlists);
+ 	ipset_files_destroy(&params->ipsets);
+ 	ipcacheDestroy(&params->ipcache);
++	port_filters_destroy(&params->udp_pf);
+ 	free(params->user); params->user=NULL;
+ }
+diff --git a/tpws/params.h b/tpws/params.h
+index a0f2a11..f0ea143 100644
+--- a/tpws/params.h
++++ b/tpws/params.h
+@@ -149,6 +149,17 @@ struct params_s
+ 	bool tamper_lim; // tamper-start or tamper-cutoff set in any profile
+ 	struct desync_profile_list_head desync_profiles;
+ 
++	// socks5 UDP ASSOCIATE
++	bool udp;		// udp associate enabled
++	bool udp_desync;	// fake sending enabled
++	int udp_timeout;
++	int udp_fake_ttl, udp_fake_ttl6;
++	int udp_fake_repeats;
++	unsigned int udp_desync_count;
++	struct port_filters_head udp_pf;
++	uint8_t udp_fake[1472], udp_fake_quic[1472], udp_fake_discord[1472], udp_fake_stun[1472];
++	size_t udp_fake_size, udp_fake_quic_size, udp_fake_discord_size, udp_fake_stun_size;
++
+ 	unsigned int ipcache_lifetime;
+ 	bool cache_hostname;
+ 	ip_cache ipcache;
+diff --git a/tpws/tpws.c b/tpws/tpws.c
+index 69e6d39..f28aa33 100644
+--- a/tpws/tpws.c
++++ b/tpws/tpws.c
+@@ -192,6 +192,17 @@ static void exithelp(void)
+ 		" --port=<port>\t\t\t\t; only one port number for all binds is supported\n"
+ 		" --socks\t\t\t\t; implement socks4/5 proxy instead of transparent proxy\n"
+ 		" --no-resolve\t\t\t\t; disable socks5 remote dns ability\n"
++		" --socks-udp\t\t\t\t; enable socks5 UDP ASSOCIATE\n"
++		" --udp-timeout=<sec>\t\t\t; udp associate idle timeout. default 60. 0 = no timeout\n"
++		" --udp-fake-ttl=<ttl>\t\t\t; send fake datagrams with this ipv4 TTL before real ones. enables udp desync\n"
++		" --udp-fake-ttl6=<hops>\t\t\t; same for ipv6. default = udp-fake-ttl\n"
++		" --udp-fake-repeats=<N>\t\t\t; how many fakes to send before each real datagram. default 1\n"
++		" --udp-desync-count=<N>\t\t\t; desync first N outgoing datagrams of each udp flow. default 2\n"
++		" --udp-desync-ports=<port_list>\t\t; apply udp desync only to these destination ports. default all\n"
++		" --udp-fake=<filename>\t\t\t; fake payload for generic udp. default 64 zero bytes\n"
++		" --udp-fake-quic=<filename>\t\t; fake payload for QUIC Initial. default = --udp-fake\n"
++		" --udp-fake-discord=<filename>\t\t; fake payload for Discord voice flows (ip discovery). default = --udp-fake\n"
++		" --udp-fake-stun=<filename>\t\t; fake payload for STUN flows. default = --udp-fake\n"
+ 		" --resolver-threads=<int>\t\t; number of resolver worker threads\n"
+ 		" --local-rcvbuf=<bytes>\n"
+ 		" --local-sndbuf=<bytes>\n"
+@@ -695,6 +706,17 @@ enum opt_indices {
+ 	IDX_REMOTE_SNDBUF,
+ 	IDX_SOCKS,
+ 	IDX_NO_RESOLVE,
++	IDX_SOCKS_UDP,
++	IDX_UDP_TIMEOUT,
++	IDX_UDP_FAKE_TTL,
++	IDX_UDP_FAKE_TTL6,
++	IDX_UDP_FAKE_REPEATS,
++	IDX_UDP_DESYNC_COUNT,
++	IDX_UDP_DESYNC_PORTS,
++	IDX_UDP_FAKE,
++	IDX_UDP_FAKE_QUIC,
++	IDX_UDP_FAKE_DISCORD,
++	IDX_UDP_FAKE_STUN,
+ 	IDX_RESOLVER_THREADS,
+ 	IDX_SKIP_NODELAY,
+ 	IDX_TAMPER_START,
+@@ -788,6 +810,17 @@ static const struct option long_options[] = {
+ 	[IDX_REMOTE_SNDBUF] = {"remote-sndbuf", required_argument, 0, 0},
+ 	[IDX_SOCKS] = {"socks", no_argument, 0, 0},
+ 	[IDX_NO_RESOLVE] = {"no-resolve", no_argument, 0, 0},
++	[IDX_SOCKS_UDP] = {"socks-udp", no_argument, 0, 0},
++	[IDX_UDP_TIMEOUT] = {"udp-timeout", required_argument, 0, 0},
++	[IDX_UDP_FAKE_TTL] = {"udp-fake-ttl", required_argument, 0, 0},
++	[IDX_UDP_FAKE_TTL6] = {"udp-fake-ttl6", required_argument, 0, 0},
++	[IDX_UDP_FAKE_REPEATS] = {"udp-fake-repeats", required_argument, 0, 0},
++	[IDX_UDP_DESYNC_COUNT] = {"udp-desync-count", required_argument, 0, 0},
++	[IDX_UDP_DESYNC_PORTS] = {"udp-desync-ports", required_argument, 0, 0},
++	[IDX_UDP_FAKE] = {"udp-fake", required_argument, 0, 0},
++	[IDX_UDP_FAKE_QUIC] = {"udp-fake-quic", required_argument, 0, 0},
++	[IDX_UDP_FAKE_DISCORD] = {"udp-fake-discord", required_argument, 0, 0},
++	[IDX_UDP_FAKE_STUN] = {"udp-fake-stun", required_argument, 0, 0},
+ 	[IDX_RESOLVER_THREADS] = {"resolver-threads", required_argument, 0, 0},
+ 	[IDX_SKIP_NODELAY] = {"skip-nodelay", no_argument, 0, 0},
+ 	[IDX_TAMPER_START] = {"tamper-start", required_argument, 0, 0},
+@@ -832,6 +865,10 @@ void parse_params(int argc, char *argv[])
+ 
+ 	memset(&params, 0, sizeof(params));
+ 	params.maxconn = DEFAULT_MAX_CONN;
++	params.udp_timeout = UDP_DEFAULT_TIMEOUT;
++	params.udp_fake_repeats = 1;
++	params.udp_desync_count = 2;
++	params.udp_fake_size = 64; // zero filled by default
+ 	params.max_orphan_time = DEFAULT_MAX_ORPHAN_TIME;
+ 	params.binds_last = -1;
+ 	params.ipcache_lifetime = IPCACHE_LIFETIME;
+@@ -1395,6 +1432,71 @@ void parse_params(int argc, char *argv[])
+ 		case IDX_NO_RESOLVE:
+ 			params.no_resolve = true;
+ 			break;
++		case IDX_SOCKS_UDP:
++			params.udp = true;
++			break;
++		case IDX_UDP_TIMEOUT:
++			params.udp_timeout = atoi(optarg);
++			if (params.udp_timeout<0)
++			{
++				DLOG_ERR("udp-timeout must be >=0\n");
++				exit_clean(1);
++			}
++			break;
++		case IDX_UDP_FAKE_TTL:
++		case IDX_UDP_FAKE_TTL6:
++			{
++				int v = atoi(optarg);
++				if (v<1 || v>255)
++				{
++					DLOG_ERR("udp-fake-ttl must be within 1..255\n");
++					exit_clean(1);
++				}
++				if (option_index==IDX_UDP_FAKE_TTL) params.udp_fake_ttl = v; else params.udp_fake_ttl6 = v;
++				params.udp_desync = true;
++			}
++			break;
++		case IDX_UDP_FAKE_REPEATS:
++			params.udp_fake_repeats = atoi(optarg);
++			if (params.udp_fake_repeats<1 || params.udp_fake_repeats>20)
++			{
++				DLOG_ERR("udp-fake-repeats must be within 1..20\n");
++				exit_clean(1);
++			}
++			break;
++		case IDX_UDP_DESYNC_COUNT:
++			params.udp_desync_count = (unsigned int)atoi(optarg);
++			break;
++		case IDX_UDP_DESYNC_PORTS:
++			if (!parse_pf_list(optarg,&params.udp_pf))
++			{
++				DLOG_ERR("Invalid port filter : %s\n",optarg);
++				exit_clean(1);
++			}
++			break;
++		case IDX_UDP_FAKE:
++		case IDX_UDP_FAKE_QUIC:
++		case IDX_UDP_FAKE_DISCORD:
++		case IDX_UDP_FAKE_STUN:
++			{
++				uint8_t *b; size_t *sz;
++				switch(option_index)
++				{
++					case IDX_UDP_FAKE_QUIC: b=params.udp_fake_quic; sz=&params.udp_fake_quic_size; break;
++					case IDX_UDP_FAKE_DISCORD: b=params.udp_fake_discord; sz=&params.udp_fake_discord_size; break;
++					case IDX_UDP_FAKE_STUN: b=params.udp_fake_stun; sz=&params.udp_fake_stun_size; break;
++					default: b=params.udp_fake; sz=&params.udp_fake_size;
++				}
++				uint8_t tmp[sizeof(params.udp_fake)+1];
++				*sz = sizeof(tmp);
++				if (!load_file(optarg,tmp,sz) || !*sz || *sz>sizeof(params.udp_fake))
++				{
++					DLOG_ERR("could not load udp fake file '%s' (empty or larger than %zu bytes)\n", optarg, sizeof(params.udp_fake));
++					exit_clean(1);
++				}
++				memcpy(b,tmp,*sz);
++			}
++			break;
+ 		case IDX_RESOLVER_THREADS:
+ 			params.resolver_threads = atoi(optarg);
+ 			if (params.resolver_threads<1 || params.resolver_threads>300)
+@@ -1631,6 +1733,15 @@ void parse_params(int argc, char *argv[])
+ 		params.binds_last=0; // default bind to all
+ 	}
+ 	if (!params.resolver_threads) params.resolver_threads = 5 + params.maxconn/50;
++	if (params.udp && params.proxy_type!=CONN_TYPE_SOCKS)
++	{
++		DLOG_ERR("--socks-udp requires --socks\n");
++		exit_clean(1);
++	}
++	if (params.udp_desync && !params.udp)
++		DLOG_CONDUP("WARNING : udp desync options have no effect without --socks-udp\n");
++	if (!params.udp_fake_ttl6) params.udp_fake_ttl6 = params.udp_fake_ttl;
++	if (!params.udp_fake_ttl) params.udp_fake_ttl = params.udp_fake_ttl6;
+ 
+ 	VPRINT("adding low-priority default empty desync profile\n");
+ 	// add default empty profile
+diff --git a/tpws/tpws_conn.c b/tpws/tpws_conn.c
+index f74952a..4909566 100644
+--- a/tpws/tpws_conn.c
++++ b/tpws/tpws_conn.c
+@@ -66,6 +66,27 @@ static bool socks5_send_rep(int fd,uint8_t rep)
+ 	s5rep.atyp = S5_ATYP_IP4;
+ 	return send(fd,&s5rep,sizeof(s5rep),MSG_DONTWAIT)==sizeof(s5rep);
+ }
++static bool socks5_send_rep_addr(int fd,uint8_t rep,const struct sockaddr *sa)
++{
++	uint8_t b[4+16+2];
++	size_t l;
++	b[0]=5; b[1]=rep; b[2]=0;
++	if (sa->sa_family==AF_INET6)
++	{
++		b[3]=S5_ATYP_IP6;
++		memcpy(b+4,&((struct sockaddr_in6*)sa)->sin6_addr,16);
++		memcpy(b+20,&((struct sockaddr_in6*)sa)->sin6_port,2);
++		l=22;
++	}
++	else
++	{
++		b[3]=S5_ATYP_IP4;
++		memcpy(b+4,&((struct sockaddr_in*)sa)->sin_addr,4);
++		memcpy(b+8,&((struct sockaddr_in*)sa)->sin_port,2);
++		l=10;
++	}
++	return send(fd,b,l,MSG_DONTWAIT)==(ssize_t)l;
++}
+ static bool socks5_send_rep_errno(int fd,int errn)
+ {
+ 	uint8_t rep;
+@@ -535,6 +556,7 @@ static void free_conn(tproxy_conn_t *conn)
+ 	if (conn->partner) conn->partner->partner=NULL;
+ 	free(conn->track.hostname);
+ 	if (conn->socks_ri) conn->socks_ri->ptr = NULL; // detach conn
++	udp_assoc_destroy(conn->udp);
+ 	free(conn);
+ }
+ static tproxy_conn_t *new_conn(int fd, bool remote)
+@@ -988,9 +1010,30 @@ static bool handle_proxy_mode(tproxy_conn_t *conn, struct tailhead *conn_list)
+ 							DBGPRINT("socks5 request invalid\n");
+ 							return false;
+ 						}
++						if (m->cmd==S5_CMD_UDP_ASSOC && params.udp)
++						{
++							struct sockaddr_storage bnd;
++							uint16_t req_port=0;
++
++							if (S5_IP46_VALID(m,rd))
++								req_port = m->atyp==S5_ATYP_IP4 ? m->d4.port : m->d6.port;
++							DBGPRINT("socks5 recv udp associate request\n");
++							if (!(conn->udp = udp_assoc_create(conn, conn->efd, conn->fd, req_port, &bnd)))
++							{
++								socks5_send_rep(conn->fd,S5_REP_GENERAL_FAILURE);
++								return false;
++							}
++							if (!socks5_send_rep_addr(conn->fd,S5_REP_OK,(struct sockaddr*)&bnd))
++							{
++								DBGPRINT("socks5 udp associate reply send error\n");
++								return false;
++							}
++							conn->socks_state=S_UDP;
++							return true;
++						}
+ 						if (m->cmd!=S5_CMD_CONNECT)
+ 						{
+-							// BIND and UDP are not supported
++							// BIND is not supported, UDP only with --socks-udp
+ 							DBGPRINT("socks5 unsupported command %02X\n", m->cmd);
+ 							socks5_send_rep(conn->fd,S5_REP_COMMAND_NOT_SUPPORTED);
+ 							return false;
+@@ -1053,6 +1096,10 @@ static bool handle_proxy_mode(tproxy_conn_t *conn, struct tailhead *conn_list)
+ 						return proxy_mode_connect_remote(conn,conn_list);
+ 					}
+ 					break;
++				case S_UDP:
++					// client must not send anything to control connection. ignore.
++					DBGPRINT("socks udp control connection : ignoring %zd bytes\n",rd);
++					return true;
+ 				case S_WAIT_RESOLVE:
+ 					DBGPRINT("socks received message while in S_WAIT_RESOLVE. hanging up\n");
+ 					break;
+@@ -1430,6 +1477,11 @@ static void conn_close_timed_out(struct tailhead *conn_list, struct tailhead *cl
+ 			DBGPRINT("closing timed out connection: fd=%d remote=%d\n",c->fd,c->remote);
+ 			close_tcp_conn(conn_list,close_list,c);
+ 		}
++		else if (c->udp && udp_assoc_expired(c->udp, time(NULL)))
++		{
++			VPRINT("udp associate idle timeout. closing control connection fd=%d\n",c->fd);
++			close_tcp_conn(conn_list,close_list,c);
++		}
+ 		c = cnext;
+ 	}
+ }
+@@ -1471,6 +1523,13 @@ static bool handle_resolve_pipe(tproxy_conn_t **conn, struct tailhead *conn_list
+ 		DLOG_ERR("resolve_pipe not full read %zd\n",rd);
+ 		exit(1000);
+ 	}
++	if (udp_ev_is(ri->ptr))
++	{
++		udp_resolve_complete(ri);
++		*conn = NULL;
++		free(ri);
++		return true;
++	}
+ 	b = resolve_complete(ri, conn_list);
+ 	*conn = (tproxy_conn_t *)ri->ptr;
+ 	if (*conn) (*conn)->socks_ri = NULL;
+@@ -1564,7 +1623,7 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
+ 
+ 		DBGPRINT("epoll_wait\n");
+ 
+-		if ((num_events = epoll_wait(efd, events, MAX_EPOLL_EVENTS, -1)) == -1)
++		if ((num_events = epoll_wait(efd, events, MAX_EPOLL_EVENTS, params.udp ? 1000 : -1)) == -1)
+ 		{
+ 			if (errno == EINTR) continue; // system call was interrupted
+ 			DLOG_PERROR("epoll_wait");
+@@ -1574,6 +1633,14 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
+ 
+ 		for (i = 0; i < num_events; i++)
+ 		{
++			if (udp_ev_is(events[i].data.ptr))
++			{
++				struct udp_sock *us = udp_ev_ptr(events[i].data.ptr);
++				tproxy_conn_t *ctl = (tproxy_conn_t*)us->ua->ctl;
++				if (ctl->state!=CONN_CLOSED && !udp_handle_event(us, events[i].events))
++					close_tcp_conn(&conn_list,&close_list,ctl);
++				continue;
++			}
+ 			conn = (tproxy_conn_t*)events[i].data.ptr;
+ 			if (!conn)
+ 			{
+diff --git a/tpws/tpws_conn.h b/tpws/tpws_conn.h
+index 9c81550..45e600f 100644
+--- a/tpws/tpws_conn.h
++++ b/tpws/tpws_conn.h
+@@ -7,6 +7,7 @@
+ #include "tamper.h"
+ #include "params.h"
+ #include "resolver.h"
++#include "udp.h"
+ 
+ #define BACKLOG 10
+ #define MAX_EPOLL_EVENTS 64
+@@ -65,10 +66,12 @@ struct tproxy_conn
+ 		S_WAIT_REQUEST,
+ 		S_WAIT_RESOLVE,
+ 		S_WAIT_CONNECTION,
+-		S_TCP
++		S_TCP,
++		S_UDP	// control connection of udp associate
+ 	} socks_state;
+ 	uint8_t socks_ver;
+ 	struct resolve_item *socks_ri;
++	struct udp_assoc *udp; // udp associate bound to this control connection
+ 
+ 	// these value are used in flow control. we do not use ET (edge triggered) polling
+ 	// if we dont disable notifications they will come endlessly until condition becomes false and will eat all cpu time
+diff --git a/tpws/udp.c b/tpws/udp.c
+new file mode 100644
+index 0000000..f78aaf4
+--- /dev/null
++++ b/tpws/udp.c
+@@ -0,0 +1,775 @@
++#define _GNU_SOURCE
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <strings.h>
++#include <errno.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <arpa/inet.h>
++#include <netinet/in.h>
++#include <sys/epoll.h>
++
++#include "udp.h"
++#include "params.h"
++#include "socks.h"
++#include "pools.h"
++#include "resolver.h"
++
++#define UDP_BUF_SIZE	65536
++#define S5_UDP_HDR_MAX	(4+1+255+2)
++
++static uint8_t udpbuf[UDP_BUF_SIZE + S5_UDP_HDR_MAX];
++
++// global domain -> ip cache for socks5 udp requests with ATYP=domain
++// (hev-socks5-tunnel / SocksTun with "Remote DNS" sends domain names instead of ips)
++#define DNSCACHE_SIZE		256
++#define DNSCACHE_TTL		300
++#define DNSCACHE_NEG_TTL	15
++static struct {
++	char dom[256];
++	sockaddr_in46 addr;	// sa_family==0 => negative entry
++	time_t expire;
++} dnscache[DNSCACHE_SIZE];
++
++// returns 1 = found, -1 = negative entry, 0 = not in cache
++static int dnscache_get(const char *dom, sockaddr_in46 *addr, time_t now)
++{
++	int i;
++	for (i=0;i<DNSCACHE_SIZE;i++)
++		if (dnscache[i].expire > now && !strcasecmp(dnscache[i].dom,dom))
++		{
++			if (!dnscache[i].addr.sa_family) return -1;
++			*addr = dnscache[i].addr;
++			return 1;
++		}
++	return 0;
++}
++static void dnscache_put(const char *dom, const sockaddr_in46 *addr, time_t now)
++{
++	int i, victim=0;
++	for (i=0;i<DNSCACHE_SIZE;i++)
++	{
++		if (!strcasecmp(dnscache[i].dom,dom)) { victim=i; break; }
++		if (dnscache[i].expire < dnscache[victim].expire) victim=i;
++	}
++	snprintf(dnscache[victim].dom,sizeof(dnscache[victim].dom),"%s",dom);
++	if (addr)
++	{
++		dnscache[victim].addr = *addr;
++		dnscache[victim].expire = now + DNSCACHE_TTL;
++	}
++	else
++	{
++		memset(&dnscache[victim].addr,0,sizeof(dnscache[victim].addr));
++		dnscache[victim].expire = now + DNSCACHE_NEG_TTL;
++	}
++}
++
++static socklen_t sa46len(const struct sockaddr *sa)
++{
++	return sa->sa_family==AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in);
++}
++
++static bool sa46_eq(const sockaddr_in46 *a, const sockaddr_in46 *b)
++{
++	if (a->sa_family!=b->sa_family) return false;
++	if (a->sa_family==AF_INET)
++		return a->sa4.sin_port==b->sa4.sin_port && a->sa4.sin_addr.s_addr==b->sa4.sin_addr.s_addr;
++	return a->sa6.sin6_port==b->sa6.sin6_port && !memcmp(&a->sa6.sin6_addr,&b->sa6.sin6_addr,sizeof(struct in6_addr));
++}
++static bool sa46_ip_eq(const sockaddr_in46 *a, const sockaddr_in46 *b)
++{
++	if (a->sa_family!=b->sa_family) return false;
++	if (a->sa_family==AF_INET)
++		return a->sa4.sin_addr.s_addr==b->sa4.sin_addr.s_addr;
++	return !memcmp(&a->sa6.sin6_addr,&b->sa6.sin6_addr,sizeof(struct in6_addr));
++}
++static uint16_t sa46_port(const sockaddr_in46 *a)
++{
++	return a->sa_family==AF_INET ? a->sa4.sin_port : a->sa6.sin6_port;
++}
++static void sa46_set_port(sockaddr_in46 *a, uint16_t port)
++{
++	if (a->sa_family==AF_INET) a->sa4.sin_port=port; else a->sa6.sin6_port=port;
++}
++// ::ffff:a.b.c.d -> a.b.c.d
++static void sa46_unmap(sockaddr_in46 *a)
++{
++	if (a->sa_family==AF_INET6 && IN6_IS_ADDR_V4MAPPED(&a->sa6.sin6_addr))
++	{
++		struct sockaddr_in sa4;
++		memset(&sa4,0,sizeof(sa4));
++		sa4.sin_family = AF_INET;
++		sa4.sin_port = a->sa6.sin6_port;
++		memcpy(&sa4.sin_addr, a->sa6.sin6_addr.s6_addr+12, 4);
++		a->sa4 = sa4;
++	}
++}
++
++static bool set_nonblock(int fd)
++{
++	int fl = fcntl(fd, F_GETFL);
++	return fl!=-1 && fcntl(fd, F_SETFL, fl|O_NONBLOCK)!=-1;
++}
++
++static bool udp_epoll_add(struct udp_assoc *ua, struct udp_sock *us)
++{
++	struct epoll_event ev;
++	memset(&ev,0,sizeof(ev));
++	ev.events = EPOLLIN;
++	ev.data.ptr = (void*)(((uintptr_t)us) | UDP_EV_TAG);
++	if (epoll_ctl(ua->efd, EPOLL_CTL_ADD, us->fd, &ev)==-1)
++	{
++		DLOG_PERROR("udp epoll_ctl (add)");
++		return false;
++	}
++	return true;
++}
++
++static void udp_sock_close(struct udp_assoc *ua, int kind)
++{
++	if (ua->s[kind].fd>0)
++	{
++		epoll_ctl(ua->efd, EPOLL_CTL_DEL, ua->s[kind].fd, NULL);
++		close(ua->s[kind].fd);
++	}
++	ua->s[kind].fd = 0;
++}
++
++static int udp_out_sock(struct udp_assoc *ua, sa_family_t family)
++{
++	int kind = family==AF_INET6 ? UDP_SOCK_OUT6 : UDP_SOCK_OUT4;
++	struct udp_sock *us = ua->s + kind;
++	int fd;
++
++	if (us->fd>0) return us->fd;
++
++	if ((fd = socket(family, SOCK_DGRAM, 0))==-1)
++	{
++		DLOG_PERROR("udp socket (out)");
++		return -1;
++	}
++	if (!set_nonblock(fd))
++	{
++		DLOG_PERROR("udp set O_NONBLOCK (out)");
++		close(fd);
++		return -1;
++	}
++	if (family==AF_INET6)
++	{
++		int v6only=1;
++		setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
++		if (params.connect_bind6.sin6_family==AF_INET6)
++		{
++			struct sockaddr_in6 b = params.connect_bind6;
++			b.sin6_port = 0;
++			if (bind(fd,(struct sockaddr*)&b,sizeof(b))==-1)
++				DLOG_PERROR("udp bind (connect-bind-addr v6)");
++		}
++	}
++	else if (params.connect_bind4.sin_family==AF_INET)
++	{
++		struct sockaddr_in b = params.connect_bind4;
++		b.sin_port = 0;
++		if (bind(fd,(struct sockaddr*)&b,sizeof(b))==-1)
++			DLOG_PERROR("udp bind (connect-bind-addr v4)");
++	}
++	us->fd = fd;
++	if (!udp_epoll_add(ua, us))
++	{
++		close(fd);
++		us->fd = 0;
++		return -1;
++	}
++	return fd;
++}
++
++struct udp_assoc *udp_assoc_create(void *ctl, int efd, int ctl_fd, uint16_t req_port, struct sockaddr_storage *bnd)
++{
++	struct udp_assoc *ua;
++	sockaddr_in46 local, peer;
++	struct sockaddr_storage ss;
++	socklen_t sl;
++	int fd, k;
++
++	sl = sizeof(ss);
++	if (getsockname(ctl_fd,(struct sockaddr*)&ss,&sl)==-1)
++	{
++		DLOG_PERROR("udp getsockname (ctl)");
++		return NULL;
++	}
++	sa46copy(&local,(struct sockaddr*)&ss);
++	sl = sizeof(ss);
++	if (getpeername(ctl_fd,(struct sockaddr*)&ss,&sl)==-1)
++	{
++		DLOG_PERROR("udp getpeername (ctl)");
++		return NULL;
++	}
++	sa46copy(&peer,(struct sockaddr*)&ss);
++	sa46_unmap(&local);
++	sa46_unmap(&peer);
++
++	if (!(ua = calloc(1,sizeof(*ua))))
++	{
++		DLOG_ERR("udp_assoc_create: out of memory\n");
++		return NULL;
++	}
++	ua->ctl = ctl;
++	ua->efd = efd;
++	for (k=0;k<UDP_SOCK_COUNT;k++)
++	{
++		ua->s[k].ua = ua;
++		ua->s[k].kind = k;
++	}
++	ua->client = peer;
++	sa46_set_port(&ua->client, req_port);
++	ua->client_port_known = !!req_port;
++	ua->last = time(NULL);
++
++	// relay socket listens on the same address client used to reach tcp socks port
++	if ((fd = socket(local.sa_family, SOCK_DGRAM, 0))==-1)
++	{
++		DLOG_PERROR("udp socket (relay)");
++		free(ua);
++		return NULL;
++	}
++	ua->s[UDP_SOCK_RELAY].fd = fd;
++	sa46_set_port(&local, 0);
++	if (bind(fd,(struct sockaddr*)&local,sa46len((struct sockaddr*)&local))==-1 || !set_nonblock(fd))
++	{
++		DLOG_PERROR("udp bind (relay)");
++		udp_assoc_destroy(ua);
++		return NULL;
++	}
++	sl = sizeof(ss);
++	if (getsockname(fd,(struct sockaddr*)&ss,&sl)==-1)
++	{
++		DLOG_PERROR("udp getsockname (relay)");
++		udp_assoc_destroy(ua);
++		return NULL;
++	}
++	if (!udp_epoll_add(ua, ua->s+UDP_SOCK_RELAY))
++	{
++		udp_assoc_destroy(ua);
++		return NULL;
++	}
++	memcpy(bnd,&ss,sizeof(ss));
++
++	if (params.debug)
++	{
++		char s1[48],s2[48];
++		ntop46_port((struct sockaddr*)&ss,s1,sizeof(s1));
++		ntop46_port((struct sockaddr*)&ua->client,s2,sizeof(s2));
++		VPRINT("udp associate : relay %s for client %s\n",s1,s2);
++	}
++	return ua;
++}
++
++static const char *udp_proto_name(uint8_t p)
++{
++	switch(p)
++	{
++		case UDP_PROTO_QUIC: return "quic";
++		case UDP_PROTO_DISCORD: return "discord";
++		case UDP_PROTO_STUN: return "stun";
++		default: return "unknown";
++	}
++}
++static void udp_flow_log_end(const struct udp_flow *f, const char *why)
++{
++	if (params.debug>=1)
++	{
++		char s[48];
++		ntop46_port((const struct sockaddr*)&f->dst,s,sizeof(s));
++		VPRINT("udp flow end (%s) : -> %s proto=%s out=%u pkts/%llu bytes in=%u pkts/%llu bytes%s\n",
++			why, s, udp_proto_name(f->proto), f->out_count, (unsigned long long)f->out_bytes, f->in_count, (unsigned long long)f->in_bytes,
++			f->out_count && !f->in_count ? "  <-- NO REPLY" : "");
++	}
++}
++void udp_assoc_destroy(struct udp_assoc *ua)
++{
++	struct udp_flow *f,*fn;
++	int k;
++
++	if (!ua) return;
++	VPRINT("udp associate closed : relay_fd=%d out=%llu in=%llu fakes=%llu flows=%u\n",
++		ua->s[UDP_SOCK_RELAY].fd, (unsigned long long)ua->pkt_out, (unsigned long long)ua->pkt_in, (unsigned long long)ua->fakes, ua->flow_count);
++	for (k=0;k<UDP_SOCK_COUNT;k++) udp_sock_close(ua,k);
++	{
++		struct udp_pending *p,*pn;
++		for (p=ua->pending;p;p=pn)
++		{
++			pn=p->next;
++			if (p->ri) p->ri->ptr = NULL; // detach. resolver result will be discarded
++			for (k=0;k<p->count;k++) free(p->pkt[k].data);
++			free(p);
++		}
++	}
++	for (f=ua->flows;f;f=fn)
++	{
++		fn=f->next;
++		udp_flow_log_end(f,"close");
++		free(f);
++	}
++	free(ua);
++}
++
++bool udp_assoc_expired(const struct udp_assoc *ua, time_t now)
++{
++	return params.udp_timeout && (now - ua->last) >= params.udp_timeout;
++}
++
++static void udp_flows_gc(struct udp_assoc *ua, time_t now)
++{
++	struct udp_flow **pp = &ua->flows, *f;
++	while ((f=*pp))
++	{
++		if ((now - f->last) >= (params.udp_timeout ? params.udp_timeout : UDP_DEFAULT_TIMEOUT))
++		{
++			*pp = f->next;
++			udp_flow_log_end(f,"idle");
++			free(f);
++			ua->flow_count--;
++		}
++		else
++			pp = &f->next;
++	}
++}
++
++static struct udp_flow *udp_flow_get(struct udp_assoc *ua, const sockaddr_in46 *dst, time_t now)
++{
++	struct udp_flow *f;
++
++	for (f=ua->flows;f;f=f->next)
++		if (sa46_eq(&f->dst,dst)) return f;
++
++	if (ua->flow_count>=UDP_MAX_FLOWS)
++	{
++		udp_flows_gc(ua,now);
++		if (ua->flow_count>=UDP_MAX_FLOWS) return NULL;
++	}
++	if (!(f = calloc(1,sizeof(*f)))) return NULL;
++	f->dst = *dst;
++	f->next = ua->flows;
++	ua->flows = f;
++	ua->flow_count++;
++	return f;
++}
++
++// QUIC long header Initial packet
++static bool is_quic_initial(const uint8_t *data, size_t len)
++{
++	if (len<7 || (data[0] & 0xC0)!=0xC0) return false;
++	uint32_t ver = ((uint32_t)data[1]<<24)|((uint32_t)data[2]<<16)|((uint32_t)data[3]<<8)|data[4];
++	if (!ver) return false; // version negotiation
++	// QUICv2 (0x6b3343cf) uses type 01 for Initial, v1 and drafts use 00
++	uint8_t type = (data[0]>>4) & 3;
++	return ver==0x6b3343cf ? type==1 : type==0;
++}
++
++// discord voice ip discovery request : type=1 len=70 total 74 bytes
++static bool is_discord_ip_discovery(const uint8_t *d, size_t len)
++{
++	return len==74 && d[0]==0 && d[1]==1 && d[2]==0 && d[3]==70;
++}
++// STUN : 2 top bits zero, magic cookie 0x2112A442
++static bool is_stun(const uint8_t *d, size_t len)
++{
++	return len>=20 && !(d[0]&0xC0) && d[4]==0x21 && d[5]==0x12 && d[6]==0xA4 && d[7]==0x42 && (((size_t)d[2]<<8|d[3])+20)==len;
++}
++static uint8_t udp_detect_proto(const uint8_t *d, size_t len)
++{
++	if (is_quic_initial(d,len)) return UDP_PROTO_QUIC;
++	if (is_discord_ip_discovery(d,len)) return UDP_PROTO_DISCORD;
++	if (is_stun(d,len)) return UDP_PROTO_STUN;
++	return UDP_PROTO_UNKNOWN;
++}
++
++static bool udp_set_ttl(int fd, sa_family_t family, int ttl)
++{
++	if (family==AF_INET6)
++		return setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl))!=-1;
++	else
++		return setsockopt(fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl))!=-1;
++}
++
++static void udp_send_fakes(struct udp_assoc *ua, int fd, const sockaddr_in46 *dst, uint8_t proto)
++{
++	const uint8_t *fake = params.udp_fake;
++	size_t fake_size = params.udp_fake_size;
++	int ttl, k;
++
++	ttl = dst->sa_family==AF_INET6 ? params.udp_fake_ttl6 : params.udp_fake_ttl;
++	if (!ttl) return;
++
++	switch(proto)
++	{
++		case UDP_PROTO_QUIC:
++			if (params.udp_fake_quic_size) { fake=params.udp_fake_quic; fake_size=params.udp_fake_quic_size; }
++			break;
++		case UDP_PROTO_DISCORD:
++			if (params.udp_fake_discord_size) { fake=params.udp_fake_discord; fake_size=params.udp_fake_discord_size; }
++			break;
++		case UDP_PROTO_STUN:
++			if (params.udp_fake_stun_size) { fake=params.udp_fake_stun; fake_size=params.udp_fake_stun_size; }
++			break;
++	}
++	if (!fake_size) return;
++
++	if (!udp_set_ttl(fd, dst->sa_family, ttl))
++	{
++		DLOG_PERROR("udp setsockopt (fake ttl)");
++		return;
++	}
++	for (k=0;k<params.udp_fake_repeats;k++)
++	{
++		if (sendto(fd, fake, fake_size, 0, (struct sockaddr*)dst, sa46len((struct sockaddr*)dst))<0)
++		{
++			DLOG_PERROR("udp sendto (fake)");
++			break;
++		}
++		ua->fakes++;
++	}
++	// -1 = system default
++	udp_set_ttl(fd, dst->sa_family, params.ttl_default ? params.ttl_default : -1);
++
++	if (params.debug>=2)
++	{
++		char s[48];
++		ntop46_port((struct sockaddr*)dst,s,sizeof(s));
++		DBGPRINT("udp desync : %d fake(s) size=%zu ttl=%d proto=%s -> %s\n", k, fake_size, ttl, udp_proto_name(proto), s);
++	}
++}
++
++// parse socks5 udp request header. returns header length or 0 if invalid
++// if address is a domain name (not ip literal) - dst->sa_family=0, host filled, *dport set
++static size_t s5_udp_parse(const uint8_t *p, size_t len, sockaddr_in46 *dst, char *host, uint16_t *dport)
++{
++	memset(dst,0,sizeof(*dst));
++	*host = 0;
++	if (len<4) return 0;
++	if (p[0] || p[1]) return 0; // RSV
++	if (p[2])
++	{
++		DBGPRINT("udp socks5 fragmentation not supported\n");
++		return 0;
++	}
++	switch(p[3])
++	{
++		case S5_ATYP_IP4:
++			if (len<10) return 0;
++			dst->sa4.sin_family = AF_INET;
++			memcpy(&dst->sa4.sin_addr,p+4,4);
++			memcpy(&dst->sa4.sin_port,p+8,2);
++			return 10;
++		case S5_ATYP_IP6:
++			if (len<22) return 0;
++			dst->sa6.sin6_family = AF_INET6;
++			memcpy(&dst->sa6.sin6_addr,p+4,16);
++			memcpy(&dst->sa6.sin6_port,p+20,2);
++			return 22;
++		case S5_ATYP_DOM:
++			{
++				uint8_t l;
++				uint16_t port;
++				if (len<5) return 0;
++				l = p[4];
++				if (len<(size_t)(5+l+2)) return 0;
++				memcpy(host,p+5,l); host[l]=0;
++				memcpy(&port,p+5+l,2);
++				if (inet_pton(AF_INET,host,&dst->sa4.sin_addr)==1)
++				{
++					dst->sa4.sin_family = AF_INET;
++					dst->sa4.sin_port = port;
++				}
++				else if (inet_pton(AF_INET6,host,&dst->sa6.sin6_addr)==1)
++				{
++					dst->sa6.sin6_family = AF_INET6;
++					dst->sa6.sin6_port = port;
++				}
++				else
++				{
++					if (!l) return 0;
++					*dport = port;	// resolved asynchronously by caller
++					return 5+l+2;
++				}
++				*host = 0; // ip literal, no resolve needed
++				return 5+l+2;
++			}
++	}
++	return 0;
++}
++
++static size_t s5_udp_hdr(uint8_t *p, const sockaddr_in46 *src)
++{
++	p[0]=p[1]=p[2]=0;
++	if (src->sa_family==AF_INET6)
++	{
++		p[3]=S5_ATYP_IP6;
++		memcpy(p+4,&src->sa6.sin6_addr,16);
++		memcpy(p+20,&src->sa6.sin6_port,2);
++		return 22;
++	}
++	p[3]=S5_ATYP_IP4;
++	memcpy(p+4,&src->sa4.sin_addr,4);
++	memcpy(p+8,&src->sa4.sin_port,2);
++	return 10;
++}
++
++// send payload to resolved destination with optional desync
++static void udp_send_out(struct udp_assoc *ua, sockaddr_in46 *dst_in, const uint8_t *data, size_t len)
++{
++	sockaddr_in46 dst = *dst_in;
++	int fd;
++	time_t now;
++	struct udp_flow *f;
++
++	sa46_unmap(&dst);
++	if (!sa46_port(&dst)) return;
++	if ((fd = udp_out_sock(ua,dst.sa_family))<0) return;
++
++	now = time(NULL);
++
++	if ((f = udp_flow_get(ua,&dst,now)))
++	{
++		uint8_t proto = udp_detect_proto(data,len);
++		bool desync = params.udp_desync && port_filters_in_range(&params.udp_pf, ntohs(sa46_port(&dst)));
++		if (!f->out_count)
++		{
++			f->proto = proto;
++			if (params.debug>=1)
++			{
++				char s[48];
++				ntop46_port((struct sockaddr*)&dst,s,sizeof(s));
++				VPRINT("udp flow start : -> %s proto=%s len=%zu desync=%s\n", s, udp_proto_name(proto), len, desync ? "yes" : "no");
++			}
++		}
++		f->last = now;
++		if (desync && f->out_count < params.udp_desync_count)
++			// packet's own protocol first, else flow's protocol (rtp after discord ip discovery)
++			udp_send_fakes(ua,fd,&dst,proto ? proto : f->proto);
++		f->out_count++;
++		f->out_bytes += len;
++	}
++
++	if (sendto(fd, data, len, 0, (struct sockaddr*)&dst, sa46len((struct sockaddr*)&dst))<0)
++		DBGPRINT("udp sendto (out) error %d\n",errno);
++	else
++		ua->pkt_out++;
++}
++
++// buffer datagram until domain is resolved
++static void udp_pending_add(struct udp_assoc *ua, const char *host, uint16_t port, const uint8_t *data, size_t len)
++{
++	struct udp_pending *p;
++	uint8_t *copy;
++
++	if (params.no_resolve)
++	{
++		VPRINT("udp socks5 : domain %s dropped because of --no-resolve\n",host);
++		return;
++	}
++	for (p=ua->pending;p;p=p->next)
++		if (!strcasecmp(p->dom,host)) break;
++	if (!p)
++	{
++		if (ua->pending_count>=UDP_PENDING_DOMS)
++		{
++			DBGPRINT("udp too many pending resolves. dropping datagram to %s\n",host);
++			return;
++		}
++		if (!(p = calloc(1,sizeof(*p)))) return;
++		p->ua = ua;
++		snprintf(p->dom,sizeof(p->dom),"%s",host);
++		if (!(p->ri = resolver_queue(host, ntohs(port), (void*)(((uintptr_t)p) | UDP_EV_TAG))))
++		{
++			DLOG_ERR("udp could not queue resolve for %s\n",host);
++			free(p);
++			return;
++		}
++		p->next = ua->pending;
++		ua->pending = p;
++		ua->pending_count++;
++		DBGPRINT("udp resolving %s\n",host);
++	}
++	if (p->count>=UDP_PENDING_PKTS)
++	{
++		DBGPRINT("udp pending queue full for %s. dropping datagram\n",host);
++		return;
++	}
++	if (!(copy = malloc(len ? len : 1))) return;
++	memcpy(copy,data,len);
++	p->pkt[p->count].data = copy;
++	p->pkt[p->count].len = len;
++	p->pkt[p->count].port = port;
++	p->count++;
++}
++
++void udp_resolve_complete(struct resolve_item *ri)
++{
++	struct udp_pending *p = (struct udp_pending*)(((uintptr_t)ri->ptr) & ~UDP_EV_TAG);
++	struct udp_pending **pp;
++	struct udp_assoc *ua;
++	sockaddr_in46 addr;
++	time_t now = time(NULL);
++	int k;
++
++	if (!p)
++	{
++		DBGPRINT("udp orphaned resolve for %s\n",ri->dom);
++		return;
++	}
++	ua = p->ua;
++	p->ri = NULL;
++	if (ri->ga_res)
++	{
++		VPRINT("udp could not resolve %s : %s\n",ri->dom,gai_strerror(ri->ga_res));
++		dnscache_put(p->dom,NULL,now);
++	}
++	else
++	{
++		addr = ri->ss;
++		sa46_unmap(&addr);
++		sa46_set_port(&addr,0);
++		dnscache_put(p->dom,&addr,now);
++		if (params.debug)
++		{
++			char s[48];
++			ntop46((struct sockaddr*)&addr,s,sizeof(s));
++			VPRINT("udp resolved %s -> %s. sending %d buffered datagram(s)\n",p->dom,s,p->count);
++		}
++		for (k=0;k<p->count;k++)
++		{
++			sa46_set_port(&addr,p->pkt[k].port);
++			udp_send_out(ua,&addr,p->pkt[k].data,p->pkt[k].len);
++		}
++	}
++	for (k=0;k<p->count;k++) free(p->pkt[k].data);
++	for (pp=&ua->pending; *pp; pp=&(*pp)->next)
++		if (*pp==p)
++		{
++			*pp = p->next;
++			ua->pending_count--;
++			break;
++		}
++	free(p);
++}
++
++// client -> remote
++static void udp_from_client(struct udp_assoc *ua, const uint8_t *data, size_t len, sockaddr_in46 *from)
++{
++	sockaddr_in46 dst;
++	size_t hl;
++	char host[256];
++	uint16_t dport=0;
++
++	sa46_unmap(from);
++	if (!sa46_ip_eq(from,&ua->client))
++	{
++		DBGPRINT("udp datagram from foreign ip dropped\n");
++		return;
++	}
++	if (!ua->client_port_known)
++	{
++		sa46_set_port(&ua->client, sa46_port(from));
++		ua->client_port_known = true;
++	}
++	else if (sa46_port(from)!=sa46_port(&ua->client))
++	{
++		DBGPRINT("udp datagram from foreign port dropped\n");
++		return;
++	}
++	if (!(hl = s5_udp_parse(data,len,&dst,host,&dport)))
++	{
++		DBGPRINT("udp invalid socks5 udp header\n");
++		return;
++	}
++	data+=hl; len-=hl;
++
++	if (*host)
++	{
++		switch(dnscache_get(host,&dst,time(NULL)))
++		{
++			case 1:
++				sa46_set_port(&dst,dport);
++				break;
++			case -1:
++				DBGPRINT("udp %s is in negative dns cache. dropped\n",host);
++				return;
++			default:
++				udp_pending_add(ua,host,dport,data,len);
++				return;
++		}
++	}
++	udp_send_out(ua,&dst,data,len);
++}
++
++// remote -> client
++static void udp_from_remote(struct udp_assoc *ua, int fd)
++{
++	struct sockaddr_storage ss;
++	socklen_t sl;
++	ssize_t rd;
++	sockaddr_in46 src;
++	size_t hl;
++
++	for(;;)
++	{
++		sl = sizeof(ss);
++		rd = recvfrom(fd, udpbuf+S5_UDP_HDR_MAX, UDP_BUF_SIZE, 0, (struct sockaddr*)&ss, &sl);
++		if (rd<0) break;
++		if (!ua->client_port_known) continue; // nowhere to send
++		sa46copy(&src,(struct sockaddr*)&ss);
++		sa46_unmap(&src);
++		{
++			struct udp_flow *f;
++			for (f=ua->flows;f;f=f->next)
++				if (sa46_eq(&f->dst,&src))
++				{
++					f->in_count++;
++					f->in_bytes += rd;
++					f->last = time(NULL);
++					break;
++				}
++		}
++		// build header right before payload
++		uint8_t hdr[S5_UDP_HDR_MAX];
++		hl = s5_udp_hdr(hdr,&src);
++		memcpy(udpbuf+S5_UDP_HDR_MAX-hl,hdr,hl);
++		if (sendto(ua->s[UDP_SOCK_RELAY].fd, udpbuf+S5_UDP_HDR_MAX-hl, hl+rd, 0, (struct sockaddr*)&ua->client, sa46len((struct sockaddr*)&ua->client))<0)
++			DBGPRINT("udp sendto (client) error %d\n",errno);
++		else
++			ua->pkt_in++;
++		ua->last = time(NULL);
++	}
++}
++
++bool udp_handle_event(struct udp_sock *us, uint32_t events)
++{
++	struct udp_assoc *ua = us->ua;
++
++	if (!(events & EPOLLIN)) return true;
++	if (us->kind==UDP_SOCK_RELAY)
++	{
++		struct sockaddr_storage ss;
++		socklen_t sl;
++		ssize_t rd;
++		sockaddr_in46 from;
++
++		for(;;)
++		{
++			sl = sizeof(ss);
++			rd = recvfrom(us->fd, udpbuf, UDP_BUF_SIZE, 0, (struct sockaddr*)&ss, &sl);
++			if (rd<0) break;
++			ua->last = time(NULL);
++			sa46copy(&from,(struct sockaddr*)&ss);
++			udp_from_client(ua, udpbuf, (size_t)rd, &from);
++		}
++	}
++	else
++		udp_from_remote(ua, us->fd);
++
++	if (ua->flow_count>UDP_MAX_FLOWS/2) udp_flows_gc(ua,time(NULL));
++	return true;
++}
+diff --git a/tpws/udp.h b/tpws/udp.h
+new file mode 100644
+index 0000000..ed6de64
+--- /dev/null
++++ b/tpws/udp.h
+@@ -0,0 +1,85 @@
++#pragma once
++
++// SOCKS5 UDP ASSOCIATE support for tpws
++// works without root : DPI desync is done by sending fake datagrams with low TTL/hoplimit
++// before the real ones (setsockopt IP_TTL / IPV6_UNICAST_HOPS are unprivileged)
++
++#include <stdbool.h>
++#include <stdint.h>
++#include <time.h>
++#include <sys/socket.h>
++#include "helpers.h"
++
++#define UDP_DEFAULT_TIMEOUT	60
++#define UDP_MAX_FLOWS		512
++#define UDP_EV_TAG		((uintptr_t)1)	// low bit of epoll data.ptr marks udp sockets
++
++struct udp_assoc;
++
++enum { UDP_SOCK_RELAY=0, UDP_SOCK_OUT4, UDP_SOCK_OUT6, UDP_SOCK_COUNT };
++
++struct udp_sock
++{
++	struct udp_assoc *ua;
++	int fd;
++	int kind;
++};
++
++enum { UDP_PROTO_UNKNOWN=0, UDP_PROTO_QUIC, UDP_PROTO_DISCORD, UDP_PROTO_STUN };
++
++struct udp_flow
++{
++	sockaddr_in46 dst;
++	time_t last;
++	unsigned int out_count;		// datagrams sent (used for desync count)
++	unsigned int in_count;		// datagrams received from dst
++	uint64_t out_bytes, in_bytes;
++	uint8_t proto;			// detected from first datagram
++	struct udp_flow *next;
++};
++
++#define UDP_PENDING_PKTS	16	// datagrams buffered per domain while resolving
++#define UDP_PENDING_DOMS	8	// domains being resolved per association
++
++struct resolve_item;
++struct udp_pending
++{
++	struct udp_assoc *ua;
++	struct resolve_item *ri;	// in-flight resolve. ri->ptr points back here (tagged)
++	char dom[256];
++	int count;
++	struct {
++		uint8_t *data;
++		size_t len;
++		uint16_t port;		// network order
++	} pkt[UDP_PENDING_PKTS];
++	struct udp_pending *next;
++};
++
++struct udp_assoc
++{
++	void *ctl;		// tproxy_conn_t* of the controlling TCP connection
++	int efd;
++	struct udp_sock s[UDP_SOCK_COUNT];
++	sockaddr_in46 client;	// client udp address. ip is taken from tcp peer, port learned or given in request
++	bool client_port_known;
++	time_t last;
++	uint64_t pkt_out, pkt_in, fakes;
++	struct udp_flow *flows;
++	unsigned int flow_count;
++	struct udp_pending *pending;
++	unsigned int pending_count;
++};
++
++// create association. ctl_fd - tcp control socket. req_port - DST.PORT from request (network order, 0 = unknown)
++// on success fills bnd with relay address to report to the client
++struct udp_assoc *udp_assoc_create(void *ctl, int efd, int ctl_fd, uint16_t req_port, struct sockaddr_storage *bnd);
++void udp_assoc_destroy(struct udp_assoc *ua);
++// returns false if association should be closed
++bool udp_handle_event(struct udp_sock *us, uint32_t events);
++bool udp_assoc_expired(const struct udp_assoc *ua, time_t now);
++// called from main loop when resolver finishes an item whose ptr is udp-tagged. does not free ri.
++void udp_resolve_complete(struct resolve_item *ri);
++
++static inline bool udp_ev_is(const void *ptr) { return ((uintptr_t)ptr) & UDP_EV_TAG; }
++static inline struct udp_sock *udp_ev_ptr(void *ptr) { return (struct udp_sock*)(((uintptr_t)ptr) & ~UDP_EV_TAG); }
