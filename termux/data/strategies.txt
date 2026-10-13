@@ -29,3 +29,6 @@ cfgs_split3_dis|--filter-tcp=80,443 --split-pos=3 --disorder
 cfgs_split4|--filter-tcp=80,443 --split-pos=4
 cfgs_1midsld_oob|--filter-tcp=80,443 --split-pos=1,midsld --oob --tlsrec=sniext+1
 http_tricks|--filter-tcp=80 --hostcase --methodeol --split-pos=method+2 --new --filter-tcp=443 --tlsrec=sniext+1 --split-pos=1,midsld --disorder
+# --- лучшие по blockcheck пользователя (10/10 адресов Discord, TLS 1.2 и 1.3) ---
+oob_split3|--filter-tcp=80,443 --split-pos=3 --oob
+tlsrec_1midsld_dis|--filter-tcp=80,443 --split-pos=1,midsld --tlsrec=sniext+1 --disorder

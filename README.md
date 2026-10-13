@@ -20,7 +20,7 @@
 - **UDP через SOCKS5 UDP ASSOCIATE**: QUIC/HTTP3, голос Discord, звонки, STUN. Фейковые датаграммы с низким TTL без root, по протоколу (QUIC Initial, IP discovery Discord, STUN).
 - **`zapret blockcheck`**: подбор TCP-стратегии в терминале. TLS 1.2 и 1.3 проверяются отдельно, есть проверка большого файла против «заморозки» на 16–20 КБ и режим отладки с архивом логов.
 - **`zapret debug`**: лог по этапам (время до первого ответа, повторы IP discovery Discord, время TCP-подключений) и итоговый отчёт.
-- **Профили UDP** для Discord и YouTube, **26 TCP-стратегий**, списки доменов из [zapret.cfgs](https://github.com/Snowy-Fluffy/zapret.cfgs).
+- **Профили UDP** для Discord и YouTube, **28 TCP-стратегий**, списки доменов из [zapret.cfgs](https://github.com/Snowy-Fluffy/zapret.cfgs).
 - **Установка одной командой**; `zapret update` обновляет скрипты из этой ветки, zapret и пересобирает tpws.
 
 ## Быстрый старт

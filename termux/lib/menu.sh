@@ -29,7 +29,7 @@ show_menu() {
         echo "17) Обновить списки доменов (zapret.cfgs)"
         echo " 0) Выход"
         echo ""
-        read -p "Выбор: " ch
+        read -p "Выбор: " ch || { echo; exit 0; }   # EOF: выйти
         case "$ch" in
             1) start_zapret ;;
             2) stop_zapret ;;
@@ -46,10 +46,7 @@ show_menu() {
             13) update_zapret ;;
             14) read -p "Точно удалить? (y/n) " -n 1 -r; echo; [[ $REPLY =~ ^[Yy]$ ]] && remove_zapret ;;
             15) debug_zapret ;;
-            16) read -p "Что проверять [discord youtube / list:discord / домены] (Enter - discord youtube): " bct
-                read -p "Режим quick/full, можно добавить debug (Enter - quick): " bcm
-                # shellcheck disable=SC2086
-                blockcheck_zapret ${bcm:-quick} ${bct:-discord youtube} ;;
+            16) blockcheck_menu; INTERACTIVE=1; continue ;;
             17) update_lists ;;
             0|q) exit 0 ;;
             *) echo -e "${RED}Неверный выбор.${NC}" ;;
@@ -80,7 +77,9 @@ show_help() {
   version                      версия zapret-termux (ветка@коммит)
   cmd                          показать итоговую команду tpws
   debug                        запустить с логом (Ctrl+C - стоп), показать сводку UDP
-  blockcheck [quick|full] [debug] [tls12|tls13] [discord] [youtube] [list:имя] [домен...] [--apply]
+  blockcheck                   меню подбора стратегий (цели, режим, TLS, отладка, папка для логов)
+  blockcheck [quick|full] [debug] [tls12|tls13] [dir=папка] [timeout=N] [limit=N]
+             [discord|discord-full|youtube] [list:имя] [hostlist:файл] [file:путь] [домен|IP...] [--apply]
                                подобрать TCP-стратегию (по умолчанию: quick discord youtube, TLS1.2 и 1.3)
   lists-update                 скачать списки доменов из Snowy-Fluffy/zapret.cfgs (cfgs-*.txt)
 HELP

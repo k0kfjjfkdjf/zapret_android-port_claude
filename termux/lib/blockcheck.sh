@@ -7,7 +7,31 @@
 # основной zapret при этом продолжает работать.
 # -------------------------------------------------------------------
 BC_TIMEOUT=8
-BC_LOG="$HOME/zapret-blockcheck.log"
+BC_OUTDIR="${BC_OUTDIR:-$HOME}"   # куда класть отчёт и отладочный архив
+BC_LOG="$BC_OUTDIR/zapret-blockcheck.log"
+
+# адреса из файла: домены (hostlist), IPv4/IPv6 и подсети CIDR (ipset). .gz тоже читается.
+# для подсети берётся первый адрес хоста. IP проверяются без проверки сертификата (префикс ip:)
+bc_from_file() {
+    local f="$1"
+    [[ -r "$f" ]] || { echo "Нет файла $f" >&2; return 0; }
+    { if [[ "$f" == *.gz ]]; then zcat "$f"; else cat "$f"; fi; } | bc_parse_entries
+}
+
+# разбор записей со stdin: домены, IP, подсети -> адреса для проверки
+bc_parse_entries() {
+    sed -e 's/#.*//' -e 's/\r//' -e 's/^\*\.//' -e 's/:\*$//' \
+        | awk 'NF{print $1}' | awk '!seen[tolower($0)]++' | head -n "${BC_LIST_MAX:-40}" \
+        | awk '
+            /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/[0-9]+$/ {
+                split($0, a, "/"); split(a[1], o, "."); n=a[2]+0
+                ip=((o[1]*256+o[2])*256+o[3])*256+o[4]
+                if (n<32) { m=2^(32-n); ip=int(ip/m)*m+1 }
+                printf "ip:https://%d.%d.%d.%d/\n", int(ip/16777216)%256, int(ip/65536)%256, int(ip/256)%256, ip%256; next }
+            /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print "ip:https://" $0 "/"; next }
+            /:/ { v6=$0; sub("/.*", "", v6); if (v6 ~ /::$/) v6=v6 "1"; print "ip:https://[" v6 "]/"; next }
+            /\./ { print "https://" $0 "/" }'
+}
 
 bc_targets() {
     local t
@@ -44,14 +68,51 @@ bc_targets() {
                 local ln="${t#list:}"; ln="${ln%-list}"
                 local lf="$HOSTLIST_DIR/cfgs-$ln.txt"
                 if [[ -f "$lf" ]]; then
-                    grep -vE '^[0-9.:/]+$' "$lf" | head -"${BC_LIST_MAX:-40}" | sed 's#.*#https://&/#'
+                    bc_from_file "$lf"
                 else
                     echo "Нет списка $lf. Выполните: zapret lists-update" >&2
                 fi ;;
+            hostlist:*) bc_from_file "$HOSTLIST_DIR/${t#hostlist:}" ;;
+            file:*)     bc_from_file "${t#file:}" ;;
+            ip:*)       echo "$t" ;;
             http://*|https://*|big:http://*|big:https://*) echo "$t" ;;
-            *.*) echo "https://$t/" ;;
+            *)
+                # IPv4 / IPv6 / подсеть или домен
+                if [[ "$t" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$ || "$t" =~ ^[0-9a-fA-F:]*:[0-9a-fA-F:]*(/[0-9]+)?$ ]]; then
+                    echo "$t" | BC_LIST_MAX=1 bc_parse_entries
+                elif [[ "$t" == *.* ]]; then
+                    echo "https://$t/"
+                fi ;;
         esac
     done
+}
+
+# чистая проверка TCP-подключения к хосту из URL (curl 8 считает TLS частью connect,
+# поэтому по его таймингам нельзя отличить блокировку по IP от зависшего TLS)
+bc_tcp_ok() {
+    local u="$1" hp host port
+    hp="${u#*://}"; hp="${hp%%/*}"
+    if [[ "$hp" == \[*\]* ]]; then host="${hp%%]*}"; host="${host#[}"; port="${hp##*]:}"; [[ "$port" == "$hp" || "$port" == \[* ]] && port=""
+    else host="${hp%%:*}"; port="${hp##*:}"; [[ "$port" == "$hp" ]] && port=""; fi
+    [[ -z "$port" ]] && { [[ "$u" == https://* ]] && port=443 || port=80; }
+    timeout 4 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null
+}
+
+# предупреждение о неработающем DNS: иначе проверка "напрямую" выглядит как блокировка
+bc_check_dns() {
+    if ! grep -q '^[[:space:]]*nameserver' /etc/resolv.conf 2>/dev/null; then
+        echo -e "${YELLOW}В /etc/resolv.conf нет DNS-серверов. Имена могут разрешаться медленно или не разрешаться.${NC}"
+        echo "  Исправить: echo 'nameserver 1.1.1.1' > /etc/resolv.conf   (или DNS вашего провайдера)"
+    fi
+    local t0 t1
+    t0=$(date +%s%N)
+    if ! timeout 6 getent hosts discord.com >/dev/null 2>&1; then
+        echo -e "${YELLOW}DNS не отвечает: getent hosts discord.com не сработал за 6 с.${NC}"
+    else
+        t1=$(date +%s%N)
+        local ms=$(( (t1-t0)/1000000 ))
+        [[ $ms -gt 2000 ]] && echo -e "${YELLOW}DNS медленный: разрешение имени заняло ${ms} мс.${NC}"
+    fi
 }
 
 bc_free_port() {
@@ -81,6 +142,8 @@ bc_probe_all() {
         local -a tlsopt=()
         # большой файл: первые 256 КБ (Range), с переходом по редиректам
         [[ "${BC_BIG[$i]}" == "1" ]] && tlsopt+=(-L -r 0-262143)
+        # IP-адрес вместо домена: сертификат не совпадёт, проверяем только прохождение через DPI
+        [[ "${BC_IP[$i]}" == "1" ]] && tlsopt+=(-k)
         case "${BC_TLS[$i]}" in
             12) tlsopt+=(--tlsv1.2 --tls-max 1.2) ;;
             13) tlsopt+=(--tlsv1.3) ;;
@@ -90,7 +153,7 @@ bc_probe_all() {
             [[ -n "$ddir" ]] && errf="$ddir/curl_$i.txt" && echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$errf"
             out=$(env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
                 curl -s "${verbose[@]}" "${tlsopt[@]}" -o /dev/null --connect-timeout 5 --max-time "$BC_TIMEOUT" "${proxy[@]}" \
-                -w '%{http_code} %{time_total} %{size_download}' "$url" 2>>"$errf")
+                -w '%{http_code} %{time_total} %{size_download} %{time_namelookup} %{time_connect} %{time_appconnect}' "$url" 2>>"$errf")
             rc=$?
             [[ -n "$ddir" ]] && echo "RESULT: rc=$rc $out" >> "$errf"
             echo "$rc $out" > "$dir/$i"
@@ -102,8 +165,21 @@ bc_probe_all() {
     BC_OK=0; BC_DETAIL=""
     local tsum=0
     for ((i=0; i<${#BC_URLS[@]}; i++)); do
-        local size ok=0
-        read -r rc code t size < "$dir/$i"
+        local size ok=0 tdns tcon ttls
+        read -r rc code t size tdns tcon ttls < "$dir/$i"
+        # этап, на котором оборвалось: dns / tcp / tls / data
+        BC_STAGE[$i]=""
+        if [[ "$rc" != "0" ]]; then
+            if [[ -z "$port" ]] && [[ "${tdns:-0}" == 0* ]] && [[ "${tcon:-0}" == 0.000000 || -z "$tcon" ]] && [[ "$rc" == "28" || "$rc" == "6" ]] && ! [[ "${BC_URLS[$i]}" =~ ://\[?[0-9a-fA-F:.]+\]?/ ]]; then
+                BC_STAGE[$i]="dns"
+            elif [[ "${tcon:-0}" == "0.000000" ]]; then
+                BC_STAGE[$i]="tcp"
+            elif [[ "${BC_URLS[$i]}" == https://* && "${ttls:-0}" == "0.000000" ]]; then
+                BC_STAGE[$i]="tls"
+            else
+                BC_STAGE[$i]="data"
+            fi
+        fi
         if [[ "${BC_BIG[$i]}" == "1" ]]; then
             # большой файл: важен объём (заморозка после 16-20 КБ), а не код завершения
             [[ "${size%.*}" =~ ^[0-9]+$ ]] && (( ${size%.*} >= 200000 )) && ok=1
@@ -140,11 +216,17 @@ bc_label() {
 }
 
 bc_rc_text() {
+    # $2 - этап (dns/tcp/tls/data), если известен
+    case "$1:$2" in
+        28:dns|6:*) echo "DNS: имя не разрешилось (это не DPI: проверьте /etc/resolv.conf)" ; return ;;
+        28:tcp) echo "таймаут TCP-подключения (блокировка по IP?)" ; return ;;
+        28:tls) echo "таймаут TLS-рукопожатия (типично для DPI)" ; return ;;
+        28:data) echo "данные перестали идти (заморозка DPI?)" ; return ;;
+    esac
     case "$1" in
         0) echo "ok" ;;
-        6) echo "DNS: имя не разрешилось" ;;
         7) echo "соединение отклонено" ;;
-        28) echo "таймаут (типично для DPI)" ;;
+        28) echo "таймаут" ;;
         35|56) echo "обрыв TLS/соединения (типично для DPI)" ;;
         60) echo "подмена сертификата" ;;
         97) echo "SOCKS: ошибка прокси" ;;
@@ -172,10 +254,10 @@ bc_generated() {
 bc_pack_debug() {
     [[ $BC_DEBUG -eq 1 && -d "$BC_DBGDIR" ]] || return 0
     cp "$BC_LOG" "$BC_DBGDIR/summary.log" 2>/dev/null
-    local arc="$HOME/zapret-blockcheck-debug.tar.gz"
-    tar -czf "$arc" -C "$HOME" "$(basename "$BC_DBGDIR")" 2>/dev/null
+    local arc="$BC_OUTDIR/zapret-blockcheck-debug.tar.gz"
+    tar -czf "$arc" -C "$(dirname "$BC_DBGDIR")" "$(basename "$BC_DBGDIR")" 2>/dev/null
     echo -e "${YELLOW}Архив с логами: $arc ($(du -h "$arc" | cut -f1))${NC}"
-    if [[ -d /sdcard/Download ]]; then
+    if [[ -d /sdcard/Download && "$BC_OUTDIR" != /sdcard/Download* ]]; then
         cp "$arc" /sdcard/Download/ 2>/dev/null && echo -e "${YELLOW}Копия: /sdcard/Download/$(basename "$arc")${NC}"
     fi
     echo "В логах есть IP-адреса серверов и ваш внешний IP может попасть в ответы. Проверьте перед отправкой."
@@ -194,10 +276,19 @@ blockcheck_zapret() {
             tls12|--tls=12) tlsmode=12 ;;
             tls13|--tls=13) tlsmode=13 ;;
             tlsboth|--tls=both) tlsmode=both ;;
+            dir=*)     BC_OUTDIR="${a#dir=}" ;;
+            timeout=*) BC_TIMEOUT="${a#timeout=}" ;;
+            limit=*)   BC_LIST_MAX="${a#limit=}" ;;
             *) targets+=("$a") ;;
         esac
     done
     [[ ${#targets[@]} -eq 0 ]] && targets=(discord youtube)
+    mkdir -p "$BC_OUTDIR" 2>/dev/null
+    if [[ ! -w "$BC_OUTDIR" ]]; then
+        echo -e "${RED}Нет доступа на запись в $BC_OUTDIR${NC}"; return 1
+    fi
+    BC_LOG="$BC_OUTDIR/zapret-blockcheck.log"
+    bc_check_dns
 
     if ! is_zapret_installed; then
         echo -e "${RED}zapret не установлен.${NC}"; return 1
@@ -209,18 +300,19 @@ blockcheck_zapret() {
 
     local -a raw_urls=()
     mapfile -t raw_urls < <(bc_targets "${targets[@]}" | awk '!seen[$0]++')
-    BC_URLS=(); BC_TLS=(); BC_BIG=()
-    local u big
+    BC_URLS=(); BC_TLS=(); BC_BIG=(); BC_IP=(); BC_STAGE=()
+    local u big isip
     for u in "${raw_urls[@]}"; do
-        big=0
+        big=0; isip=0
         [[ "$u" == big:* ]] && { big=1; u="${u#big:}"; }
+        [[ "$u" == ip:* ]] && { isip=1; u="${u#ip:}"; }
         if [[ "$u" == https://* ]]; then
             case "$tlsmode" in
-                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13); BC_BIG+=($big $big) ;;
-                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode"); BC_BIG+=($big) ;;
+                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13); BC_BIG+=($big $big); BC_IP+=($isip $isip) ;;
+                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode"); BC_BIG+=($big); BC_IP+=($isip) ;;
             esac
         else
-            BC_URLS+=("$u"); BC_TLS+=(""); BC_BIG+=($big)
+            BC_URLS+=("$u"); BC_TLS+=(""); BC_BIG+=($big); BC_IP+=($isip)
         fi
     done
     if [[ ${#BC_URLS[@]} -eq 0 ]]; then
@@ -252,7 +344,7 @@ blockcheck_zapret() {
     } > "$BC_LOG"
 
     if [[ $BC_DEBUG -eq 1 ]]; then
-        BC_DBGDIR="$HOME/zapret-blockcheck-debug"
+        BC_DBGDIR="$BC_OUTDIR/zapret-blockcheck-debug"
         rm -rf "$BC_DBGDIR"; mkdir -p "$BC_DBGDIR"
         {
             echo "=== date";        date
@@ -280,8 +372,14 @@ blockcheck_zapret() {
     echo ""
     echo -e "${BLUE}Без zapret (напрямую):${NC}"
     bc_probe_all "" "00_direct"
+    # уточнить этап для таймаутов: TCP прошёл -> обрыв на TLS
     for ((i=0; i<total; i++)); do
-        printf '  %-62s %s\n' "$(bc_label $i)" "$(bc_rc_text "${BC_RC[$i]}")"
+        if [[ "${BC_STAGE[$i]}" == "tcp" ]] && bc_tcp_ok "${BC_URLS[$i]}"; then
+            [[ "${BC_URLS[$i]}" == https://* ]] && BC_STAGE[$i]="tls" || BC_STAGE[$i]="data"
+        fi
+    done
+    for ((i=0; i<total; i++)); do
+        printf '  %-62s %s\n' "$(bc_label $i)" "$(bc_rc_text "${BC_RC[$i]}" "${BC_STAGE[$i]}")"
     done | tee -a "$BC_LOG"
     if [[ $BC_OK -eq $total ]]; then
         echo -e "${YELLOW}Все адреса открываются и без zapret. Либо блокировки нет, либо она срабатывает не сразу.${NC}"

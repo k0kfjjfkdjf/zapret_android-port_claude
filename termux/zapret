@@ -6,7 +6,7 @@
 
 ZT_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
-for _m in common udp strategies process config build lists blockcheck debug menu; do
+for _m in common udp strategies process config build lists blockcheck bcmenu debug menu; do
     # shellcheck source=/dev/null
     source "$ZT_HOME/lib/$_m.sh" || { echo "zapret: не найден модуль $ZT_HOME/lib/$_m.sh" >&2; exit 1; }
 done
@@ -27,7 +27,7 @@ case "$1" in
     info)           info_zapret ;;
     cmd)            get_command ;;
     debug)          debug_zapret ;;
-    blockcheck)     shift; blockcheck_zapret "$@" ;;
+    blockcheck)     shift; if [[ $# -eq 0 ]]; then blockcheck_menu; else blockcheck_zapret "$@"; fi ;;
     lists-update)   update_lists ;;
     strategies)     list_strategies ;;
     strategy)
