@@ -98,6 +98,9 @@ void del_event(struct poolhd *pool, struct eval *val)
     if (val->fd == -1) {
         return;
     }
+    if (params.conn_log && val->udp_out_pkts) {
+        udp_flow_report(val, "closed");
+    }
     if (params.conn_log) {
         struct eval *pair = val->pair;
         if ((val->flag & FLAG_CONN) && pair && pair->fd >= 0) {

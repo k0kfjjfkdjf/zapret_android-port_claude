@@ -528,6 +528,53 @@ bool is_quic_initial(char *buffer, size_t bsize)
 }
 */
 
+/* QUIC long header Initial packet (v1 and drafts: type 0, v2 0x6b3343cf: type 1). */
+static bool is_quic_initial_pkt(const uint8_t *d, size_t len)
+{
+    if (len < 7 || (d[0] & 0xc0) != 0xc0) {
+        return 0;
+    }
+    uint32_t ver = ((uint32_t) d[1] << 24) | ((uint32_t) d[2] << 16) | ((uint32_t) d[3] << 8) | d[4];
+    if (!ver) {
+        return 0; // version negotiation
+    }
+    uint8_t type = (d[0] >> 4) & 3;
+    return ver == 0x6b3343cf ? type == 1 : type == 0;
+}
+
+/* Discord voice IP discovery request: type 1, length 70, 74 bytes in total. */
+static bool is_discord_ip_discovery(const uint8_t *d, size_t len)
+{
+    return len == 74 && d[0] == 0 && d[1] == 1 && d[2] == 0 && d[3] == 70;
+}
+
+/* STUN: two top bits zero, magic cookie 0x2112A442, length matching. */
+static bool is_stun(const uint8_t *d, size_t len)
+{
+    return len >= 20 && !(d[0] & 0xc0) && d[4] == 0x21 && d[5] == 0x12
+        && d[6] == 0xa4 && d[7] == 0x42 && (((size_t) d[2] << 8 | d[3]) + 20) == len;
+}
+
+int udp_detect_proto(const char *data, size_t len)
+{
+    const uint8_t *d = (const uint8_t *) data;
+    if (is_quic_initial_pkt(d, len)) return UDP_PROTO_QUIC;
+    if (is_discord_ip_discovery(d, len)) return UDP_PROTO_DISCORD;
+    if (is_stun(d, len)) return UDP_PROTO_STUN;
+    return UDP_PROTO_UNKNOWN;
+}
+
+const char *udp_proto_name(int proto)
+{
+    switch (proto) {
+        case UDP_PROTO_QUIC: return "quic";
+        case UDP_PROTO_DISCORD: return "discord";
+        case UDP_PROTO_STUN: return "stun";
+        default: return "other";
+    }
+}
+
+
 int mod_http(char *buffer, size_t bsize, int m)
 {
     char *host = 0, *par;

@@ -161,6 +161,36 @@ static void test_parsing(void)
     CHECK_EQ(tpws_parse_http_mod("hostfoo", 7, &flags, spell, &pad), -1);
 }
 
+static void test_udp_proto(const char *fakes)
+{
+    char path[1024];
+    char buf[2048];
+    struct { const char *file; int proto; } cases[] = {
+        { "quic_initial_www_google_com.bin", UDP_PROTO_QUIC },
+        { "quic_initial_vk_com.bin", UDP_PROTO_QUIC },
+        { "quic2_example_com.bin", UDP_PROTO_QUIC },
+        { "discord-ip-discovery-with-port.bin", UDP_PROTO_DISCORD },
+        { "stun.bin", UDP_PROTO_STUN },
+        { "quic_short_header.bin", UDP_PROTO_UNKNOWN },
+        { "dns.bin", UDP_PROTO_UNKNOWN },
+        { "wireguard_initiation.bin", UDP_PROTO_UNKNOWN },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        snprintf(path, sizeof(path), "%s/%s", fakes, cases[i].file);
+        FILE *f = fopen(path, "rb");
+        CHECK(f != 0);
+        if (!f) continue;
+        size_t n = fread(buf, 1, sizeof(buf), f);
+        fclose(f);
+        int got = udp_detect_proto(buf, n);
+        if (got != cases[i].proto) {
+            failures++;
+            fprintf(stderr, "%s: detected %s, expected %s\n", cases[i].file, udp_proto_name(got), udp_proto_name(cases[i].proto));
+        }
+    }
+    CHECK_EQ(udp_detect_proto("", 0), UDP_PROTO_UNKNOWN);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -172,6 +202,7 @@ int main(int argc, char **argv)
     test_markers_http();
     test_markers_tls(argc > 1 ? argv[1] : "tls_clienthello_www_google_com.bin");
     test_parsing();
+    if (argc > 2) test_udp_proto(argv[2]);
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

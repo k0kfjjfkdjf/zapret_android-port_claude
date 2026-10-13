@@ -107,6 +107,13 @@ struct eval {
     // block) and the bytes the remote side received, saved when it closes first.
     char log_host[64];
     ssize_t peer_recv;
+
+    // UDP flow statistics, kept on the remote socket of an association (--conn-log)
+    int udp_proto;
+    unsigned int udp_out_pkts, udp_in_pkts, udp_fakes, udp_stalls;
+    long long udp_out_bytes, udp_in_bytes;
+    long long udp_first_ms, udp_last_out, udp_last_in, udp_last_report;
+    long long udp_max_out_gap, udp_max_in_gap;
 };
 
 struct poolhd {
@@ -137,6 +144,9 @@ struct eval *add_pair(struct poolhd *pool, struct eval *val, int sfd, int e);
 void del_event(struct poolhd *pool, struct eval *val);
 
 long long mono_ms(void);
+
+/* Statistics line of a UDP flow; state is "running" or "closed". */
+void udp_flow_report(struct eval *remote, const char *state);
 
 void destroy_pool(struct poolhd *pool);
 

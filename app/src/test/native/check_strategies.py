@@ -12,8 +12,12 @@ fake = root + "/src/main/assets/fake/"
 
 strategies = []
 presets = open(src + "core/Strategies.kt").read()
+# Kotlin constants used as $NAME inside preset strings.
+consts = {m.group(1): "".join(re.findall(r'"([^"]*)"', m.group(2)))
+          for m in re.finditer(r'const val (\w+) = ((?:"[^"]*"\s*\+?\s*)+)', presets)}
 for block in re.findall(r"Strategy\((.*?)\n        \),", presets, re.S):
-    strategies.append("".join(re.findall(r'"([^"]*)"', block)[1:]))
+    text = "".join(re.findall(r'"([^"]*)"', block)[1:])
+    strategies.append(re.sub(r"\$(\w+)", lambda m: consts.get(m.group(1), m.group(0)), text))
 
 plan = open(src + "test/TestPlan.kt").read()
 strategies += re.findall(r'^\s*"(-[^"]*)",?\s*$', plan, re.M)

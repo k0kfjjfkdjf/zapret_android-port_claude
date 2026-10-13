@@ -12,5 +12,5 @@ for src in "$engine"/*.c; do
 done
 cc $flags -I"$engine" -c "$here/test_tpws.c" -o "$out/test_tpws.o"
 cc $flags "$out"/*.o -o "$out/test_tpws" -lpthread
-"$out/test_tpws" "$root/src/main/assets/fake/tls_clienthello_www_google_com.bin"
+"$out/test_tpws" "$root/src/main/assets/fake/tls_clienthello_www_google_com.bin" "$root/src/main/assets/fake"
 python3 "$here/check_strategies.py" "$out/test_tpws" "$root"

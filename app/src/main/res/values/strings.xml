@@ -40,7 +40,7 @@
     <string name="strategy_fake">Fake packet</string>
     <string name="strategy_fake_desc">Sends a decoy with low TTL first; the TTL may need tuning for your ISP</string>
     <string name="strategy_quic">TCP + QUIC/UDP</string>
-    <string name="strategy_quic_desc">Disorder and TLS records for TCP, fake QUIC Initial from zapret2 for UDP 443 (YouTube)</string>
+    <string name="strategy_quic_desc">Disorder and TLS records for TCP; a fake QUIC Initial from zapret2 before the first 4 datagrams of UDP 443 (YouTube)</string>
     <string name="strategy_byebyedpi">ByeByeDPI default</string>
     <string name="strategy_byebyedpi_desc">The default command line of ByeByeDPI</string>
     <string name="strategy_custom">Custom</string>
@@ -89,7 +89,7 @@
     <string name="log_level_verbose">Maximum log</string>
     <string name="log_level_verbose_desc">Also packet dumps. Slows the connection down, use only to investigate a problem</string>
     <string name="strategy_discord">Discord and calls</string>
-    <string name="strategy_discord_desc">TCP like above, fake Discord voice, QUIC and STUN packets from zapret2 for UDP</string>
+    <string name="strategy_discord_desc">TCP like above; for UDP fakes of the flow\'s own protocol (Discord voice, STUN, QUIC from zapret2), TTL 4, before the first 4 datagrams</string>
     <string name="strategy_fake_google">Fake ClientHello (google.com)</string>
     <string name="strategy_fake_google_desc">Decoy with a real google.com ClientHello from zapret2, TTL 8</string>
     <string name="error_unknown_fake">Unknown fake payload \"%1$s\"</string>

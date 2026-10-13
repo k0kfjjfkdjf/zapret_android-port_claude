@@ -849,11 +849,70 @@ ssize_t tcp_recv_hook(struct poolhd *pool,
 }
 
 
+/* Inbound gaps above this are counted as stalls: audible in a call, visible in a stream. */
+#define UDP_STALL_MS 300
+#define UDP_REPORT_MS 10000
+
+void udp_flow_report(struct eval *remote, const char *state)
+{
+    INIT_ADDR_STR((remote->addr));
+    long long now = mono_ms();
+    fprintf(ENGINE_LOG, "udp %d %s: -> %s:%d %s, out %u pkts/%lld B, in %u pkts/%lld B, fakes %u, "
+        "max gap out %lld ms, in %lld ms, stalls %u, %lld s%s\n",
+        remote->fd, state, ADDR_STR, ntohs(remote->addr.in.sin_port), udp_proto_name(remote->udp_proto),
+        remote->udp_out_pkts, remote->udp_out_bytes, remote->udp_in_pkts, remote->udp_in_bytes,
+        remote->udp_fakes, remote->udp_max_out_gap, remote->udp_max_in_gap, remote->udp_stalls,
+        (now - remote->udp_first_ms) / 1000,
+        remote->udp_out_pkts && !remote->udp_in_pkts ? "  <-- NO REPLY" : "");
+    remote->udp_last_report = now;
+}
+
+
+static void udp_maybe_report(struct eval *remote, long long now)
+{
+    if (params.conn_log && now - remote->udp_last_report >= UDP_REPORT_MS) {
+        udp_flow_report(remote, "running");
+    }
+}
+
+
+void udp_stat_in(struct eval *remote, ssize_t n)
+{
+    long long now = mono_ms();
+    if (remote->udp_last_in) {
+        long long gap = now - remote->udp_last_in;
+        if (gap > remote->udp_max_in_gap) remote->udp_max_in_gap = gap;
+        if (gap > UDP_STALL_MS) remote->udp_stalls++;
+    }
+    remote->udp_last_in = now;
+    remote->udp_in_pkts++;
+    remote->udp_in_bytes += n;
+    udp_maybe_report(remote, now);
+}
+
+
 ssize_t udp_hook(struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst)
 {
     struct eval *pair = val->pair->pair;
     int r = pair->round_count;
+    
+    // val is the remote socket of the association: the flow's statistics live there.
+    long long now = mono_ms();
+    int proto = udp_detect_proto(buffer, n);
+    unsigned int index = val->udp_out_pkts;
+    if (!index) {
+        val->udp_proto = proto;
+        val->udp_first_ms = now;
+        val->udp_last_report = now;
+    }
+    else {
+        long long gap = now - val->udp_last_out;
+        if (gap > val->udp_max_out_gap) val->udp_max_out_gap = gap;
+    }
+    val->udp_last_out = now;
+    val->udp_out_pkts++;
+    val->udp_out_bytes += n;
     
     struct desync_params *dp = pair->dp;
     if (!dp) {
@@ -869,15 +928,27 @@ ssize_t udp_hook(struct eval *val,
         pair->dp = dp;
         if (params.conn_log) {
             INIT_ADDR_STR((*dst));
-            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, group %d\n", val->fd,
-                ADDR_STR, ntohs(dst->in.sin_port), dp->id);
+            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, %s, group %d\n", val->fd,
+                ADDR_STR, ntohs(dst->in.sin_port), udp_proto_name(proto), dp->id);
         }
     }
-    if (!check_round(dp->rounds, r)) {
-        return send(val->fd, buffer, n, 0);
+    // --udp-desync N[:K] counts datagrams of the flow; otherwise rounds (request/response) apply.
+    bool desync = dp->udp_first > 0
+        ? (index < (unsigned int) dp->udp_first || (dp->udp_every > 0 && index % dp->udp_every == 0))
+        : check_round(dp->rounds, r);
+    ssize_t ret;
+    if (!desync) {
+        ret = send(val->fd, buffer, n, 0);
     }
-    LOG(LOG_S, "desync UDP: group=%d, round=%d, fd=%d\n", dp->id, r, val->fd);
-    return desync_udp(val->fd, buffer, n, &dst->sa, dp);
+    else {
+        LOG(LOG_S, "desync UDP: group=%d, round=%d, datagram=%u, fd=%d\n", dp->id, r, index, val->fd);
+        // A datagram of an unknown protocol in a flow that started as, say, Discord (RTP after
+        // IP discovery) still gets the flow's fake.
+        ret = desync_udp(val->fd, buffer, n, &dst->sa, dp,
+            proto ? proto : val->udp_proto, &val->udp_fakes);
+    }
+    udp_maybe_report(val, now);
+    return ret;
 }
 
 

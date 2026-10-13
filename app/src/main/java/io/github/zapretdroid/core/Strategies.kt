@@ -35,14 +35,18 @@ object Strategies {
         Strategy(
             "quic", R.string.strategy_quic, R.string.strategy_quic_desc,
             "--proto t,h --disorder 1 --tlsrec 1+s --auto=none " +
-                "--proto u --pf 443 --udp-fake 6 --fake-data {fake:quic_initial_www_google_com.bin} --auto=none",
+                "--proto u --pf 443 $UDP_FAKES --auto=none",
         ),
         Strategy(
             "discord", R.string.strategy_discord, R.string.strategy_discord_desc,
+            // Discord voice: IP discovery and RTP on 50000-65535 and 19294-19344, STUN on 3478,
+            // QUIC on 443. Fakes of the flow's own protocol, TTL 4, six before each of the first
+            // four datagrams: the profile that gave two-way voice with the tpws UDP patch.
             "--proto t,h --disorder 1 --tlsrec 1+s --auto=none " +
-                "--proto u --pf 50000-65535 --udp-fake 6 --fake-data {fake:discord-ip-discovery-with-port.bin} --auto=none " +
-                "--proto u --pf 443 --udp-fake 6 --fake-data {fake:quic_initial_www_google_com.bin} --auto=none " +
-                "--proto u --pf 3478-3481 --udp-fake 4 --fake-data {fake:stun.bin}",
+                "--proto u --pf 50000-65535 $UDP_FAKES --auto=none " +
+                "--proto u --pf 19294-19344 $UDP_FAKES --auto=none " +
+                "--proto u --pf 3478-3481 $UDP_FAKES --auto=none " +
+                "--proto u --pf 443 $UDP_FAKES",
         ),
         Strategy(
             "fake_google", R.string.strategy_fake_google, R.string.strategy_fake_google_desc,
@@ -60,6 +64,12 @@ object Strategies {
     )
 
     const val CUSTOM = "custom"
+
+    /** UDP desync used by the presets: protocol-specific fakes with a low TTL. */
+    const val UDP_FAKES = "--ttl 4 --udp-fake 6 --udp-desync 4 " +
+        "--udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} " +
+        "--udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} " +
+        "--udp-proto-fake stun:{fake:stun.bin}"
 
     fun byId(id: String): Strategy? = presets.firstOrNull { it.id == id }
 }

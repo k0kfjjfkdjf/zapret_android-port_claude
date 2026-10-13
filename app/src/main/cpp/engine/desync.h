@@ -17,7 +17,8 @@
 
 ssize_t desync(struct poolhd *pool, struct eval *val, struct buffer *buff, ssize_t *n, bool *wait);
 
-ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst, struct desync_params *dp);
+ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst,
+    struct desync_params *dp, int proto, unsigned int *fakes_sent);
 
 int setttl(int fd, int ttl);
 

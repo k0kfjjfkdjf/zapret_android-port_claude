@@ -26,3 +26,9 @@ Changes in this fork:
 - `--conn-log`: one line when a connection is set up (host, destination, protocol, group),
   one when it closes (bytes up/down, rounds, duration), one per detected block with the
   group switch, and one per UDP association.
+- UDP, ideas from the tpws SOCKS5 UDP patch developed alongside this app: the protocol of a
+  flow is recognised on its first datagram (QUIC Initial, Discord IP discovery, STUN) and
+  `--udp-proto-fake <quic|discord|stun>:<file>` picks a fake of that protocol;
+  `--udp-desync N[:K]` sends fakes before the first N datagrams of a flow and then before
+  every K-th; with `--conn-log`, every UDP flow reports datagrams and bytes both ways, fakes,
+  the largest gaps, stalls (inbound gaps over 300 ms) and NO REPLY, every 10 s and on close.

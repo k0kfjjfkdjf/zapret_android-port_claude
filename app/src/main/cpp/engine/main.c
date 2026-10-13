@@ -188,6 +188,8 @@ const struct option options[] = {
     {"cache-file",    1, 0, 'y'},
     {"autohost-log",  1, 0, 'J'},
     {"conn-log",      0, 0, 'k'},
+    {"udp-proto-fake", 1, 0, 'G'},
+    {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
     {"hosts",         1, 0, 'H'},
     {"pf",            1, 0, 'V'},
@@ -716,6 +718,9 @@ void clear_params(char *line, char **argv)
         free(dp->parts);
         free(dp->tlsrec);
         free(dp->fake_data.data);
+        free(dp->fake_quic.data);
+        free(dp->fake_discord.data);
+        free(dp->fake_stun.data);
         free(dp->fake_sni_list);
         mem_destroy(dp->hosts);
         mem_destroy(dp->ipset);
@@ -857,6 +862,46 @@ int parse_args(int argc, char **argv)
             
         case 'k':
             params.conn_log = 1;
+            break;
+            
+        case 'G': {
+            // <quic|discord|stun>:<file or :string>
+            struct packet *pkt = 0;
+            char *sep = strchr(optarg, ':');
+            if (sep) {
+                size_t len = sep - optarg;
+                if (len == 4 && !strncmp(optarg, "quic", 4)) pkt = &dp->fake_quic;
+                else if (len == 7 && !strncmp(optarg, "discord", 7)) pkt = &dp->fake_discord;
+                else if (len == 4 && !strncmp(optarg, "stun", 4)) pkt = &dp->fake_stun;
+            }
+            if (!pkt || pkt->data) {
+                invalid = 1;
+                break;
+            }
+            pkt->data = ftob(sep + 1, &pkt->size);
+            if (!pkt->data) {
+                uniperror("read/parse");
+                invalid = 1;
+            }
+            break;
+        }
+        
+        case 'z':
+            val = strtol(optarg, &end, 0);
+            if (val <= 0 || val > INT_MAX) {
+                invalid = 1;
+                break;
+            }
+            dp->udp_first = val;
+            if (*end == ':') {
+                val = strtol(end + 1, &end, 0);
+                if (val <= 0 || val > INT_MAX)
+                    invalid = 1;
+                else
+                    dp->udp_every = val;
+            }
+            if (*end)
+                invalid = 1;
             break;
             
         case 'y':

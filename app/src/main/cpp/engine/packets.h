@@ -49,6 +49,18 @@ bool is_tls_shello(const char *buffer, size_t bsize);
 
 int part_tls(char *buffer, size_t bsize, ssize_t n, long pos);
 
+/* UDP protocols recognised on the first datagram of a flow. */
+enum udp_proto {
+    UDP_PROTO_UNKNOWN = 0,
+    UDP_PROTO_QUIC,
+    UDP_PROTO_DISCORD,
+    UDP_PROTO_STUN,
+};
+
+int udp_detect_proto(const char *data, size_t len);
+
+const char *udp_proto_name(int proto);
+
 void randomize_tls(char *buffer, ssize_t n);
 
 //bool is_dns_req(char *buffer, size_t n);

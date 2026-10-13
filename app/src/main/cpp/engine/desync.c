@@ -714,8 +714,8 @@ int post_desync(int sfd, struct desync_params *dp)
 }
 
 
-ssize_t desync_udp(int sfd, char *buffer, 
-        ssize_t n, const struct sockaddr *dst, struct desync_params *dp)
+ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst,
+        struct desync_params *dp, int proto, unsigned int *fakes_sent)
 {
     if (LOG_ENABLED) {
         INIT_HEX_STR(buffer, (n > 16 ? 16 : n));
@@ -723,7 +723,17 @@ ssize_t desync_udp(int sfd, char *buffer,
     }
     if (dp->udp_fake_count != 0) {
         struct packet pkt;
-        if (dp->fake_data.data) {
+        // A fake of the flow's own protocol looks most like what DPI expects to see.
+        if (proto == UDP_PROTO_QUIC && dp->fake_quic.data) {
+            pkt = dp->fake_quic;
+        }
+        else if (proto == UDP_PROTO_DISCORD && dp->fake_discord.data) {
+            pkt = dp->fake_discord;
+        }
+        else if (proto == UDP_PROTO_STUN && dp->fake_stun.data) {
+            pkt = dp->fake_stun;
+        }
+        else if (dp->fake_data.data) {
             pkt = dp->fake_data;
         }
         else {
@@ -746,6 +756,7 @@ ssize_t desync_udp(int sfd, char *buffer,
                 uniperror("send");
                 return -1;
             }
+            if (fakes_sent) (*fakes_sent)++;
         }
         if (setttl(sfd, params.def_ttl) < 0) {
             return -1;

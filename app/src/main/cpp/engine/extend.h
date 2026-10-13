@@ -17,6 +17,9 @@ ssize_t tcp_send_hook(struct poolhd *pool,
 ssize_t tcp_recv_hook(struct poolhd *pool, 
         struct eval *val, struct buffer *buff);
         
+/* Accounts a datagram received from the server of a UDP flow. */
+void udp_stat_in(struct eval *remote, ssize_t n);
+
 ssize_t udp_hook(struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst);
     

@@ -95,6 +95,10 @@ struct desync_params {
     int ttl;
     bool md5sig;
     struct packet fake_data;
+    // UDP fakes chosen by the protocol of the flow (--udp-proto-fake), else fake_data
+    struct packet fake_quic, fake_discord, fake_stun;
+    // --udp-desync N[:K]: fakes before the first N datagrams, then before every K-th
+    int udp_first, udp_every;
     int udp_fake_count;
     struct part fake_offset;
     int fake_sni_count;
