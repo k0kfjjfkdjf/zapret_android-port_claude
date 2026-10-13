@@ -59,8 +59,6 @@ termux/
 └── README.md                    документация
 ```
 
-Остальные файлы ветки (`app/`, Gradle) достались от основной ветки и к zapret-termux отношения не имеют.
-
 ## Благодарности
 
 [bol-van/zapret](https://github.com/bol-van/zapret) · [heiher/hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) / [SocksTun](https://github.com/heiher/sockstun) · [Snowy-Fluffy/zapret.cfgs](https://github.com/Snowy-Fluffy/zapret.cfgs) · [Snowy-Fluffy/zapret.installer](https://github.com/Snowy-Fluffy/zapret.installer)

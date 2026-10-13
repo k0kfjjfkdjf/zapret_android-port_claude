@@ -1,14 +1,3 @@
-*.iml
-.gradle/
-.kotlin/
-/local.properties
-/.idea/
-.DS_Store
-build/
-/captures
-.externalNativeBuild/
-.cxx/
-*.keystore
-*.jks
-# Test-only self-signed certificate for SiteProbeTest
-!app/src/test/resources/probe-test.jks
+# zapret-termux
+*.log
+*.tar.gz
