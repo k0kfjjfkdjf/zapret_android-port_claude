@@ -129,11 +129,12 @@ init_udp_profiles() {
         ["relay"]=""
         ["discord"]="--udp-desync-ports=$dports --udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=4 $fk"
         ["discord_low_ttl"]="--udp-desync-ports=$dports --udp-fake-ttl=2 --udp-fake-repeats=8 --udp-desync-count=6 $fk"
+        ["discord_quicfake"]="--udp-desync-ports=443,3478,19294-19344,50000-65535 --udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=3 --udp-fake=$FAKE_DIR/quic_initial_www_google_com.bin $q --udp-fake-discord=$FAKE_DIR/quic_initial_www_google_com.bin --udp-fake-stun=$FAKE_DIR/quic_initial_www_google_com.bin"
         ["discord_high_ttl"]="--udp-desync-ports=$dports --udp-fake-ttl=6 --udp-fake-repeats=6 --udp-desync-count=4 $fk"
         ["quic"]="--udp-desync-ports=443 --udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=2 $q"
         ["all_ports"]="--udp-fake-ttl=4 --udp-fake-repeats=6 --udp-desync-count=4 $fk"
     )
-    UDP_PROFILE_NAMES=("discord" "discord_low_ttl" "discord_high_ttl" "quic" "all_ports" "relay")
+    UDP_PROFILE_NAMES=("discord" "discord_quicfake" "discord_low_ttl" "discord_high_ttl" "quic" "all_ports" "relay")
     if [[ -f "$UDP_CUSTOM_FILE" ]] && [[ -n "$(cat "$UDP_CUSTOM_FILE")" ]]; then
         UDP_PROFILES["custom"]="$(cat "$UDP_CUSTOM_FILE")"
         UDP_PROFILE_NAMES+=("custom")
@@ -269,6 +270,12 @@ DEFAULT_STRATEGY_LIST=(
     "multisplit_12|--filter-tcp=80,443 --split-pos=1,2,3,4,5,6,7,8,9,10,11,12 --disorder"
     "mss88|--filter-tcp=80,443 --split-pos=1 --disorder --mss=88"
     "tlsrec_mss|--filter-tcp=80,443 --tlsrec=sniext+1 --mss=88"
+    # --- позиции разрезов из стратегий Snowy-Fluffy/zapret.cfgs (nfqws split/disorder без fake) ---
+    "cfgs_split2_sniext|--filter-tcp=80,443 --split-pos=2,sniext+1"
+    "cfgs_split2_sniext_dis|--filter-tcp=80,443 --split-pos=2,sniext+1 --disorder"
+    "cfgs_split3_dis|--filter-tcp=80,443 --split-pos=3 --disorder"
+    "cfgs_split4|--filter-tcp=80,443 --split-pos=4"
+    "cfgs_1midsld_oob|--filter-tcp=80,443 --split-pos=1,midsld --oob --tlsrec=sniext+1"
     "http_tricks|--filter-tcp=80 --hostcase --methodeol --split-pos=method+2 --new --filter-tcp=443 --tlsrec=sniext+1 --split-pos=1,midsld --disorder"
 )
 
@@ -1163,6 +1170,14 @@ bc_targets() {
                     "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" \
                     "https://yt3.ggpht.com/" \
                     "https://redirector.googlevideo.com/report_mapping" ;;
+            list:*|discord-list|youtube-list)
+                local ln="${t#list:}"; ln="${ln%-list}"
+                local lf="$HOSTLIST_DIR/cfgs-$ln.txt"
+                if [[ -f "$lf" ]]; then
+                    grep -vE '^[0-9.:/]+$' "$lf" | head -"${BC_LIST_MAX:-40}" | sed 's#.*#https://&/#'
+                else
+                    echo "Нет списка $lf. Выполните: zapret lists-update" >&2
+                fi ;;
             http://*|https://*) echo "$t" ;;
             *.*) echo "https://$t/" ;;
         esac
@@ -1193,11 +1208,16 @@ bc_probe_all() {
     local dir
     dir=$(mktemp -d)
     for url in "${BC_URLS[@]}"; do
+        local -a tlsopt=()
+        case "${BC_TLS[$i]}" in
+            12) tlsopt=(--tlsv1.2 --tls-max 1.2) ;;
+            13) tlsopt=(--tlsv1.3) ;;
+        esac
         (
             local errf=/dev/null
-            [[ -n "$ddir" ]] && errf="$ddir/curl_$i.txt" && echo "URL: $url" > "$errf"
+            [[ -n "$ddir" ]] && errf="$ddir/curl_$i.txt" && echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$errf"
             out=$(env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
-                curl -s "${verbose[@]}" -o /dev/null --connect-timeout 5 --max-time "$BC_TIMEOUT" "${proxy[@]}" \
+                curl -s "${verbose[@]}" "${tlsopt[@]}" -o /dev/null --connect-timeout 5 --max-time "$BC_TIMEOUT" "${proxy[@]}" \
                 -w '%{http_code} %{time_total} %{size_download}' "$url" 2>>"$errf")
             rc=$?
             [[ -n "$ddir" ]] && echo "RESULT: rc=$rc $out" >> "$errf"
@@ -1226,6 +1246,15 @@ bc_probe_all() {
     else
         BC_TIME="-"
     fi
+}
+
+bc_label() {
+    local i="$1"
+    case "${BC_TLS[$i]}" in
+        12) echo "${BC_URLS[$i]} [TLS1.2]" ;;
+        13) echo "${BC_URLS[$i]} [TLS1.3]" ;;
+        *)  echo "${BC_URLS[$i]}" ;;
+    esac
 }
 
 bc_rc_text() {
@@ -1269,8 +1298,39 @@ bc_pack_debug() {
     echo "В логах есть IP-адреса серверов и ваш внешний IP может попасть в ответы. Проверьте перед отправкой."
 }
 
+# -------------------------------------------------------------------
+# Списки доменов из Snowy-Fluffy/zapret.cfgs (скачиваются с GitHub)
+# -------------------------------------------------------------------
+CFGS_REPO="https://github.com/Snowy-Fluffy/zapret.cfgs"
+CFGS_DIR="$ZAPRET_DIR/zapret.cfgs"
+
+update_lists() {
+    if ! is_zapret_installed; then
+        echo -e "${RED}zapret не установлен.${NC}"; return 1
+    fi
+    if [[ -d "$CFGS_DIR/.git" ]]; then
+        git -C "$CFGS_DIR" pull -q --ff-only || rm -rf "$CFGS_DIR"
+    fi
+    if [[ ! -d "$CFGS_DIR/.git" ]]; then
+        git clone -q --depth 1 "$CFGS_REPO" "$CFGS_DIR" || { echo -e "${RED}Не удалось скачать $CFGS_REPO${NC}"; return 1; }
+    fi
+    mkdir -p "$HOSTLIST_DIR"
+    local f name n=0
+    for f in "$CFGS_DIR"/lists/list-*.txt; do
+        [[ -f "$f" ]] || continue
+        name=$(basename "$f" .txt); name="${name#list-}"
+        # формат tpws: домен в строке, поддомены учитываются сами. убираем "*." и ":*", комментарии, пустые строки
+        sed -e 's/#.*//' -e 's/\r//' -e 's/^\*\.//' -e 's/:\*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$f" \
+            | grep -v '^$' | awk '!seen[tolower($0)]++' > "$HOSTLIST_DIR/cfgs-$name.txt"
+        n=$((n+1))
+    done
+    echo -e "${GREEN}Обновлено списков: $n (файлы cfgs-*.txt в $HOSTLIST_DIR)${NC}"
+    echo "Выбрать список: zapret hostlist-select cfgs-discord.txt, затем zapret hostlist (включить)"
+    echo "Проверить стратегии по списку: zapret blockcheck list:discord"
+}
+
 blockcheck_zapret() {
-    local mode="quick" apply=0
+    local mode="quick" apply=0 tlsmode=both
     local -a targets=()
     BC_DEBUG=0
     local a
@@ -1279,6 +1339,9 @@ blockcheck_zapret() {
             full|quick) mode="$a" ;;
             --apply|-y) apply=1 ;;
             debug|--debug) BC_DEBUG=1 ;;
+            tls12|--tls=12) tlsmode=12 ;;
+            tls13|--tls=13) tlsmode=13 ;;
+            tlsboth|--tls=both) tlsmode=both ;;
             *) targets+=("$a") ;;
         esac
     done
@@ -1292,7 +1355,20 @@ blockcheck_zapret() {
         check_deps || return 1
     fi
 
-    mapfile -t BC_URLS < <(bc_targets "${targets[@]}")
+    local -a raw_urls=()
+    mapfile -t raw_urls < <(bc_targets "${targets[@]}" | awk '!seen[$0]++')
+    BC_URLS=(); BC_TLS=()
+    local u
+    for u in "${raw_urls[@]}"; do
+        if [[ "$u" == https://* ]]; then
+            case "$tlsmode" in
+                both) BC_URLS+=("$u" "$u"); BC_TLS+=(12 13) ;;
+                *)    BC_URLS+=("$u"); BC_TLS+=("$tlsmode") ;;
+            esac
+        else
+            BC_URLS+=("$u"); BC_TLS+=("")
+        fi
+    done
     if [[ ${#BC_URLS[@]} -eq 0 ]]; then
         echo -e "${RED}Нет адресов для проверки. Пример: zapret blockcheck discord youtube example.com${NC}"
         return 1
@@ -1318,7 +1394,7 @@ blockcheck_zapret() {
 
     {
         echo "blockcheck $(date '+%F %T') mode=$mode"
-        printf '  %s\n' "${BC_URLS[@]}"
+        for ((i=0; i<${#BC_URLS[@]}; i++)); do echo "  $(bc_label $i)"; done
     } > "$BC_LOG"
 
     if [[ $BC_DEBUG -eq 1 ]]; then
@@ -1346,12 +1422,12 @@ blockcheck_zapret() {
     fi
 
     echo -e "${BLUE}Адреса для проверки:${NC}"
-    printf '  %s\n' "${BC_URLS[@]}"
+    for ((i=0; i<total; i++)); do echo "  $(bc_label $i)"; done
     echo ""
     echo -e "${BLUE}Без zapret (напрямую):${NC}"
     bc_probe_all "" "00_direct"
     for ((i=0; i<total; i++)); do
-        printf '  %-55s %s\n' "${BC_URLS[$i]}" "$(bc_rc_text "${BC_RC[$i]}")"
+        printf '  %-62s %s\n' "$(bc_label $i)" "$(bc_rc_text "${BC_RC[$i]}")"
     done | tee -a "$BC_LOG"
     if [[ $BC_OK -eq $total ]]; then
         echo -e "${YELLOW}Все адреса открываются и без zapret. Либо блокировки нет, либо она срабатывает не сразу.${NC}"
@@ -1519,6 +1595,7 @@ show_menu() {
         echo "14) Удалить"
         echo "15) Отладка (лог + сводка UDP)"
         echo "16) Подобрать стратегию (blockcheck)"
+        echo "17) Обновить списки доменов (zapret.cfgs)"
         echo " 0) Выход"
         echo ""
         read -p "Выбор: " ch
@@ -1538,10 +1615,11 @@ show_menu() {
             13) update_zapret ;;
             14) read -p "Точно удалить? (y/n) " -n 1 -r; echo; [[ $REPLY =~ ^[Yy]$ ]] && remove_zapret ;;
             15) debug_zapret ;;
-            16) read -p "Что проверять [discord youtube / домены] (Enter - discord youtube): " bct
+            16) read -p "Что проверять [discord youtube / list:discord / домены] (Enter - discord youtube): " bct
                 read -p "Режим quick/full, можно добавить debug (Enter - quick): " bcm
                 # shellcheck disable=SC2086
                 blockcheck_zapret ${bcm:-quick} ${bct:-discord youtube} ;;
+            17) update_lists ;;
             0|q) exit 0 ;;
             *) echo -e "${RED}Неверный выбор.${NC}" ;;
         esac
@@ -1569,8 +1647,9 @@ show_help() {
   install | update | remove
   cmd                          показать итоговую команду tpws
   debug                        запустить с логом (Ctrl+C - стоп), показать сводку UDP
-  blockcheck [quick|full] [debug] [discord] [youtube] [домен...] [--apply]
-                               подобрать TCP-стратегию (по умолчанию: quick discord youtube)
+  blockcheck [quick|full] [debug] [tls12|tls13] [discord] [youtube] [list:имя] [домен...] [--apply]
+                               подобрать TCP-стратегию (по умолчанию: quick discord youtube, TLS1.2 и 1.3)
+  lists-update                 скачать списки доменов из Snowy-Fluffy/zapret.cfgs (cfgs-*.txt)
 HELP
 }
 
@@ -1590,6 +1669,7 @@ case "$1" in
     cmd)            get_command ;;
     debug)          debug_zapret ;;
     blockcheck)     shift; blockcheck_zapret "$@" ;;
+    lists-update)   update_lists ;;
     strategies)     list_strategies ;;
     strategy)
         if [[ -n "$2" && -n "${STRATEGIES[$2]}" ]]; then
