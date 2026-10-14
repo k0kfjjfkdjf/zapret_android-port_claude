@@ -79,7 +79,7 @@ show_help() {
   debug                        запустить с логом (Ctrl+C - стоп), показать сводку UDP
   blockcheck                   меню подбора стратегий (цели, режим, TLS, отладка, папка для логов)
   blockcheck [quick|full] [debug|debug=full] [tls12|tls13] [dir=папка] [timeout=N] [limit=N]
-             [sample=N top=N] [par=N] [keepdead]
+             [sample=N top=N] [par=N] [keepdead] [multi]
              [discord|discord-full|youtube] [list:имя] [hostlist:файл] [file:путь] [домен|IP...] [--apply]
                                подобрать TCP-стратегию (по умолчанию: quick discord youtube, TLS1.2 и 1.3)
   lists-update                 скачать списки доменов из Snowy-Fluffy/zapret.cfgs (cfgs-*.txt)

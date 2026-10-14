@@ -10,6 +10,7 @@ BC_TIMEOUT=8
 BC_SAMPLE=8     # двухэтапная проверка: сколько адресов в выборке первого этапа (0 - выключить)
 BC_TOP=5        # сколько лучших стратегий проверять на полном списке
 BC_PAR=12       # сколько curl одновременно
+declare -A BC_DETAILS   # индекс стратегии -> строка +/- последнего раунда (для мультистратегии)
 BC_OUTDIR="${BC_OUTDIR:-$HOME}"   # куда класть отчёт и отладочный архив
 BC_LOG="$BC_OUTDIR/zapret-blockcheck.log"
 
@@ -240,9 +241,10 @@ bc_label() {
 # raw-адреса -> BC_URLS/BC_TLS/BC_BIG/BC_IP (https раскладывается на TLS 1.2 и 1.3)
 bc_expand() {
     local tlsmode="$1"; shift
-    BC_URLS=(); BC_TLS=(); BC_BIG=(); BC_IP=(); BC_STAGE=(); BC_RC=()
+    BC_URLS=(); BC_TLS=(); BC_BIG=(); BC_IP=(); BC_STAGE=(); BC_RC=(); BC_RAWOFF=(); BC_RAWN=()
     local u big isip
     for u in "$@"; do
+        BC_RAWOFF+=("${#BC_URLS[@]}")
         big=0; isip=0
         [[ "$u" == big:* ]] && { big=1; u="${u#big:}"; }
         [[ "$u" == ip:* ]] && { isip=1; u="${u#ip:}"; }
@@ -254,6 +256,7 @@ bc_expand() {
         else
             BC_URLS+=("$u"); BC_TLS+=(""); BC_BIG+=("$big"); BC_IP+=("$isip")
         fi
+        BC_RAWN+=($(( ${#BC_URLS[@]} - ${BC_RAWOFF[-1]} )))
     done
 }
 
@@ -314,6 +317,7 @@ bc_round() {
         printf "[%3d/%d] %-20s ${color}%3d/%d${NC} %s %5ss\n" $pos $cnt "$n" $BC_OK $total "$det" "$BC_TIME"
         echo "round$BC_ROUND $BC_OK/$total $BC_DETAIL ${BC_TIME}s $n | $o" >> "$BC_LOG"
         res+=("$BC_OK|$BC_TIME|$idx")
+        BC_DETAILS[$idx]="$BC_DETAIL"
     done
 }
 
@@ -374,7 +378,7 @@ bc_pack_debug() {
 blockcheck_zapret() {
     local mode="quick" apply=0 tlsmode=both
     local -a targets=()
-    BC_DEBUG=0; BC_EXCLUDE=1
+    BC_DEBUG=0; BC_EXCLUDE=1; BC_MULTI=0
     local a
     for a in "$@"; do
         case "$a" in
@@ -386,6 +390,7 @@ blockcheck_zapret() {
             top=*)     BC_TOP="${a#top=}" ;;
             par=*)     BC_PAR="${a#par=}" ;;
             keepdead)  BC_EXCLUDE=0 ;;
+            multi)     BC_MULTI=1 ;;
             tls12|--tls=12) tlsmode=12 ;;
             tls13|--tls=13) tlsmode=13 ;;
             tlsboth|--tls=both) tlsmode=both ;;
@@ -612,6 +617,12 @@ blockcheck_zapret() {
     fi
 
     IFS='|' read -r ok tm id <<< "${sorted[0]}"
+    if [[ $BC_MULTI -eq 1 ]]; then
+        local mrc=0
+        bc_multi "$id" || mrc=$?
+        # 2 - мультистратегия не нужна или не лучше основной: продолжаем как обычно
+        if [[ $mrc -ne 2 ]]; then bc_pack_debug; return $mrc; fi
+    fi
     local choose=""
     if [[ $INTERACTIVE -eq 1 ]]; then
         read -p "Применить стратегию номер (1-$shown, Enter - не применять): " choose

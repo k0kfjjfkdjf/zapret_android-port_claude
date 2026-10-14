@@ -6,14 +6,14 @@ BCM_TARGETS_FILE="$HOME/.zapret_blockcheck_targets"  # цели проверки
 
 bcm_load() {
     BCM_MODE=quick; BCM_TLS=both; BCM_TIMEOUT=8; BCM_LIMIT=40; BCM_DEBUG=0; BCM_DIR="$HOME"
-    BCM_SAMPLE=8; BCM_TOP=5; BCM_PAR=12
+    BCM_SAMPLE=8; BCM_TOP=5; BCM_PAR=12; BCM_MULTI=0
     if [[ -f "$BCM_CONF" ]]; then
         local k v
         while IFS='=' read -r k v; do
             case "$k" in
                 mode) BCM_MODE="$v" ;; tls) BCM_TLS="$v" ;; timeout) BCM_TIMEOUT="$v" ;;
                 limit) BCM_LIMIT="$v" ;; debug) BCM_DEBUG="$v" ;; dir) BCM_DIR="$v" ;;
-                sample) BCM_SAMPLE="$v" ;; top) BCM_TOP="$v" ;; par) BCM_PAR="$v" ;;
+                sample) BCM_SAMPLE="$v" ;; top) BCM_TOP="$v" ;; par) BCM_PAR="$v" ;; multi) BCM_MULTI="$v" ;;
             esac
         done < "$BCM_CONF"
     fi
@@ -25,8 +25,8 @@ bcm_load() {
 }
 
 bcm_save() {
-    printf 'mode=%s\ntls=%s\ntimeout=%s\nlimit=%s\ndebug=%s\ndir=%s\nsample=%s\ntop=%s\npar=%s\n' \
-        "$BCM_MODE" "$BCM_TLS" "$BCM_TIMEOUT" "$BCM_LIMIT" "$BCM_DEBUG" "$BCM_DIR" "$BCM_SAMPLE" "$BCM_TOP" "$BCM_PAR" > "$BCM_CONF"
+    printf 'mode=%s\ntls=%s\ntimeout=%s\nlimit=%s\ndebug=%s\ndir=%s\nsample=%s\ntop=%s\npar=%s\nmulti=%s\n' \
+        "$BCM_MODE" "$BCM_TLS" "$BCM_TIMEOUT" "$BCM_LIMIT" "$BCM_DEBUG" "$BCM_DIR" "$BCM_SAMPLE" "$BCM_TOP" "$BCM_PAR" "$BCM_MULTI" > "$BCM_CONF"
     printf '%s\n' "${BCM_TARGETS[@]}" > "$BCM_TARGETS_FILE"
 }
 
@@ -72,6 +72,11 @@ bcm_show() {
         echo "Два этапа:        выкл (все стратегии на всех адресах)"
     fi
     echo "Параллельно:      $BCM_PAR запросов curl"
+    if [[ "$BCM_MULTI" == "1" ]]; then
+        echo -e "Мультистратегия:  ${GREEN}вкл${NC} (основная + дополнения для адресов, которые она не открывает)"
+    else
+        echo "Мультистратегия:  выкл"
+    fi
     case "$BCM_DEBUG" in
         1) echo -e "Отладка:          ${GREEN}компактная${NC} (curl -v только неудачных, лог tpws финалистов)" ;;
         2) echo -e "Отладка:          ${YELLOW}полная${NC} (всё; при больших списках архив будет большим)" ;;
@@ -187,6 +192,7 @@ bcm_run() {
     local -a args=("$BCM_MODE" "dir=$BCM_DIR" "timeout=$BCM_TIMEOUT" "limit=$BCM_LIMIT" "sample=$BCM_SAMPLE" "top=$BCM_TOP" "par=$BCM_PAR")
     case "$BCM_TLS" in 12) args+=(tls12) ;; 13) args+=(tls13) ;; esac
     case "$BCM_DEBUG" in 1) args+=(debug) ;; 2) args+=(debug=full) ;; esac
+    [[ "$BCM_MULTI" == "1" ]] && args+=(multi)
     args+=("${BCM_TARGETS[@]}")
     blockcheck_zapret "${args[@]}"
 }
@@ -210,7 +216,8 @@ blockcheck_menu() {
         echo "11) Папка для отчёта и логов"
         echo "12) Два этапа: размер выборки и число финалистов"
         echo "13) Параллельность curl"
-        echo "14) ▶ Запустить проверку"
+        echo "14) Мультистратегия вкл/выкл (экспериментально)"
+        echo "15) ▶ Запустить проверку"
         echo " 0) Назад"
         echo ""
         read -p "Выбор: " ch || { echo; bcm_save; return 0; }   # EOF: выйти, а не крутиться
@@ -236,7 +243,8 @@ blockcheck_menu() {
                 fi ;;
             13) read -p "Сколько запросов curl одновременно (2-64): " v
                 [[ "$v" =~ ^[0-9]+$ ]] && (( v>=2 && v<=64 )) && BCM_PAR=$v ;;
-            14) bcm_save; bcm_run; press_any_key ;;
+            14) [[ "$BCM_MULTI" == "1" ]] && BCM_MULTI=0 || BCM_MULTI=1 ;;
+            15) bcm_save; bcm_run; press_any_key ;;
             0|q) bcm_save; return 0 ;;
             *) ;;
         esac
