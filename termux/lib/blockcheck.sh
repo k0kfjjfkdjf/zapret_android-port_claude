@@ -11,6 +11,7 @@ BC_SAMPLE=8     # двухэтапная проверка: сколько адр
 BC_TOP=5        # сколько лучших стратегий проверять на полном списке
 BC_PAR=12       # сколько curl одновременно
 declare -A BC_DETAILS   # индекс стратегии -> строка +/- последнего раунда (для мультистратегии)
+declare -A BC_DIRECT    # "url|tls" -> причина, по которой адрес не открылся без zapret
 BC_OUTDIR="${BC_OUTDIR:-$HOME}"   # куда класть отчёт и отладочный архив
 BC_LOG="$BC_OUTDIR/zapret-blockcheck.log"
 
@@ -272,6 +273,7 @@ bc_matrix_header() {
 bc_round() {
     local -a ids=("$@")
     local total=${#BC_URLS[@]} cnt=${#ids[@]} pos=0 idx n o
+    BC_LAST_IDS=()
     bc_matrix_header
     for idx in "${ids[@]}"; do
         pos=$((pos+1))
@@ -318,7 +320,31 @@ bc_round() {
         echo "round$BC_ROUND $BC_OK/$total $BC_DETAIL ${BC_TIME}s $n | $o" >> "$BC_LOG"
         res+=("$BC_OK|$BC_TIME|$idx")
         BC_DETAILS[$idx]="$BC_DETAIL"
+        BC_LAST_IDS+=("$idx")
     done
+}
+
+# адреса, которые в последнем раунде не открыла ни одна стратегия, с причиной из проверки без zapret
+bc_report_unopened() {
+    local k id any lines=0
+    local -a out=()
+    for ((k=0; k<${#BC_URLS[@]}; k++)); do
+        any=0
+        for id in "${BC_LAST_IDS[@]}"; do
+            [[ "${BC_DETAILS[$id]:$k:1}" == "+" ]] && { any=1; break; }
+        done
+        if [[ $any -eq 0 ]]; then
+            local why="${BC_DIRECT["${BC_URLS[$k]}|${BC_TLS[$k]}"]}"
+            out+=("$(printf '   %-62s %s' "$(bc_label $k)" "${why:+без zapret: $why}")")
+        fi
+    done
+    [[ ${#out[@]} -eq 0 ]] && return 0
+    echo ""
+    echo -e "${YELLOW}Не открыла ни одна стратегия (${#out[@]}):${NC}"
+    printf '%s\n' "${out[@]:0:15}"
+    [[ ${#out[@]} -gt 15 ]] && echo "   … и ещё $(( ${#out[@]}-15 )) (см. матрицу результатов)"
+    printf 'unopened: %s\n' "${out[@]}" >> "$BC_LOG"
+    echo "   Если без zapret у них DNS/TCP-ошибка, причина скорее не в DPI. Иначе попробуйте режим full."
 }
 
 # сортировка массива результатов "ok|время|индекс": больше успешных, затем быстрее
@@ -329,7 +355,7 @@ bc_sort_res() {
 bc_rc_text() {
     # $2 - этап (dns/tcp/tls/data), если известен
     case "$1:$2" in
-        28:dns|6:*) echo "DNS: имя не разрешилось без zapret (локальный DNS, проверьте /etc/resolv.conf; через tpws может открываться)" ; return ;;
+        28:dns|6:*) echo "DNS: имя не разрешилось (локальный DNS? проверьте /etc/resolv.conf; через tpws может открываться)" ; return ;;
         28:tcp) echo "таймаут TCP-подключения (блокировка по IP?)" ; return ;;
         28:tls) echo "таймаут TLS-рукопожатия (типично для DPI)" ; return ;;
         28:data) echo "данные перестали идти (заморозка DPI?)" ; return ;;
@@ -504,6 +530,25 @@ blockcheck_zapret() {
     if [[ $BC_OK -eq $total ]]; then
         echo -e "${YELLOW}Все адреса открываются и без zapret. Либо блокировки нет, либо она срабатывает не сразу.${NC}"
     fi
+    # запомнить причины и предупредить о возможной недоступности (адреса всё равно проверяются)
+    BC_DIRECT=()
+    local n_dns=0 n_tcp=0 n_ref=0
+    for ((i=0; i<total; i++)); do
+        [[ "${BC_RC[$i]}" == "0" ]] && continue
+        BC_DIRECT["${BC_URLS[$i]}|${BC_TLS[$i]}"]="$(bc_rc_text "${BC_RC[$i]}" "${BC_STAGE[$i]}")"
+        case "${BC_RC[$i]}:${BC_STAGE[$i]}" in
+            *:dns|6:*) n_dns=$((n_dns+1)) ;;
+            *:tcp)     n_tcp=$((n_tcp+1)) ;;
+            7:*)       n_ref=$((n_ref+1)) ;;
+        esac
+    done
+    if [[ $((n_dns+n_tcp+n_ref)) -gt 0 ]]; then
+        echo -e "${YELLOW}Внимание: часть адресов может быть недоступна не из-за DPI:${NC}"
+        [[ $n_dns -gt 0 ]] && echo "   DNS не разрешил имя: $n_dns (часто это пустой /etc/resolv.conf в proot; tpws разрешает имена сам)"
+        [[ $n_tcp -gt 0 ]] && echo "   нет TCP-подключения: $n_tcp (блокировка по IP или сервер недоступен)"
+        [[ $n_ref -gt 0 ]] && echo "   соединение отклонено: $n_ref"
+        echo "   Они всё равно проверяются со всеми стратегиями."
+    fi
 
     echo ""
     local pid="" stop=0
@@ -562,6 +607,7 @@ blockcheck_zapret() {
     # сортировка: больше успешных, затем быстрее
     local -a sorted
     mapfile -t sorted < <(bc_sort_res "${res[@]}")
+    bc_report_unopened
 
     echo ""
     echo -e "${GREEN}Лучшие стратегии:${NC}"
