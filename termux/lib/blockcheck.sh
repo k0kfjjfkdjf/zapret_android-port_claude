@@ -187,7 +187,10 @@ bc_probe_all() {
         read -r rc code t size tdns tcon ttls < "$dir/$i"
         # этап, на котором оборвалось: dns / tcp / tls / data
         BC_STAGE[$i]=""
-        if [[ "$rc" != "0" ]]; then
+        if [[ "$rc" == "97" && -n "$port" ]]; then
+            # SOCKS-прокси (tpws) не смог подключиться: имя не разрешилось или нет TCP до сервера
+            BC_STAGE[$i]="tcp"
+        elif [[ "$rc" != "0" ]]; then
             if [[ -z "$port" ]] && [[ "${tdns:-0}" == 0* ]] && [[ "${tcon:-0}" == 0.000000 || -z "$tcon" ]] && [[ "$rc" == "28" || "$rc" == "6" ]] && ! [[ "${BC_URLS[$i]}" =~ ://\[?[0-9a-fA-F:.]+\]?/ ]]; then
                 BC_STAGE[$i]="dns"
             elif [[ "${tcon:-0}" == "0.000000" ]]; then
@@ -335,7 +338,7 @@ bc_report_unopened() {
         done
         if [[ $any -eq 0 ]]; then
             local why="${BC_DIRECT["${BC_URLS[$k]}|${BC_TLS[$k]}"]}"
-            out+=("$(printf '   %-62s %s' "$(bc_label $k)" "${why:+без zapret: $why}")")
+            out+=("$(printf '   %-62s %s' "$(bc_label $k)" "${why:+без обхода: $why}")")
         fi
     done
     [[ ${#out[@]} -eq 0 ]] && return 0
@@ -344,7 +347,7 @@ bc_report_unopened() {
     printf '%s\n' "${out[@]:0:15}"
     [[ ${#out[@]} -gt 15 ]] && echo "   … и ещё $(( ${#out[@]}-15 )) (см. матрицу результатов)"
     printf 'unopened: %s\n' "${out[@]}" >> "$BC_LOG"
-    echo "   Если без zapret у них DNS/TCP-ошибка, причина скорее не в DPI. Иначе попробуйте режим full."
+    echo "   Если и без обхода у них ошибка подключения или DNS, причина скорее не в DPI. Иначе попробуйте режим full."
 }
 
 # сортировка массива результатов "ok|время|индекс": больше успешных, затем быстрее
@@ -357,6 +360,7 @@ bc_rc_text() {
     case "$1:$2" in
         28:dns|6:*) echo "DNS: имя не разрешилось (локальный DNS? проверьте /etc/resolv.conf; через tpws может открываться)" ; return ;;
         28:tcp) echo "таймаут TCP-подключения (блокировка по IP?)" ; return ;;
+        97:tcp) echo "сервер недоступен: имя не разрешилось или нет TCP-подключения (блокировка по IP?)" ; return ;;
         28:tls) echo "таймаут TLS-рукопожатия (типично для DPI)" ; return ;;
         28:data) echo "данные перестали идти (заморозка DPI?)" ; return ;;
     esac
@@ -500,15 +504,28 @@ blockcheck_zapret() {
     echo -e "${BLUE}Адреса для проверки:${NC}"
     for ((i=0; i<total; i++)); do echo "  $(bc_label $i)"; done
     echo ""
-    echo -e "${BLUE}Без zapret (напрямую):${NC}"
-    bc_probe_all "" "00_direct"
+    # "без обхода": через tpws без стратегии (обычный SOCKS-прокси). Так проверка идёт тем же путём и с тем же
+    # DNS, что и стратегии, и не зависит от DNS внутри proot (часто пустой /etc/resolv.conf)
+    local ppid=""
+    "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks &>/dev/null &
+    ppid=$!
+    for i in $(seq 1 30); do (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null && break; sleep 0.1; done
+    if kill -0 $ppid 2>/dev/null; then
+        echo -e "${BLUE}Без обхода DPI (через tpws без стратегии):${NC}"
+        BC_CUR_NAME="no-strategy"
+        bc_probe_all "$port" "00_direct"
+        kill $ppid 2>/dev/null; wait $ppid 2>/dev/null
+    else
+        echo -e "${BLUE}Без zapret (напрямую):${NC}"
+        bc_probe_all "" "00_direct"
+    fi
     # уточнить этап для таймаутов: TCP прошёл -> обрыв на TLS.
     # проверка параллельно и по одному разу на каждый адрес (TLS 1.2 и 1.3 - один и тот же хост)
     local tdir; tdir=$(mktemp -d)
     local -A tcp_seen=()
     local -a tpids=()
     for ((i=0; i<total; i++)); do
-        [[ "${BC_STAGE[$i]}" == "tcp" ]] || continue
+        [[ "${BC_STAGE[$i]}" == "tcp" && "${BC_RC[$i]}" == "28" ]] || continue
         local key; key=$(printf '%s' "${BC_URLS[$i]}" | md5sum | cut -c1-12)
         [[ -n "${tcp_seen[$key]}" ]] && continue
         tcp_seen[$key]=1
@@ -517,7 +534,7 @@ blockcheck_zapret() {
     done
     [[ ${#tpids[@]} -gt 0 ]] && wait "${tpids[@]}"
     for ((i=0; i<total; i++)); do
-        [[ "${BC_STAGE[$i]}" == "tcp" ]] || continue
+        [[ "${BC_STAGE[$i]}" == "tcp" && "${BC_RC[$i]}" == "28" ]] || continue
         local key; key=$(printf '%s' "${BC_URLS[$i]}" | md5sum | cut -c1-12)
         if [[ -f "$tdir/$key" ]]; then
             [[ "${BC_URLS[$i]}" == https://* ]] && BC_STAGE[$i]="tls" || BC_STAGE[$i]="data"
@@ -545,7 +562,7 @@ blockcheck_zapret() {
     if [[ $((n_dns+n_tcp+n_ref)) -gt 0 ]]; then
         echo -e "${YELLOW}Внимание: часть адресов может быть недоступна не из-за DPI:${NC}"
         [[ $n_dns -gt 0 ]] && echo "   DNS не разрешил имя: $n_dns (часто это пустой /etc/resolv.conf в proot; tpws разрешает имена сам)"
-        [[ $n_tcp -gt 0 ]] && echo "   нет TCP-подключения: $n_tcp (блокировка по IP или сервер недоступен)"
+        [[ $n_tcp -gt 0 ]] && echo "   сервер недоступен (нет TCP-подключения или имя не разрешилось): $n_tcp"
         [[ $n_ref -gt 0 ]] && echo "   соединение отклонено: $n_ref"
         echo "   Они всё равно проверяются со всеми стратегиями."
     fi
