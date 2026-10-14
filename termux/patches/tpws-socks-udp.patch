@@ -32,7 +32,7 @@ index a0f2a11..f0ea143 100644
  	bool cache_hostname;
  	ip_cache ipcache;
 diff --git a/tpws/tpws.c b/tpws/tpws.c
-index 69e6d39..f28aa33 100644
+index 69e6d39..badca40 100644
 --- a/tpws/tpws.c
 +++ b/tpws/tpws.c
 @@ -192,6 +192,17 @@ static void exithelp(void)
@@ -43,7 +43,7 @@ index 69e6d39..f28aa33 100644
 +		" --udp-timeout=<sec>\t\t\t; udp associate idle timeout. default 60. 0 = no timeout\n"
 +		" --udp-fake-ttl=<ttl>\t\t\t; send fake datagrams with this ipv4 TTL before real ones. enables udp desync\n"
 +		" --udp-fake-ttl6=<hops>\t\t\t; same for ipv6. default = udp-fake-ttl\n"
-+		" --udp-fake-repeats=<N>\t\t\t; how many fakes to send before each real datagram. default 1\n"
++		" --udp-fake-repeats=<N>\t\t\t; how many fakes to send before each real datagram. default 1, max 100\n"
 +		" --udp-desync-count=<N>\t\t\t; desync first N outgoing datagrams of each udp flow. default 2\n"
 +		" --udp-desync-ports=<port_list>\t\t; apply udp desync only to these destination ports. default all\n"
 +		" --udp-fake=<filename>\t\t\t; fake payload for generic udp. default 64 zero bytes\n"
@@ -130,9 +130,9 @@ index 69e6d39..f28aa33 100644
 +			break;
 +		case IDX_UDP_FAKE_REPEATS:
 +			params.udp_fake_repeats = atoi(optarg);
-+			if (params.udp_fake_repeats<1 || params.udp_fake_repeats>20)
++			if (params.udp_fake_repeats<1 || params.udp_fake_repeats>100)
 +			{
-+				DLOG_ERR("udp-fake-repeats must be within 1..20\n");
++				DLOG_ERR("udp-fake-repeats must be within 1..100\n");
 +				exit_clean(1);
 +			}
 +			break;

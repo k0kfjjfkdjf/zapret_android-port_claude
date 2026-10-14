@@ -13,13 +13,25 @@ start_zapret() {
     if pgrep -f "tpws.*--socks" > /dev/null; then
         echo -e "${YELLOW}Zapret уже запущен.${NC}"
     else
-        local cmd
+        local cmd out
         cmd=$(get_command)
+        # сначала проверка параметров: при ошибке показываем, что именно не понравилось tpws
+        if ! out=$(eval "${cmd/ --daemon/} --dry-run" 2>&1); then
+            echo -e "${RED}tpws не принял параметры:${NC}"
+            echo "$out" | grep -vE "^(self-built|github) version|^$|we have .* desync profile|^Running as UID|lists summary|splits summary|^profile [0-9]+ " | tail -5 | sed 's/^/   /'
+            echo "Команда: zapret cmd. Проверьте стратегию (zapret strategy …) и UDP-профиль (zapret udp-profile …)."
+            return 1
+        fi
         eval "$cmd &>/dev/null"
         if pgrep -f "tpws.*--socks" > /dev/null; then
             echo -e "${GREEN}Zapret запущен с стратегией '$(get_current_strategy_name)' на порту $(get_current_port)${NC}"
         else
             echo -e "${RED}Ошибка при запуске tpws.${NC}"
+            # частая причина: порт занят
+            if (exec 3<>/dev/tcp/127.0.0.1/"$(get_current_port)") 2>/dev/null; then
+                echo "Порт $(get_current_port) уже занят другой программой. Смените порт: zapret set-port <порт>"
+            fi
+            return 1
         fi
     fi
 }
