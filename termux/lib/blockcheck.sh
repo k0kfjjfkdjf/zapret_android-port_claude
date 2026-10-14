@@ -329,7 +329,7 @@ bc_sort_res() {
 bc_rc_text() {
     # $2 - этап (dns/tcp/tls/data), если известен
     case "$1:$2" in
-        28:dns|6:*) echo "DNS: имя не разрешилось (это не DPI: проверьте /etc/resolv.conf)" ; return ;;
+        28:dns|6:*) echo "DNS: имя не разрешилось без zapret (локальный DNS, проверьте /etc/resolv.conf; через tpws может открываться)" ; return ;;
         28:tcp) echo "таймаут TCP-подключения (блокировка по IP?)" ; return ;;
         28:tls) echo "таймаут TLS-рукопожатия (типично для DPI)" ; return ;;
         28:data) echo "данные перестали идти (заморозка DPI?)" ; return ;;
@@ -378,7 +378,7 @@ bc_pack_debug() {
 blockcheck_zapret() {
     local mode="quick" apply=0 tlsmode=both
     local -a targets=()
-    BC_DEBUG=0; BC_EXCLUDE=1; BC_MULTI=0
+    BC_DEBUG=0; BC_MULTI=0
     local a
     for a in "$@"; do
         case "$a" in
@@ -389,7 +389,7 @@ blockcheck_zapret() {
             sample=*)  BC_SAMPLE="${a#sample=}" ;;
             top=*)     BC_TOP="${a#top=}" ;;
             par=*)     BC_PAR="${a#par=}" ;;
-            keepdead)  BC_EXCLUDE=0 ;;
+            keepdead)  ;;   # устаревший параметр: недоступные адреса больше не исключаются
             multi)     BC_MULTI=1 ;;
             tls12|--tls=12) tlsmode=12 ;;
             tls13|--tls=13) tlsmode=13 ;;
@@ -505,39 +505,6 @@ blockcheck_zapret() {
         echo -e "${YELLOW}Все адреса открываются и без zapret. Либо блокировки нет, либо она срабатывает не сразу.${NC}"
     fi
 
-    # адреса, которые без zapret не проходят DNS или TCP (блокировка по имени/IP, адрес не существует),
-    # стратегиями tpws не лечатся: убираем их из перебора, иначе каждая стратегия ждёт на них полный таймаут
-    if [[ ${BC_EXCLUDE:-1} -eq 1 ]]; then
-        local -a keep=() dropped=()
-        local ei=0 ru st n2 j bad
-        for ru in "${raw_urls[@]}"; do
-            st="${ru#big:}"; st="${st#ip:}"
-            n2=1; [[ "$st" == https://* && "$tlsmode" == both ]] && n2=2
-            bad=1
-            for ((j=ei; j<ei+n2; j++)); do
-                case "${BC_RC[$j]}:${BC_STAGE[$j]}" in
-                    *:dns|*:tcp|6:*|7:*) ;;
-                    *) bad=0 ;;
-                esac
-            done
-            ei=$((ei+n2))
-            if [[ $bad -eq 1 ]]; then dropped+=("$st"); else keep+=("$ru"); fi
-        done
-        if [[ ${#dropped[@]} -gt 0 ]]; then
-            echo -e "${YELLOW}Исключено из перебора: ${#dropped[@]} адресов. Они не открываются и без zapret на этапе DNS/TCP, стратегии tpws тут не помогут.${NC}"
-            printf '   %s\n' "${dropped[@]:0:8}"
-            [[ ${#dropped[@]} -gt 8 ]] && echo "   … и ещё $(( ${#dropped[@]}-8 )) (полный список в отчёте)"
-            printf 'excluded (dns/tcp): %s\n' "${dropped[@]}" >> "$BC_LOG"
-            echo "   Оставить их в проверке: параметр keepdead"
-            if [[ ${#keep[@]} -eq 0 ]]; then
-                echo -e "${RED}Проверять нечего: все адреса недоступны ещё до DPI.${NC}"
-                bc_pack_debug; return 1
-            fi
-            raw_urls=("${keep[@]}")
-            bc_expand "$tlsmode" "${raw_urls[@]}"
-            total=${#BC_URLS[@]}
-        fi
-    fi
     echo ""
     local pid="" stop=0
     trap 'stop=1; [[ -n "$pid" ]] && kill $pid 2>/dev/null' INT TERM
