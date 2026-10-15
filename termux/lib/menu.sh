@@ -85,6 +85,7 @@ show_help() {
   combine КОМУ=СТРАТЕГИЯ ... [default=СТРАТЕГИЯ] [name=ИМЯ]
                                одна стратегия с разными параметрами для разных доменов (один процесс):
                                zapret combine discord=split_host_oob youtube=ultimate_universal default=oob
+  collect ИМЯ [log=файл]       собрать домены и IP приложения в hostlist collect-ИМЯ.txt (стоп - Ctrl+C)
   blockcheck multi-from-log [лог]
                                собрать мультистратегию из лога прошлого подбора (без повторной проверки)
   lists-update                 скачать списки доменов из Snowy-Fluffy/zapret.cfgs (cfgs-*.txt)

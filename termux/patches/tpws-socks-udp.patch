@@ -286,7 +286,7 @@ index 69e6d39..163e7c7 100644
  	VPRINT("adding low-priority default empty desync profile\n");
  	// add default empty profile
 diff --git a/tpws/tpws_conn.c b/tpws/tpws_conn.c
-index f74952a..c8b2e65 100644
+index f74952a..8b441a2 100644
 --- a/tpws/tpws_conn.c
 +++ b/tpws/tpws_conn.c
 @@ -66,6 +66,27 @@ static bool socks5_send_rep(int fd,uint8_t rep)
@@ -394,7 +394,16 @@ index f74952a..c8b2e65 100644
  				case S_WAIT_RESOLVE:
  					DBGPRINT("socks received message while in S_WAIT_RESOLVE. hanging up\n");
  					break;
-@@ -1430,6 +1489,11 @@ static void conn_close_timed_out(struct tailhead *conn_list, struct tailhead *cl
+@@ -1079,6 +1138,8 @@ static bool resolve_complete(struct resolve_item *ri, struct tailhead *conn_list
+ 			DBGPRINT("resolve_complete %s. getaddrinfo result %d\n", ri->dom, ri->ga_res);
+ 			if (ri->ga_res)
+ 			{
++				VPRINT("%s socks tcp FAILED : %s unresolved:%u in %llums (resolve) err=%s\n", zt_ts(), ri->dom, (unsigned)ri->port,
++					(unsigned long long)(zt_now_ms() - conn->t_accept_ms), gai_strerror(ri->ga_res));
+ 				socks5_send_rep(conn->fd,S5_REP_HOST_UNREACHABLE);
+ 				return false;;
+ 			}
+@@ -1430,6 +1491,11 @@ static void conn_close_timed_out(struct tailhead *conn_list, struct tailhead *cl
  			DBGPRINT("closing timed out connection: fd=%d remote=%d\n",c->fd,c->remote);
  			close_tcp_conn(conn_list,close_list,c);
  		}
@@ -406,7 +415,7 @@ index f74952a..c8b2e65 100644
  		c = cnext;
  	}
  }
-@@ -1471,6 +1535,13 @@ static bool handle_resolve_pipe(tproxy_conn_t **conn, struct tailhead *conn_list
+@@ -1471,6 +1537,13 @@ static bool handle_resolve_pipe(tproxy_conn_t **conn, struct tailhead *conn_list
  		DLOG_ERR("resolve_pipe not full read %zd\n",rd);
  		exit(1000);
  	}
@@ -420,7 +429,7 @@ index f74952a..c8b2e65 100644
  	b = resolve_complete(ri, conn_list);
  	*conn = (tproxy_conn_t *)ri->ptr;
  	if (*conn) (*conn)->socks_ri = NULL;
-@@ -1564,7 +1635,7 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
+@@ -1564,7 +1637,7 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
  
  		DBGPRINT("epoll_wait\n");
  
@@ -429,7 +438,7 @@ index f74952a..c8b2e65 100644
  		{
  			if (errno == EINTR) continue; // system call was interrupted
  			DLOG_PERROR("epoll_wait");
-@@ -1574,6 +1645,14 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
+@@ -1574,6 +1647,14 @@ int event_loop(const int *listen_fd, size_t listen_fd_ct)
  
  		for (i = 0; i < num_events; i++)
  		{

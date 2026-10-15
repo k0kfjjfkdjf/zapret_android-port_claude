@@ -51,7 +51,8 @@ debug_zapret() {
     echo -e "${BLUE}Лог: $log${NC}"
     echo ""
     : > "$log"
-    eval "$cmd" >> "$log" 2>&1 &
+    # exec: $! - это сам tpws, а не промежуточная оболочка (иначе tpws переживёт Ctrl+C)
+    (eval "exec $cmd") >> "$log" 2>&1 &
     local tp=$!
     trap 'kill $tp 2>/dev/null' INT TERM
     tail -n +1 -f --pid=$tp "$log" 2>/dev/null | grep --line-buffered -E "udp flow|RETRY|udp resolv|socks tcp|could not|error|ERROR" &
