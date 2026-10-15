@@ -79,7 +79,7 @@ get_command() {
 
     local port
     port=$(get_current_port)
-    local cmd="$TPWS_BIN --port=$port --bind-addr=127.0.0.1 --socks ${STRATEGIES[$strategy]} --daemon"
+    local cmd="$TPWS_BIN --port=$port --bind-addr=127.0.0.1 --socks $ZT_UIDOPT ${STRATEGIES[$strategy]} --daemon"
 
     if [[ "$(get_use_udp)" == "1" ]]; then
         if tpws_supports_udp; then

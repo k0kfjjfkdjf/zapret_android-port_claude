@@ -168,7 +168,7 @@ bc_multi() {
         combined+="$p"
     done
     # shellcheck disable=SC2086
-    if ! "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $combined --dry-run &>/dev/null; then
+    if ! "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $ZT_UIDOPT $combined --dry-run &>/dev/null; then
         echo -e "${RED}tpws не принял собранную мультистратегию. Это ошибка сборки, пришлите отчёт.${NC}"
         echo "$combined" >> "$BC_LOG"
         return 1

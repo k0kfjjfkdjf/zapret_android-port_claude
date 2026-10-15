@@ -130,6 +130,22 @@ zt_platform() {
     fi
 }
 
+# tpws, запущенный от root, сбрасывает права на uid/gid 2147483647. В rootless-контейнере
+# (distrobox/podman/docker без root) такого uid нет в user namespace, и tpws падает
+# ("setgroups: Invalid argument"). Тогда сбрасываем права на nobody (65534), если он отображён.
+zt_uid_opt() {
+    [[ $EUID -eq 0 && -r /proc/self/uid_map ]] || return 0
+    local f
+    for f in /proc/self/uid_map /proc/self/gid_map; do
+        awk -v t=2147483647 '{ if (t >= $1 && t < $1 + $3) ok=1 } END { exit !ok }' "$f" || break
+        [[ "$f" == */gid_map ]] && return 0   # оба отображены - обычная система
+    done
+    awk -v t=65534 '{ if (t >= $1 && t < $1 + $3) ok=1 } END { exit !ok }' /proc/self/uid_map \
+        && awk -v t=65534 '{ if (t >= $1 && t < $1 + $3) ok=1 } END { exit !ok }' /proc/self/gid_map \
+        && echo "--uid=65534:65534"
+}
+ZT_UIDOPT="$(zt_uid_opt)"
+
 # автозапуск через systemd: на обычном linux с systemd, где мы root
 ZT_UNIT="/etc/systemd/system/zapret-termux.service"
 zt_use_systemd() {

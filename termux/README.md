@@ -389,6 +389,23 @@ sudo zapret blockcheck            # меню подбора
 - Пользоваться прокси можно и на компьютере: SOCKS5 `127.0.0.1:1080`. В Firefox: Настройки → Сеть → SOCKS v5 и «Отправлять DNS-запросы через прокси». В Chromium: `chromium --proxy-server=socks5://127.0.0.1:1080`.
 - UDP через SOCKS браузеры не используют, поэтому на компьютере `blockcheck` полезен прежде всего для TCP-стратегий.
 
+### Distrobox, podman, docker
+
+В контейнере всё работает так же, сеть у distrobox общая с компьютером:
+
+```sh
+distrobox create --name zt --image ubuntu:24.04
+distrobox enter zt
+sudo apt update && sudo apt install -y curl
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
+sudo zapret blockcheck
+```
+
+- Внутри distrobox `sudo` работает без пароля, установщик перезапускается через него сам.
+- Обычный distrobox — rootless-контейнер: в нём нет пользователя, на которого tpws по умолчанию сбрасывает права (uid 2147483647), и tpws падал бы с `setgroups: Invalid argument`. Скрипт это определяет и запускает tpws с `--uid=65534:65534` (nobody). В отладочном `sysinfo.txt` это видно в строке `uid opt`.
+- Прокси из контейнера доступен на компьютере по тому же адресу `127.0.0.1:1080`.
+- systemd в контейнере обычно нет, так что автозапуск для проверок не нужен: запускайте `sudo zapret start`, когда надо.
+
 ## Обновление
 
 ```sh

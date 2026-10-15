@@ -325,7 +325,7 @@ bc_round() {
         [[ $stop -eq 1 ]] && break
         n="${cand_names[$idx]}"; o="${cand_opts[$idx]}"
         # shellcheck disable=SC2086
-        if ! "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $o --dry-run &>/dev/null; then
+        if ! "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $ZT_UIDOPT $o --dry-run &>/dev/null; then
             printf '[%3d/%d] %-20s %s\n' $pos $cnt "$n" "неверные параметры, пропуск"
             continue
         fi
@@ -341,7 +341,7 @@ bc_round() {
             fi
         fi
         # shellcheck disable=SC2086
-        "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $o $dbgopt &>"$tlog" &
+        "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $ZT_UIDOPT $o $dbgopt &>"$tlog" &
         pid=$!
         local w
         for w in $(seq 1 30); do
@@ -637,7 +637,7 @@ blockcheck_zapret() {
         {
             echo "=== date";        date
             echo "=== uname";       uname -a
-            echo "=== platform";    zt_platform
+            echo "=== platform";    zt_platform; echo "uid opt: ${ZT_UIDOPT:-нет}"
             echo "=== os";          cat /etc/os-release 2>/dev/null | head -3
             echo "=== zapret-termux"; zt_version
             echo "=== tpws";        ls -la "$TPWS_BIN"; git -C "$ZAPRET_DIR" log -1 --format='%h %cd' 2>/dev/null
@@ -662,7 +662,8 @@ blockcheck_zapret() {
     # "без обхода": через tpws без стратегии (обычный SOCKS-прокси). Так проверка идёт тем же путём и с тем же
     # DNS, что и стратегии, и не зависит от DNS внутри proot (часто пустой /etc/resolv.conf)
     local ppid=""
-    "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks &>/dev/null &
+    # shellcheck disable=SC2086
+    "$TPWS_BIN" --port="$port" --bind-addr=127.0.0.1 --socks $ZT_UIDOPT &>/dev/null &
     ppid=$!
     for i in $(seq 1 30); do (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null && break; sleep 0.1; done
     if kill -0 $ppid 2>/dev/null; then
