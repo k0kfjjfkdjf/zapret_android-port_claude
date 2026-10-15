@@ -117,7 +117,8 @@ info_zapret() {
     echo "strategy=$(get_current_strategy_name)"
     echo "hostlist=$(get_use_hostlist)"
     echo "hostlist_file=$(get_selected_hostlist)"
-    echo "autostart=$(grep -q "zapret start" "$BASHRC" 2>/dev/null && echo "1" || echo "0")"
+    echo "autostart=$(zt_autostart_on && echo "1" || echo "0")"
+    echo "platform=$(zt_platform)"
     echo "udp=$(get_use_udp)"
     echo "udp_profile=$(get_udp_profile)"
     echo "udp_supported=$(tpws_supports_udp && echo 1 || echo 0)"
@@ -223,6 +224,28 @@ select_hostlist_file() {
 # Автозапуск
 # -------------------------------------------------------------------
 enable_autostart() {
+    if zt_use_systemd; then
+        # обычный linux: служба systemd (tpws запускается с --daemon, отсюда Type=forking)
+        run_with_sudo tee "$ZT_UNIT" >/dev/null <<UNIT
+[Unit]
+Description=zapret-termux: tpws SOCKS5 proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+Environment=HOME=$HOME
+ExecStart=$SCRIPT_PATH start
+ExecStop=$SCRIPT_PATH stop
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+        run_with_sudo systemctl daemon-reload && run_with_sudo systemctl enable zapret-termux &>/dev/null \
+            && echo -e "${GREEN}Автозапуск включён: служба systemd zapret-termux (настройки из $HOME).${NC}" \
+            || { echo -e "${RED}Не удалось включить службу systemd.${NC}"; return 1; }
+        return 0
+    fi
     if ! grep -q "zapret start" "$BASHRC" 2>/dev/null; then
         echo "" >> "$BASHRC"
         echo "# Автозапуск zapret" >> "$BASHRC"
@@ -234,6 +257,13 @@ enable_autostart() {
 }
 
 disable_autostart() {
+    if zt_use_systemd && [[ -f "$ZT_UNIT" ]]; then
+        run_with_sudo systemctl disable zapret-termux &>/dev/null
+        run_with_sudo rm -f "$ZT_UNIT"
+        run_with_sudo systemctl daemon-reload
+        echo -e "${GREEN}Автозапуск отключён (служба systemd удалена).${NC}"
+        return 0
+    fi
     if grep -q "zapret start" "$BASHRC" 2>/dev/null; then
         sed -i '/# Автозапуск zapret/d' "$BASHRC"
         sed -i '/pgrep.*tpws.*--socks.*zapret start/d' "$BASHRC"

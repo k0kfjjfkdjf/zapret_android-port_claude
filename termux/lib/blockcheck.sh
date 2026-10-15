@@ -611,6 +611,7 @@ blockcheck_zapret() {
         {
             echo "=== date";        date
             echo "=== uname";       uname -a
+            echo "=== platform";    zt_platform
             echo "=== os";          cat /etc/os-release 2>/dev/null | head -3
             echo "=== zapret-termux"; zt_version
             echo "=== tpws";        ls -la "$TPWS_BIN"; git -C "$ZAPRET_DIR" log -1 --format='%h %cd' 2>/dev/null

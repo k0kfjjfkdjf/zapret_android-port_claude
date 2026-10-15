@@ -43,6 +43,8 @@ zapret start
 
 Затем настройте VPN-клиент [SocksTun](https://f-droid.org/packages/hev.sockstun): адрес `127.0.0.1:1080`, «UDP relay over TCP» выключить, режим per-App **без Termux**.
 
+Скрипт ставится и на **обычный Linux** (Ubuntu, Debian, Arch, Alpine) той же командой: например, чтобы подбирать стратегии на компьютере, а не на телефоне. См. [Обычный Linux](termux/README.md#обычный-linux).
+
 ## Документация
 
 Полное руководство: **[termux/README.md](termux/README.md)**. Там установка, настройка SocksTun, все команды, TCP-стратегии и UDP-профили, blockcheck, отладка, обновление, решение проблем, устройство проекта и описание патча tpws.

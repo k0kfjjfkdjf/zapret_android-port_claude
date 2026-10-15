@@ -41,7 +41,7 @@ show_menu() {
             8) change_port ;;
             9) toggle_hostlist ;;
             10) select_hostlist_file ;;
-            11) if grep -q "zapret start" "$BASHRC" 2>/dev/null; then disable_autostart; else enable_autostart; fi ;;
+            11) if zt_autostart_on; then disable_autostart; else enable_autostart; fi ;;
             12) install_zapret ;;
             13) update_zapret ;;
             14) read -p "Точно удалить? (y/n) " -n 1 -r; echo; [[ $REPLY =~ ^[Yy]$ ]] && remove_zapret ;;

@@ -1,7 +1,9 @@
 #!/bin/sh
-# zapret-termux: установка одной командой (внутри proot-distro, от root)
+# zapret-termux: установка одной командой
 #
+# Termux + proot-distro (вы уже root):
 #   sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script/termux/install.sh)"
+# Обычный Linux (Ubuntu, Debian, Arch, Alpine): та же команда, она сама перезапустится через sudo
 #
 # Переменные (необязательно):
 #   ZT_BRANCH  ветка репозитория (по умолчанию termux-zapret-udp-script - ветка проекта zapret-termux)
@@ -17,7 +19,18 @@ BRANCH="${ZT_BRANCH:-termux-zapret-udp-script}"
 DEST="${ZT_DEST:-/opt/zapret-termux}"
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Нужен root. В proot-distro вы root по умолчанию: proot-distro login ubuntu" >&2
+    # обычный Linux: перезапуск установщика от root через sudo
+    if command -v sudo >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+        case "$REPO" in
+            https://github.com/*)
+                raw=$(echo "$REPO" | sed -e 's#^https://github.com/#https://raw.githubusercontent.com/#' -e 's#\.git$##')
+                echo "Нужен root, перезапуск через sudo..."
+                curl -fsSL "$raw/$BRANCH/termux/install.sh" | sudo env ZT_REPO="$REPO" ZT_BRANCH="$BRANCH" ZT_DEST="$DEST" sh
+                exit $? ;;
+        esac
+    fi
+    echo "Нужен root. В proot-distro вы root по умолчанию (proot-distro login ubuntu)," >&2
+    echo "на обычном Linux запустите установку через sudo." >&2
     exit 1
 fi
 

@@ -118,6 +118,32 @@ zt_repo_dir() {
     git -C "$ZT_HOME" rev-parse --show-toplevel 2>/dev/null
 }
 
+# где работаем: proot (Termux + proot-distro) или обычный linux.
+# proot перехватывает системные вызовы через ptrace, поэтому у процесса есть трассировщик
+zt_platform() {
+    local tp
+    tp=$(awk '/^TracerPid:/{print $2}' /proc/self/status 2>/dev/null)
+    if [[ -n "$tp" && "$tp" != "0" ]] || [[ -d /data/data/com.termux || -f /system/build.prop ]] || uname -r | grep -qi android; then
+        echo "proot"
+    else
+        echo "linux"
+    fi
+}
+
+# автозапуск через systemd: на обычном linux с systemd, где мы root
+ZT_UNIT="/etc/systemd/system/zapret-termux.service"
+zt_use_systemd() {
+    [[ "$(zt_platform)" == "linux" && -d /run/systemd/system ]] && command -v systemctl &>/dev/null
+}
+
+zt_autostart_on() {
+    if zt_use_systemd; then
+        systemctl is-enabled zapret-termux &>/dev/null
+    else
+        grep -q "zapret start" "$BASHRC" 2>/dev/null
+    fi
+}
+
 zt_version() {
     local top
     top=$(zt_repo_dir) || { echo "не git-клон"; return; }
