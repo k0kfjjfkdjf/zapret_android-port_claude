@@ -82,6 +82,9 @@ show_help() {
              [sample=N top=N] [par=N] [passes=N] [multi]
              [discord|discord-full|youtube] [list:имя] [hostlist:файл] [file:путь] [домен|IP...] [--apply]
                                подобрать TCP-стратегию (по умолчанию: quick discord youtube, TLS1.2 и 1.3)
+  combine КОМУ=СТРАТЕГИЯ ... [default=СТРАТЕГИЯ] [name=ИМЯ]
+                               одна стратегия с разными параметрами для разных доменов (один процесс):
+                               zapret combine discord=split_host_oob youtube=ultimate_universal default=oob
   blockcheck multi-from-log [лог]
                                собрать мультистратегию из лога прошлого подбора (без повторной проверки)
   lists-update                 скачать списки доменов из Snowy-Fluffy/zapret.cfgs (cfgs-*.txt)

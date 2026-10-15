@@ -141,6 +141,23 @@ zapret start
 
 Свою стратегию можно добавить через меню (пункт 5) или сохранить лучшую из `blockcheck`.
 
+### Разные стратегии для разных сайтов: `zapret combine`
+
+Одна команда tpws (один процесс) может применять разные параметры к разным доменам. `combine` собирает такую стратегию из уже имеющихся:
+
+```sh
+zapret combine discord=split_host_oob youtube=ultimate_universal default=oob
+zapret combine example.com,site.org=oob_split3 default=discord name=my_combo
+zapret combine list:my-sites.txt="--split-pos=1 --oob" default=oob
+```
+
+- Слева — кому: готовый набор доменов (`discord`, `youtube`, `telegram`, `twitch`), свои домены через запятую или `list:файл`. Поддомены учитываются сами: `youtube.com` покрывает и `www.youtube.com`.
+- Справа — имя стратегии из `zapret strategies` или параметры tpws в кавычках.
+- `default=` — для всего остального (последний профиль, без фильтра). Без него остальной трафик идёт без обхода DPI.
+- Результат сохраняется как обычная стратегия (`combo_N` или `name=…`): `zapret strategy combo_1`. Его можно проверить в `blockcheck` наравне с другими.
+
+Как это устроено: профили разделяются `--new`, у каждого фильтр `--hostlist-domains`. Если стратегия сама из нескольких профилей (как `ultimate_universal`), фильтр дописывается в каждый. tpws берёт первый подходящий профиль и перевыбирает его, когда из ClientHello становится известно имя сайта. Мультистратегия из `blockcheck` устроена так же, только списки она подбирает сама.
+
 ## UDP и профили
 
 UDP нужен для QUIC (HTTP/3 у YouTube и Cloudflare), голоса Discord, звонков и STUN. Включается командой `zapret udp on`.
@@ -456,6 +473,7 @@ termux/
 │   ├── build.sh                 зависимости, сборка tpws, патч, install/update/self-update
 │   ├── lists.sh                 списки из zapret.cfgs
 │   ├── blockcheck.sh            подбор стратегий
+│   ├── combine.sh               zapret combine: стратегии по доменам
 │   ├── bcmenu.sh                меню подбора стратегий
 │   ├── multi.sh                 мультистратегия (экспериментально)
 │   ├── debug.sh                 отладочный запуск
