@@ -516,6 +516,16 @@ bc_generated() {
     echo "--filter-tcp=80,443 --tlsrec=sniext+2"
     echo "--filter-tcp=80,443 --tlsrec=midsld"
     echo "--filter-tcp=80,443 --tlsrec=sniext+1 --mss=88"
+    # байт OOB не нулевой: часть DPI по-разному обрабатывает 0x00 и печатный символ
+    echo "--filter-tcp=80,443 --split-pos=3 --oob --oob-data=a"
+    echo "--filter-tcp=80,443 --split-pos=host+1 --oob --oob-data=a"
+    echo "--filter-tcp=80,443 --split-pos=1,midsld --disorder --oob --oob-data=a"
+    # версия в заголовке TLS-записи (нужен tpws с патчем zapret-termux; иначе стратегия пропускается)
+    echo "--filter-tcp=80,443 --tlsminor=0"
+    echo "--filter-tcp=80,443 --tlsminor=4"
+    echo "--filter-tcp=80,443 --split-pos=host+1 --oob --tlsminor=4"
+    echo "--filter-tcp=80,443 --split-pos=1,midsld --tlsrec=sniext+1 --disorder --tlsminor=4"
+    echo "--filter-tcp=80,443 --tlsrec=sniext+1 --tlsminor=0"
 }
 
 bc_pack_debug() {
@@ -532,6 +542,7 @@ bc_pack_debug() {
 }
 
 blockcheck_zapret() {
+    if [[ "$1" == "multi-from-log" ]]; then shift; bc_multi_from_log "$@"; return; fi
     local mode="quick" apply=0 tlsmode=both
     local -a targets=()
     BC_DEBUG=0; BC_MULTI=0; BC_PASSES=1
@@ -602,6 +613,9 @@ blockcheck_zapret() {
 
     {
         echo "blockcheck $(date '+%F %T') mode=$mode"
+        # машиночитаемые строки: по ним мультистратегию можно собрать позже (blockcheck multi-from-log)
+        echo "tlsmode=$tlsmode timeout=$BC_TIMEOUT"
+        printf 'raw %s\n' "${raw_urls[@]}"
         for ((i=0; i<${#BC_URLS[@]}; i++)); do echo "  $(bc_label $i)"; done
     } > "$BC_LOG"
 

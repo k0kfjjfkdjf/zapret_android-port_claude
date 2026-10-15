@@ -55,7 +55,7 @@ bcm_show() {
     local t
     for t in "${BCM_TARGETS[@]}"; do echo "   • $(bcm_target_text "$t")"; done
     if [[ "$BCM_MODE" == "full" ]]; then
-        echo "Режим:            full (ваши $n_str стратегий + ~70 сгенерированных)"
+        echo "Режим:            full (ваши $n_str стратегий + ~75 сгенерированных)"
     else
         echo "Режим:            quick (ваши $n_str стратегий)"
     fi

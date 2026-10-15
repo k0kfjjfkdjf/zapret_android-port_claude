@@ -10,10 +10,19 @@ index 0690e68..2aaeece 100644
  	free(params->user); params->user=NULL;
  }
 diff --git a/tpws/params.h b/tpws/params.h
-index a0f2a11..f0ea143 100644
+index a0f2a11..654f91e 100644
 --- a/tpws/params.h
 +++ b/tpws/params.h
-@@ -149,6 +149,17 @@ struct params_s
+@@ -57,6 +57,8 @@ struct desync_profile
+ 	struct proto_pos splits[MAX_SPLITS];
+ 	int split_count;
+ 	struct proto_pos tlsrec;
++	bool tlsminor_set;
++	uint8_t tlsminor;	// replace minor version byte in TLS record header(s) of ClientHello
+ 
+ 	int mss;
+ 
+@@ -149,6 +151,17 @@ struct params_s
  	bool tamper_lim; // tamper-start or tamper-cutoff set in any profile
  	struct desync_profile_list_head desync_profiles;
  
@@ -31,8 +40,42 @@ index a0f2a11..f0ea143 100644
  	unsigned int ipcache_lifetime;
  	bool cache_hostname;
  	ip_cache ipcache;
+diff --git a/tpws/tamper.c b/tpws/tamper.c
+index 8e91756..9f3434f 100644
+--- a/tpws/tamper.c
++++ b/tpws/tamper.c
+@@ -468,6 +468,7 @@ void tamper_out(t_ctrack *ctrack, const struct sockaddr *dest, uint8_t *segment,
+ 
+ 		case TLS:
+ 			if (multisplit_pos) ResolveMultiPos(segment, *size, l7proto, ctrack->dp->splits, ctrack->dp->split_count, multisplit_pos, multisplit_count);
++			size_t rec2 = 0; // offset of the 2nd TLS record made by tlsrec, 0 = none
+ 			if ((5+*size)<=segment_buffer_size)
+ 			{
+ 				tpos = ResolvePos(segment, *size, l7proto, &ctrack->dp->tlsrec);
+@@ -489,6 +490,7 @@ void tamper_out(t_ctrack *ctrack, const struct sockaddr *dest, uint8_t *segment,
+ 						phton16(segment+tpos+3,l-(tpos-5));
+ 						phton16(segment+3,tpos-5);
+ 						*size += 5;
++						rec2 = tpos;
+ 						VPRINT("-2nd TLS record: ");
+ 						dlen = tpos<16 ? tpos : 16;
+ 						packet_debug(segment+tpos-dlen,dlen);
+@@ -501,6 +503,13 @@ void tamper_out(t_ctrack *ctrack, const struct sockaddr *dest, uint8_t *segment,
+ 					}
+ 				}
+ 			}
++			if (ctrack->dp->tlsminor_set)
++			{
++				// record header: type(1) version(2) length(2). DPI may expect 03 01 here
++				segment[2] = ctrack->dp->tlsminor;
++				if (rec2) segment[rec2+2] = ctrack->dp->tlsminor;
++				VPRINT("TLS record version minor set to 0x%02X\n", ctrack->dp->tlsminor);
++			}
+ 			if (split_flags)
+ 			{
+ 				if (ctrack->dp->disorder_tls) *split_flags |= SPLIT_FLAG_DISORDER;
 diff --git a/tpws/tpws.c b/tpws/tpws.c
-index 69e6d39..badca40 100644
+index 69e6d39..163e7c7 100644
 --- a/tpws/tpws.c
 +++ b/tpws/tpws.c
 @@ -192,6 +192,17 @@ static void exithelp(void)
@@ -53,7 +96,32 @@ index 69e6d39..badca40 100644
  		" --resolver-threads=<int>\t\t; number of resolver worker threads\n"
  		" --local-rcvbuf=<bytes>\n"
  		" --local-sndbuf=<bytes>\n"
-@@ -695,6 +706,17 @@ enum opt_indices {
+@@ -274,6 +285,7 @@ static void exithelp(void)
+ 		" --methodeol\t\t\t\t; add end-of-line before method\n"
+ 		" --unixeol\t\t\t\t; replace 0D0A to 0A\n"
+ 		" --tlsrec=N|-N|marker+N|marker-N\t; make 2 TLS records. split records at specified position.\n"
++		" --tlsminor=<0..255>|0xHEX\t\t; replace minor version byte in TLS record header of ClientHello (03 XX)\n"
+ #ifdef __linux__
+ 		" --mss=<int>\t\t\t\t; set client MSS. forces server to split messages but significantly decreases speed !\n"
+ #endif
+@@ -454,6 +466,8 @@ static void SplitDebug(void)
+ 			VPRINT("profile %d multisplit %s %d\n",dp->n,posmarker_name(dp->splits[x].marker),dp->splits[x].pos);
+ 		if (!PROTO_POS_EMPTY(&dp->tlsrec))
+ 			VPRINT("profile %d tlsrec %s %d\n",dp->n,posmarker_name(dp->tlsrec.marker),dp->tlsrec.pos);
++		if (dp->tlsminor_set)
++			VPRINT("profile %d tlsminor 0x%02X\n",dp->n,dp->tlsminor);
+ 	}
+ }
+ 
+@@ -675,6 +689,7 @@ enum opt_indices {
+ 	IDX_UNIXEOL,
+ 	IDX_TLSREC,
+ 	IDX_TLSREC_POS,
++	IDX_TLSMINOR,
+ 	IDX_HOSTLIST,
+ 	IDX_HOSTLIST_DOMAINS,
+ 	IDX_HOSTLIST_EXCLUDE,
+@@ -695,6 +710,17 @@ enum opt_indices {
  	IDX_REMOTE_SNDBUF,
  	IDX_SOCKS,
  	IDX_NO_RESOLVE,
@@ -71,7 +139,15 @@ index 69e6d39..badca40 100644
  	IDX_RESOLVER_THREADS,
  	IDX_SKIP_NODELAY,
  	IDX_TAMPER_START,
-@@ -788,6 +810,17 @@ static const struct option long_options[] = {
+@@ -768,6 +794,7 @@ static const struct option long_options[] = {
+ 	[IDX_UNIXEOL] = {"unixeol", no_argument, 0, 0},
+ 	[IDX_TLSREC] = {"tlsrec", required_argument, 0, 0},
+ 	[IDX_TLSREC_POS] = {"tlsrec-pos", required_argument, 0, 0},
++	[IDX_TLSMINOR] = {"tlsminor", required_argument, 0, 0},
+ 	[IDX_HOSTLIST] = {"hostlist", required_argument, 0, 0},
+ 	[IDX_HOSTLIST_DOMAINS] = {"hostlist-domains", required_argument, 0, 0},
+ 	[IDX_HOSTLIST_EXCLUDE] = {"hostlist-exclude", required_argument, 0, 0},
+@@ -788,6 +815,17 @@ static const struct option long_options[] = {
  	[IDX_REMOTE_SNDBUF] = {"remote-sndbuf", required_argument, 0, 0},
  	[IDX_SOCKS] = {"socks", no_argument, 0, 0},
  	[IDX_NO_RESOLVE] = {"no-resolve", no_argument, 0, 0},
@@ -89,7 +165,7 @@ index 69e6d39..badca40 100644
  	[IDX_RESOLVER_THREADS] = {"resolver-threads", required_argument, 0, 0},
  	[IDX_SKIP_NODELAY] = {"skip-nodelay", no_argument, 0, 0},
  	[IDX_TAMPER_START] = {"tamper-start", required_argument, 0, 0},
-@@ -832,6 +865,10 @@ void parse_params(int argc, char *argv[])
+@@ -832,6 +870,10 @@ void parse_params(int argc, char *argv[])
  
  	memset(&params, 0, sizeof(params));
  	params.maxconn = DEFAULT_MAX_CONN;
@@ -100,7 +176,28 @@ index 69e6d39..badca40 100644
  	params.max_orphan_time = DEFAULT_MAX_ORPHAN_TIME;
  	params.binds_last = -1;
  	params.ipcache_lifetime = IPCACHE_LIFETIME;
-@@ -1395,6 +1432,71 @@ void parse_params(int argc, char *argv[])
+@@ -1148,6 +1190,20 @@ void parse_params(int argc, char *argv[])
+ 			}
+ #endif
+ 			break;
++		case IDX_TLSMINOR:
++			{
++				unsigned int v;
++				char c;
++				if (!((sscanf(optarg,"0x%x%c",&v,&c)==1 || sscanf(optarg,"%u%c",&v,&c)==1) && v<=255))
++				{
++					DLOG_ERR("Invalid argument for tlsminor. 0..255 or 0xHEX\n");
++					exit_clean(1);
++				}
++				dp->tlsminor = (uint8_t)v;
++				dp->tlsminor_set = true;
++				params.tamper = true;
++			}
++			break;
+ 		case IDX_OOB_DATA:
+ 			{
+ 				size_t l = strlen(optarg);
+@@ -1395,6 +1451,71 @@ void parse_params(int argc, char *argv[])
  		case IDX_NO_RESOLVE:
  			params.no_resolve = true;
  			break;
@@ -172,7 +269,7 @@ index 69e6d39..badca40 100644
  		case IDX_RESOLVER_THREADS:
  			params.resolver_threads = atoi(optarg);
  			if (params.resolver_threads<1 || params.resolver_threads>300)
-@@ -1631,6 +1733,15 @@ void parse_params(int argc, char *argv[])
+@@ -1631,6 +1752,15 @@ void parse_params(int argc, char *argv[])
  		params.binds_last=0; // default bind to all
  	}
  	if (!params.resolver_threads) params.resolver_threads = 5 + params.maxconn/50;

@@ -225,3 +225,74 @@ bc_multi() {
     fi
     return 0
 }
+
+# мультистратегия из лога прошлого подбора, без повторной проверки всех стратегий.
+# берутся стратегии, проверенные на полном списке; при повторных проходах адрес засчитывается,
+# только если открылся во всех. В конце собранная стратегия один раз проверяется.
+bc_multi_from_log() {
+    local f="${1:-${BC_OUTDIR:-$HOME}/zapret-blockcheck.log}"
+    [[ -r "$f" ]] || { echo -e "${RED}Нет лога $f${NC}"; return 1; }
+    local tlsmode="" line
+    local -a raw_urls=()
+    while IFS= read -r line; do
+        case "$line" in
+            tlsmode=*) tlsmode="${line%% *}"; tlsmode="${tlsmode#tlsmode=}"
+                       local to="${line##*timeout=}"; [[ "$to" =~ ^[0-9]+$ ]] && BC_TIMEOUT=$to ;;
+            "raw "*)   raw_urls+=("${line#raw }") ;;
+        esac
+    done < "$f"
+    if [[ -z "$tlsmode" || ${#raw_urls[@]} -eq 0 ]]; then
+        echo -e "${RED}В логе нет списка адресов: он от старой версии. Нужен лог от zapret-termux после обновления.${NC}"
+        return 1
+    fi
+    bc_expand "$tlsmode" "${raw_urls[@]}"
+    local total=${#BC_URLS[@]}
+    # строки раундов: roundR ok/total КОДЫ время имя | параметры
+    local -a cand_names=() cand_opts=()
+    local -A idx_of=() det_of=()
+    local r okt codes tm name opts
+    while IFS= read -r line; do
+        [[ "$line" =~ ^round([0-9]+|P[0-9]+)\ ([0-9]+/[0-9]+)\ ([^ ]+)\ ([^ ]+)\ ([^ ]+)\ \|\ (.*)$ ]] || continue
+        codes="${BASH_REMATCH[3]}"; name="${BASH_REMATCH[5]}"; opts="${BASH_REMATCH[6]}"
+        [[ ${#codes} -eq $total ]] || continue        # выборка первого этапа - не полный список
+        local d="${codes//[^+]/-}"
+        if [[ -z "${idx_of[$name]+x}" ]]; then
+            idx_of[$name]=${#cand_names[@]}
+            cand_names+=("$name"); cand_opts+=("$opts")
+            det_of[$name]="$d"
+        else
+            # повторный проход: засчитывается только то, что открылось каждый раз
+            local prev="${det_of[$name]}" merged="" k
+            for ((k=0; k<total; k++)); do
+                [[ "${prev:$k:1}" == "+" && "${d:$k:1}" == "+" ]] && merged+="+" || merged+="-"
+            done
+            det_of[$name]="$merged"
+        fi
+    done < "$f"
+    if [[ ${#cand_names[@]} -eq 0 ]]; then
+        echo -e "${RED}В логе нет стратегий, проверенных на полном списке.${NC}"; return 1
+    fi
+    BC_DETAILS=(); BC_LAST_IDS=()
+    local id best=0 best_ok=-1 ok
+    for ((id=0; id<${#cand_names[@]}; id++)); do
+        BC_DETAILS[$id]="${det_of[${cand_names[$id]}]}"
+        BC_LAST_IDS+=("$id")
+        ok="${BC_DETAILS[$id]//-/}"; ok=${#ok}
+        [[ $ok -gt $best_ok ]] && { best=$id; best_ok=$ok; }
+    done
+    echo -e "${BLUE}Лог: $f${NC}"
+    echo "Адресов: ${#raw_urls[@]} ($total проверок), стратегий с результатом на полном списке: ${#cand_names[@]}"
+    is_zapret_installed || { echo -e "${RED}zapret не установлен.${NC}"; return 1; }
+    local port stop=0 apply=0 pid=""
+    local -a res=()
+    port=$(bc_free_port) || { echo -e "${RED}Нет свободного порта для теста.${NC}"; return 1; }
+    BC_DEBUG=0; BC_MATRIX=""; BC_ROUNDS=1
+    BC_LOG="$f"
+    echo "--- multi-from-log $(date '+%F %T')" >> "$BC_LOG"
+    trap 'stop=1; [[ -n "$pid" ]] && kill $pid 2>/dev/null' INT TERM
+    bc_multi "$best"
+    local rc=$?
+    trap - INT TERM
+    [[ $rc -eq 2 ]] && return 0
+    return $rc
+}

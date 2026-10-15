@@ -210,7 +210,7 @@ TLS:              1.2 и 1.3 отдельно
 ### Командная строка
 
 ```sh
-zapret blockcheck full discord                     # плюс ~70 сгенерированных комбинаций
+zapret blockcheck full discord                     # плюс ~75 сгенерированных комбинаций
 zapret blockcheck discord-full                     # все сервисы Discord + большой файл (256 КБ)
 zapret blockcheck list:discord                     # список cfgs-discord.txt (после zapret lists-update)
 zapret blockcheck hostlist:my.txt limit=100        # файл из /opt/zapret/ipset, до 100 записей
@@ -326,6 +326,15 @@ zapret blockcheck multi list:discord        # или пункт 14 в меню �
 ```
 
 Как это устроено в tpws: профили разделяются `--new` и перебираются по порядку, срабатывает первый подходящий. Если соединение пришло по IP, а имя хоста стало известно только из ClientHello (SocksTun без Remote DNS), tpws **перевыбирает профиль** по этому имени, так что фильтр по доменам работает и в этом случае. В одном профиле `--hostlist` и `--ipset` работают как «И», поэтому домены и IP идут в разные профили.
+
+**Сборка из лога прошлого подбора** — без повторной проверки стратегий, только одна проверка собранной:
+
+```sh
+zapret blockcheck multi-from-log                         # ~/zapret-blockcheck.log
+zapret blockcheck multi-from-log /sdcard/Download/zapret/zapret-blockcheck.log
+```
+
+Берутся стратегии, проверенные на полном списке (при двух этапах это финалисты). Если были повторные проходы, адрес засчитывается, только если открылся во всех. Нужен лог от версии с этой командой: в старых логах нет списка адресов.
 
 Ограничения: стратегия привязана к адресам, на которых её подбирали. Если у сервиса сменятся IP, дополнение по `--ipset` перестанет срабатывать, и такие адреса пойдут через основную стратегию. Тогда подбор стоит повторить.
 
@@ -454,6 +463,7 @@ termux/
 - **SOCKS5 UDP ASSOCIATE** (RFC 1928). Relay-сокет на адресе, по которому клиент подключился к tpws. Связка живёт, пока открыто TCP-соединение управления, или до таймаута простоя.
 - **Фейки с низким TTL** перед первыми N датаграммами каждого потока. Отдельные фейки для QUIC Initial, IP discovery Discord и STUN.
 - **Асинхронное разрешение доменов** в UDP-заголовках (ATYP=domain, режим Remote DNS в hev-socks5-tunnel). Работает через резолвер tpws, пакеты буферизуются до ответа DNS, результаты кэшируются на 5 минут.
+- **`--tlsminor`** (TCP, из ByeDPI): подменяет младший байт версии в заголовке TLS-записи с ClientHello (`16 03 XX`), в том числе во второй записи после `--tlsrec`. Часть DPI ждёт здесь стандартное значение и пропускает необычное. Серверы на OpenSSL такой ClientHello принимают; совместимость с другими серверами покажет `blockcheck full`.
 - **Диагностика в логе** (`--debug=1`): события UDP-потоков с временем (`udp flow start … fakes_before_first=N`, `first reply … after Nms`, `ip discovery RETRY`, сводка `udp flow end … first_reply= fakes= NO REPLY`) и время TCP-подключений через SOCKS (`socks tcp connected … in Nms`).
 
 Новые опции tpws:
@@ -468,6 +478,9 @@ termux/
 | `--udp-desync-ports=<список>` | все | порты назначения, например `443,50000-65535` |
 | `--udp-fake=<файл>` | 64 нулевых байта | фейк для неизвестного UDP |
 | `--udp-fake-quic=<файл>` / `--udp-fake-discord=<файл>` / `--udp-fake-stun=<файл>` | `--udp-fake` | фейки по протоколу |
+| `--tlsminor=<0..255>\|0xHEX` | — | байт версии в заголовке TLS-записи ClientHello (TCP) |
+
+Из возможностей ByeDPI в tpws уже были: `--oob-data` (свой байт OOB вместо 0x00) и `--disorder --oob` (аналог `--disoob`). В режиме `blockcheck full` перебираются и они, и `--tlsminor`.
 
 Разработка патча: склонируйте bol-van/zapret, примените патч (`git apply`), внесите изменения в `tpws/` и пересоздайте его командой `git add -N tpws/udp.c tpws/udp.h && git diff -- 'tpws/*.c' 'tpws/*.h' > tpws-socks-udp.patch`.
 
