@@ -11,7 +11,13 @@ BC_SAMPLE=8     # двухэтапная проверка: сколько адр
 BC_TOP=5        # сколько лучших стратегий проверять на полном списке
 BC_PAR=12       # сколько curl одновременно
 declare -A BC_DETAILS   # индекс стратегии -> строка +/- последнего раунда (для мультистратегии)
-declare -A BC_DIRECT    # "url|tls" -> причина, по которой адрес не открылся без zapret
+declare -A BC_DIRECT    # "url|tls" -> причина, по которой адрес не открылся без обхода
+declare -A BC_CODES     # индекс стратегии -> строка кодов последнего раунда: + или код причины (см. bc_code)
+declare -A BC_CELL      # "адрес|стратегия" -> код последней проверки (для отчёта по адресам)
+declare -a BC_CELL_NAMES  # стратегии в порядке проверки (без повторов)
+declare -A BC_PSUM      # индекс стратегии -> "успехов/проверок" за все проходы
+declare -A BC_HITS      # "адрес|стратегия" -> "успехов/проходов" при повторных проходах
+BC_PASSES=1     # сколько раз проверять финалистов (стабильность)
 BC_OUTDIR="${BC_OUTDIR:-$HOME}"   # куда класть отчёт и отладочный архив
 BC_LOG="$BC_OUTDIR/zapret-blockcheck.log"
 
@@ -120,6 +126,29 @@ bc_check_dns() {
     fi
 }
 
+# код ячейки: + открылся; d DNS; c нет TCP-подключения/отказ; r обрыв TLS/соединения (сброс DPI);
+# t таймаут TLS; f данные перестали идти (заморозка); m подмена сертификата; x прочее
+bc_code() {
+    local rc="$1" st="$2"
+    case "$rc:$st" in
+        0:*)       echo "+" ;;
+        6:*|*:dns) echo "d" ;;
+        *:tcp|7:*) echo "c" ;;
+        35:*|56:*) echo "r" ;;
+        60:*)      echo "m" ;;
+        99:*|28:data) echo "f" ;;
+        28:tls)    echo "t" ;;
+        *)         echo "x" ;;
+    esac
+}
+
+bc_code_text() {
+    case "$1" in
+        d) echo "DNS" ;; c) echo "нет TCP" ;; r) echo "сброс" ;; t) echo "таймаут TLS" ;;
+        f) echo "заморозка" ;; m) echo "подмена серт." ;; *) echo "прочее" ;;
+    esac
+}
+
 bc_free_port() {
     local p
     for p in $(seq 1090 1190); do
@@ -180,7 +209,7 @@ bc_probe_all() {
         i=$((i+1))
     done
     wait "${cpids[@]}"   # только свои curl: tpws тоже фоновый процесс этой оболочки
-    BC_OK=0; BC_DETAIL=""
+    BC_OK=0; BC_DETAIL=""; BC_CODE=""
     local tsum=0
     for ((i=0; i<${#BC_URLS[@]}; i++)); do
         local size ok=0 tdns tcon ttls
@@ -217,12 +246,13 @@ bc_probe_all() {
             BC_DETAIL+="-"
         fi
         BC_RC[$i]="$rc"
+        BC_CODE+="$(bc_code "$rc" "${BC_STAGE[$i]}")"
     done
     rm -rf "$dir"
-    # строка матрицы результатов: 1/0 по каждому адресу
+    # строка матрицы результатов: 1 - открылся, иначе буква причины (см. bc_code)
     if [[ -n "$port" && -n "$BC_MATRIX" ]]; then
-        local row="" k
-        for ((k=0; k<${#BC_URLS[@]}; k++)); do [[ "${BC_RC[$k]}" == "0" ]] && row+=";1" || row+=";0"; done
+        local row="" k c
+        for ((k=0; k<${#BC_URLS[@]}; k++)); do c="${BC_CODE:$k:1}"; [[ "$c" == "+" ]] && row+=";1" || row+=";$c"; done
         echo "${BC_CUR_NAME};${BC_ROUND};$BC_OK/${#BC_URLS[@]}${row}" >> "$BC_MATRIX"
     fi
     if [[ $BC_OK -gt 0 ]]; then
@@ -317,14 +347,110 @@ bc_round() {
         local color="$RED"
         [[ $BC_OK -gt 0 ]] && color="$YELLOW"
         [[ $BC_OK -eq $total ]] && color="$GREEN"
-        local det="$BC_DETAIL"
+        local det="$BC_CODE"
         [[ ${#det} -gt 40 ]] && det="${det:0:40}…"
         printf "[%3d/%d] %-20s ${color}%3d/%d${NC} %s %5ss\n" $pos $cnt "$n" $BC_OK $total "$det" "$BC_TIME"
-        echo "round$BC_ROUND $BC_OK/$total $BC_DETAIL ${BC_TIME}s $n | $o" >> "$BC_LOG"
+        echo "round$BC_ROUND $BC_OK/$total $BC_CODE ${BC_TIME}s $n | $o" >> "$BC_LOG"
         res+=("$BC_OK|$BC_TIME|$idx")
         BC_DETAILS[$idx]="$BC_DETAIL"
+        BC_CODES[$idx]="$BC_CODE"
         BC_LAST_IDS+=("$idx")
+        # отчёт по адресам: все раунды, кроме повторных проходов (их итог - в BC_HITS)
+        if [[ "$BC_ROUND" != P* ]]; then
+            local k
+            [[ " ${BC_CELL_NAMES[*]} " == *" $n "* ]] || BC_CELL_NAMES+=("$n")
+            for ((k=0; k<total; k++)); do BC_CELL["$(bc_label $k)|$n"]="${BC_CODE:$k:1}"; done
+        fi
     done
+}
+
+bc_legend() {
+    echo -e "${BLUE}+ открылся; не открылся: r сброс, t таймаут TLS, f заморозка, c нет TCP, d DNS, m подмена сертификата, x прочее${NC}"
+}
+
+# повторные проходы: лучшие стратегии проверяются ещё BC_PASSES-1 раз на том же (полном) списке.
+# адрес засчитывается, только если открылся во всех проходах. res заменяется результатами финалистов.
+bc_passes() {
+    local -a sorted p_ids=() saved_last=("${BC_LAST_IDS[@]}")
+    local -A ttime=()
+    local r ok tm id k total=${#BC_URLS[@]}
+    mapfile -t sorted < <(bc_sort_res "${res[@]}")
+    for r in "${sorted[@]}"; do
+        IFS='|' read -r ok tm id <<< "$r"
+        [[ $ok -gt 0 && ${#p_ids[@]} -lt ${BC_TOP:-5} ]] && { p_ids+=("$id"); ttime[$id]="$tm"; }
+    done
+    [[ ${#p_ids[@]} -eq 0 ]] && return 0
+    # счётчики успехов: "индекс_стратегии,индекс_адреса" -> число
+    local -A hits=()
+    for id in "${p_ids[@]}"; do
+        for ((k=0; k<total; k++)); do [[ "${BC_DETAILS[$id]:$k:1}" == "+" ]] && hits["$id,$k"]=1; done
+    done
+    local pass
+    for ((pass=2; pass<=BC_PASSES; pass++)); do
+        echo ""
+        echo -e "${BLUE}Проход $pass из $BC_PASSES: ${#p_ids[@]} лучших стратегий ещё раз на полном списке.${NC}"
+        BC_ROUND="P$pass"
+        res=()
+        bc_round "${p_ids[@]}"
+        [[ $stop -eq 1 ]] && break
+        for id in "${BC_LAST_IDS[@]}"; do
+            for ((k=0; k<total; k++)); do
+                [[ "${BC_DETAILS[$id]:$k:1}" == "+" ]] && hits["$id,$k"]=$(( ${hits["$id,$k"]:-0} + 1 ))
+            done
+        done
+    done
+    local done_passes=$((pass>BC_PASSES ? BC_PASSES : pass-1))
+    [[ $done_passes -lt 2 ]] && { BC_LAST_IDS=("${saved_last[@]}"); return 0; }
+    res=()
+    echo ""
+    echo -e "${BLUE}Стабильность за $done_passes прохода(ов): адрес засчитан, если открылся каждый раз.${NC}"
+    for id in "${p_ids[@]}"; do
+        local det="" st=0 sum=0 h
+        for ((k=0; k<total; k++)); do
+            h=${hits["$id,$k"]:-0}
+            sum=$((sum+h))
+            BC_HITS["$(bc_label $k)|${cand_names[$id]}"]="$h/$done_passes"
+            if [[ $h -eq $done_passes ]]; then det+="+"; st=$((st+1)); else det+="-"; fi
+        done
+        BC_DETAILS[$id]="$det"
+        BC_PSUM[$id]="$sum/$((total*done_passes))"
+        printf '  %-22s стабильно %d/%d, всего успехов %s\n' "${cand_names[$id]}" $st $total "${BC_PSUM[$id]}" | tee -a "$BC_LOG"
+        res+=("$st|${ttime[$id]}|$id")
+    done
+    BC_LAST_IDS=("${saved_last[@]}")
+}
+
+# отчёт "адрес -> стратегии": кто открыл адрес и почему не открыли остальные (по всем основным раундам)
+bc_report_by_address() {
+    local f="$BC_OUTDIR/zapret-blockcheck-by-address.txt" k n c lab
+    {
+        echo "# адрес <TAB> открыли/проверено <TAB> стратегии, которые открыли <TAB> причины у остальных"
+        echo "# причины: r сброс, t таймаут TLS, f заморозка, c нет TCP, d DNS, m подмена сертификата, x прочее"
+        echo "# имя(2/3) - открылся не во всех повторных проходах"
+        for ((k=0; k<${#BC_URLS[@]}; k++)); do
+            lab="$(bc_label $k)"
+            local okl="" tested=0 nok=0
+            local -A why=()
+            for n in "${BC_CELL_NAMES[@]}"; do
+                c="${BC_CELL["$lab|$n"]}"
+                [[ -z "$c" ]] && continue
+                tested=$((tested+1))
+                local hp="${BC_HITS["$lab|$n"]}"
+                if [[ -n "$hp" ]]; then
+                    # при повторных проходах решают все проходы
+                    if [[ "${hp%/*}" == "${hp#*/}" ]]; then okl+=" $n"; nok=$((nok+1))
+                    elif [[ "${hp%/*}" != 0 ]]; then okl+=" $n($hp)"; why[u]=$(( ${why[u]:-0}+1 ))
+                    else why[$c]=$(( ${why[$c]:-0}+1 )); fi
+                elif [[ "$c" == "+" ]]; then okl+=" $n"; nok=$((nok+1))
+                else why[$c]=$(( ${why[$c]:-0}+1 )); fi
+            done
+            local ws="" w
+            for w in r t f c d m x u; do [[ -n "${why[$w]}" ]] && ws+=" $w:${why[$w]}"; done
+            printf '%s\t%d/%d\t%s\t%s\n' "$lab" $nok $tested "${okl# }" "${ws# }"
+        done
+    } > "$f"
+    echo -e "${BLUE}По адресам (кто открыл, причины у остальных): $f${NC}"
+    [[ $BC_DEBUG -ge 1 && -d "$BC_DBGDIR" ]] && cp "$f" "$BC_DBGDIR/by-address.txt" 2>/dev/null
 }
 
 # адреса, которые в последнем раунде не открыла ни одна стратегия, с причиной из проверки без zapret
@@ -408,7 +534,8 @@ bc_pack_debug() {
 blockcheck_zapret() {
     local mode="quick" apply=0 tlsmode=both
     local -a targets=()
-    BC_DEBUG=0; BC_MULTI=0
+    BC_DEBUG=0; BC_MULTI=0; BC_PASSES=1
+    BC_CELL=(); BC_CELL_NAMES=(); BC_HITS=(); BC_PSUM=(); BC_DETAILS=(); BC_CODES=()
     local a
     for a in "$@"; do
         case "$a" in
@@ -427,6 +554,7 @@ blockcheck_zapret() {
             dir=*)     BC_OUTDIR="${a#dir=}" ;;
             timeout=*) BC_TIMEOUT="${a#timeout=}" ;;
             limit=*)   BC_LIST_MAX="${a#limit=}" ;;
+            passes=*)  BC_PASSES="${a#passes=}"; [[ "$BC_PASSES" =~ ^[1-9]$ ]] || BC_PASSES=1 ;;
             *) targets+=("$a") ;;
         esac
     done
@@ -587,7 +715,7 @@ blockcheck_zapret() {
         done
         bc_expand "$tlsmode" "${sample[@]}"
         echo -e "${BLUE}Этап 1: ${#cand_names[@]} стратегий на выборке из ${#sample[@]} адресов (${#BC_URLS[@]} проверок на стратегию). Ctrl+C - прервать.${NC}"
-        echo -e "${BLUE}+ адрес открылся, - не открылся${NC}"
+        bc_legend
         BC_ROUND=1
         bc_round "${all_ids[@]}"
         local -a s1 fin=()
@@ -613,10 +741,11 @@ blockcheck_zapret() {
         fi
     else
         echo -e "${BLUE}Проверка ${#cand_names[@]} стратегий (порт $port, таймаут ${BC_TIMEOUT}с, ${total} проверок на стратегию). Ctrl+C - прервать.${NC}"
-        echo -e "${BLUE}+ адрес открылся, - не открылся${NC}"
+        bc_legend
         BC_ROUND=1
         bc_round "${all_ids[@]}"
     fi
+    [[ $stop -eq 0 && $BC_PASSES -gt 1 && ${#res[@]} -gt 0 ]] && bc_passes
     trap - INT TERM
 
     [[ ${#res[@]} -eq 0 ]] && { echo -e "${RED}Нет результатов.${NC}"; bc_pack_debug; return 1; }
@@ -625,6 +754,7 @@ blockcheck_zapret() {
     local -a sorted
     mapfile -t sorted < <(bc_sort_res "${res[@]}")
     bc_report_unopened
+    bc_report_by_address
 
     echo ""
     echo -e "${GREEN}Лучшие стратегии:${NC}"
@@ -633,7 +763,9 @@ blockcheck_zapret() {
         IFS='|' read -r ok tm id <<< "$r"
         [[ $ok -eq 0 ]] && break
         shown=$((shown+1))
-        printf ' %d) %-20s %d/%d  %ss\n    %s\n' $shown "${cand_names[$id]}" "$ok" "$total" "$tm" "${cand_opts[$id]}"
+        local stab=""
+        [[ -n "${BC_PSUM[$id]}" ]] && stab="  (стабильно в $BC_PASSES проходах, успехов ${BC_PSUM[$id]})"
+        printf ' %d) %-20s %d/%d  %ss%s\n    %s\n' $shown "${cand_names[$id]}" "$ok" "$total" "$tm" "$stab" "${cand_opts[$id]}"
         [[ $shown -ge 5 ]] && break
     done
     echo -e "${BLUE}Полный отчёт: $BC_LOG${NC}"

@@ -8,8 +8,10 @@
 # В одном профиле --hostlist и --ipset работают как "И", поэтому домены и IP - разные профили.
 #
 # Алгоритм - жадное покрытие множества:
-#   1) основная стратегия (лучшая по blockcheck) проверяется на полном списке -> непокрытые адреса U
-#   2) все остальные стратегии проверяются только на U
+#   1) непокрытые основной стратегией адреса U берутся из уже готовых результатов подбора
+#      (если основную на полном списке не проверяли - она проверяется)
+#   2) стратегии, у которых уже есть результат на полном списке, заново не проверяются;
+#      остальные проверяются только на U
 #   3) пока U не пуст: берём стратегию, которая открывает больше всего адресов из U
 #   4) сборка: профили-дополнения со своими списками, в конце основная стратегия без фильтра
 #   5) итоговая мультистратегия проверяется заново на полном списке
@@ -46,17 +48,29 @@ bc_multi() {
     echo -e "${BLUE}══════ Мультистратегия (экспериментально) ══════${NC}"
     echo "Основная стратегия: $main_name"
 
-    # 1) основная на полном списке
+    # стратегии с готовым результатом на полном списке (последний основной раунд и повторные проходы)
+    local -a res_keep=("${res[@]}") known=()
+    local k
     bc_expand "$tlsmode" "${raw_urls[@]}"
-    BC_ROUND=M1
-    local -a res_keep=("${res[@]}")
-    res=()
-    bc_round "$main_id"
-    [[ $stop -eq 1 ]] && return 1
+    local full_total=${#BC_URLS[@]}
+    for k in "${BC_LAST_IDS[@]}"; do
+        [[ ${#BC_DETAILS[$k]} -eq $full_total ]] && known+=("$k")
+    done
+    local -a full_off=("${BC_RAWOFF[@]}") full_n=("${BC_RAWN[@]}")
+
+    # 1) основная на полном списке: из готовых результатов или новой проверкой
+    if [[ " ${known[*]} " != *" $main_id "* ]]; then
+        BC_ROUND=M1
+        res=()
+        bc_round "$main_id"
+        [[ $stop -eq 1 ]] && return 1
+    else
+        echo "Результаты основной и ещё $(( ${#known[@]}-1 )) стратегий на полном списке уже есть, повторно их не проверяю."
+    fi
     local main_det="${BC_DETAILS[$main_id]}" r
-    local -a unc=() main_ok=()
+    local -a unc=() unc_raw=() main_ok=()
     for ((r=0; r<${#raw_urls[@]}; r++)); do
-        if bc_raw_ok "$main_det" "$r"; then main_ok+=("${raw_urls[$r]}"); else unc+=("${raw_urls[$r]}"); fi
+        if bc_raw_ok "$main_det" "$r"; then main_ok+=("${raw_urls[$r]}"); else unc+=("${raw_urls[$r]}"); unc_raw+=("$r"); fi
     done
     echo "Основная открывает ${#main_ok[@]} из ${#raw_urls[@]} адресов."
     if [[ ${#unc[@]} -eq 0 ]]; then
@@ -65,17 +79,35 @@ bc_multi() {
         return 2
     fi
 
-    # 2) остальные стратегии только на непокрытых адресах
+    # 2) остальные стратегии на непокрытых адресах: uok["стратегия|номер_в_unc"]=1, если открыла
+    local -A uok=()
+    local -a others=() totest=()
+    local u
+    for ((k=0; k<${#cand_names[@]}; k++)); do
+        [[ $k -eq $main_id ]] && continue
+        others+=("$k")
+        if [[ " ${known[*]} " == *" $k "* ]]; then
+            # готовый результат на полном списке: смещения полного списка
+            local det="${BC_DETAILS[$k]}"
+            for ((u=0; u<${#unc_raw[@]}; u++)); do
+                r=${unc_raw[$u]}
+                [[ "${det:${full_off[$r]}:${full_n[$r]}}" != *-* ]] && uok["$k|$u"]=1
+            done
+        else
+            totest+=("$k")
+        fi
+    done
     bc_expand "$tlsmode" "${unc[@]}"
-    local -a others=()
-    local k
-    for ((k=0; k<${#cand_names[@]}; k++)); do [[ $k -ne $main_id ]] && others+=("$k"); done
-    echo ""
-    echo -e "${BLUE}Проверка ${#others[@]} стратегий на ${#unc[@]} адресах, которые не открыла основная (${#BC_URLS[@]} проверок на стратегию).${NC}"
-    BC_ROUND=M2
-    BC_DETAILS=()
-    bc_round "${others[@]}"
-    [[ $stop -eq 1 ]] && return 1
+    if [[ ${#totest[@]} -gt 0 ]]; then
+        echo ""
+        echo -e "${BLUE}Проверка ${#totest[@]} стратегий на ${#unc[@]} адресах, которые не открыла основная (${#BC_URLS[@]} проверок на стратегию).${NC}"
+        BC_ROUND=M2
+        bc_round "${totest[@]}"
+        [[ $stop -eq 1 ]] && return 1
+        for k in "${BC_LAST_IDS[@]}"; do
+            for ((u=0; u<${#unc[@]}; u++)); do bc_raw_ok "${BC_DETAILS[$k]}" "$u" && uok["$k|$u"]=1; done
+        done
+    fi
 
     # 3) жадное покрытие
     local -A left=()
@@ -84,10 +116,9 @@ bc_multi() {
     while [[ ${#left[@]} -gt 0 ]]; do
         local best=-1 best_cnt=0 best_set="" id cnt set
         for id in "${others[@]}"; do
-            [[ -n "${BC_DETAILS[$id]}" ]] || continue
             cnt=0; set=""
             for r in "${!left[@]}"; do
-                if bc_raw_ok "${BC_DETAILS[$id]}" "$r"; then cnt=$((cnt+1)); set+="$r "; fi
+                if [[ -n "${uok["$id|$r"]}" ]]; then cnt=$((cnt+1)); set+="$r "; fi
             done
             if [[ $cnt -gt $best_cnt ]]; then best=$id; best_cnt=$cnt; best_set="$set"; fi
         done
@@ -153,6 +184,7 @@ bc_multi() {
     res=()
     bc_round "$mid"
     local m_ok=$BC_OK m_total=${#BC_URLS[@]} main_total_ok
+    bc_report_by_address >/dev/null   # дополнить отчёт по адресам проверками мультистратегии
     main_total_ok=$(echo -n "$main_det" | tr -cd '+' | wc -c)
 
     echo ""
