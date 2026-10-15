@@ -162,11 +162,10 @@ bc_free_port() {
 # результат: BC_OK (число успешных), BC_TIME (среднее время успешных), BC_DETAIL
 bc_probe_all() {
     local port="$1" label="$2" i=0 url rc out code t
-    local -a verbose=() cpids=()
+    local -a cpids=()
     local ddir=""
     if [[ $BC_DEBUG -ge 1 && -n "$label" ]]; then
         ddir="$BC_DBGDIR/$label"; mkdir -p "$ddir"
-        verbose=(-v)
     fi
     local -a proxy=()
     [[ -n "$port" ]] && proxy=(--socks5-hostname "127.0.0.1:$port")
@@ -190,19 +189,22 @@ bc_probe_all() {
             sleep 0.05
         done
         (
-            local errf=/dev/null
-            [[ -n "$ddir" ]] && errf="$ddir/curl_$i.txt" && echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$errf"
+            # подробный вывод curl нужен всегда: строка "Opened SOCKS connection" - единственный надёжный
+            # признак того, что TCP до сервера установлен (curl 8 не отличает зависший TLS от зависшего connect)
+            local errf="$dir/$i.err"
             out=$(env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
-                curl -s "${verbose[@]}" "${tlsopt[@]}" -o /dev/null --connect-timeout 5 --max-time "$BC_TIMEOUT" "${proxy[@]}" \
-                -w '%{http_code} %{time_total} %{size_download} %{time_namelookup} %{time_connect} %{time_appconnect}' "$url" 2>>"$errf")
+                curl -s -v "${tlsopt[@]}" -o /dev/null --connect-timeout "$BC_TIMEOUT" --max-time "$BC_TIMEOUT" "${proxy[@]}" \
+                -w '%{http_code} %{time_total} %{size_download} %{time_namelookup} %{time_connect} %{time_appconnect} %{errormsg}' "$url" 2>>"$errf")
             rc=$?
+            grep -qE "Opened SOCKS connection|SOCKS5 request granted" "$errf" 2>/dev/null && touch "$dir/$i.socks"
             if [[ -n "$ddir" ]]; then
+                local df="$ddir/curl_$i.txt"
+                echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$df"
                 # компактная отладка: у успешных запросов оставляем только строку результата
-                if [[ $rc -eq 0 && $BC_DEBUG -eq 1 ]]; then
-                    echo "URL: $url TLS:${BC_TLS[$i]:-any}" > "$errf"
-                fi
-                echo "RESULT: rc=$rc $out" >> "$errf"
+                [[ $rc -eq 0 && $BC_DEBUG -eq 1 ]] || cat "$errf" >> "$df"
+                echo "RESULT: rc=$rc $out" >> "$df"
             fi
+            rm -f "$errf"
             echo "$rc $out" > "$dir/$i"
         ) &
         cpids+=($!)
@@ -212,13 +214,19 @@ bc_probe_all() {
     BC_OK=0; BC_DETAIL=""; BC_CODE=""
     local tsum=0
     for ((i=0; i<${#BC_URLS[@]}; i++)); do
-        local size ok=0 tdns tcon ttls
-        read -r rc code t size tdns tcon ttls < "$dir/$i"
+        local size ok=0 tdns tcon ttls emsg
+        read -r rc code t size tdns tcon ttls emsg < "$dir/$i"
         # этап, на котором оборвалось: dns / tcp / tls / data
         BC_STAGE[$i]=""
         if [[ "$rc" == "97" && -n "$port" ]]; then
             # SOCKS-прокси (tpws) не смог подключиться: имя не разрешилось или нет TCP до сервера
             BC_STAGE[$i]="tcp"
+        elif [[ "$rc" == "28" && -n "$port" && "${tcon:-0}" == "0.000000" ]]; then
+            # через SOCKS: curl 8 считает TLS частью connect, и time_connect остаётся 0 при зависшем TLS.
+            # tpws отвечает на SOCKS только после подключения к серверу: нет ответа - нет TCP до сервера
+            if [[ ! -f "$dir/$i.socks" ]]; then BC_STAGE[$i]="tcp"
+            elif [[ "${BC_URLS[$i]}" == https://* ]]; then BC_STAGE[$i]="tls"
+            else BC_STAGE[$i]="data"; fi
         elif [[ "$rc" != "0" ]]; then
             if [[ -z "$port" ]] && [[ "${tdns:-0}" == 0* ]] && [[ "${tcon:-0}" == 0.000000 || -z "$tcon" ]] && [[ "$rc" == "28" || "$rc" == "6" ]] && ! [[ "${BC_URLS[$i]}" =~ ://\[?[0-9a-fA-F:.]+\]?/ ]]; then
                 BC_STAGE[$i]="dns"
@@ -235,6 +243,10 @@ bc_probe_all() {
             [[ "${size%.*}" =~ ^[0-9]+$ ]] && (( ${size%.*} >= 200000 )) && ok=1
             [[ $ok -eq 0 && "$rc" == "0" ]] && rc=99
         elif [[ "$rc" == "0" && "$code" != "000" ]]; then
+            ok=1
+        elif [[ "$rc" == "28" && "$code" != "000" && "${size%.*}" =~ ^[0-9]+$ ]] && (( ${size%.*} >= 65536 )); then
+            # большая страница не успела докачаться за таймаут, но данные шли (больше порога "заморозки"
+            # ТСПУ в 16-20 КБ): это медленная сеть, а не блокировка
             ok=1
         fi
         if [[ $ok -eq 1 ]]; then
