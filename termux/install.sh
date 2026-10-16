@@ -43,7 +43,9 @@ if [ $need_pkgs -eq 1 ] || [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git bash curl ca-certificates
     elif command -v pacman >/dev/null 2>&1; then
-        pacman -Sy --needed --noconfirm git bash curl ca-certificates
+        # без -Sy (частичное обновление Arch); пустая или старая база - полное -Syu
+        pacman -S --needed --noconfirm git bash curl ca-certificates \
+            || pacman -Syu --needed --noconfirm git bash curl ca-certificates
     elif command -v apk >/dev/null 2>&1; then
         apk add git bash curl ca-certificates
     else

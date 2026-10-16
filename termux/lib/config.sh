@@ -19,7 +19,7 @@ change_port() {
     if [[ "$new_port" =~ ^[0-9]+$ ]] && (( new_port >= 1025 && new_port <= 65535 )); then
         set_port "$new_port"
         echo -e "${GREEN}Порт изменён на $new_port${NC}"
-        if pgrep -f "tpws.*--socks" > /dev/null; then
+        if zapret_running; then
             if [[ "$force" == "-y" || "$force" == "--yes" ]]; then
                 restart_zapret
             elif [[ $INTERACTIVE -eq 1 ]]; then
@@ -47,7 +47,7 @@ toggle_hostlist() {
         set_use_hostlist "0"
         echo -e "${GREEN}Hostlist disabled.${NC}"
         # Перезапускаем только если процесс запущен и мы в неинтерактивном режиме
-        if pgrep -f "tpws.*--socks" > /dev/null; then
+        if zapret_running; then
             if [[ "$force" == "-y" || "$force" == "--yes" ]] || [[ $INTERACTIVE -eq 0 ]]; then
                 restart_zapret
             else
@@ -79,7 +79,7 @@ toggle_hostlist() {
         set_use_hostlist "1"
         echo -e "${GREEN}Hostlist enabled.${NC}"
 
-        if pgrep -f "tpws.*--socks" > /dev/null; then
+        if zapret_running; then
             if [[ "$force" == "-y" || "$force" == "--yes" ]] || [[ $INTERACTIVE -eq 0 ]]; then
                 restart_zapret
             else

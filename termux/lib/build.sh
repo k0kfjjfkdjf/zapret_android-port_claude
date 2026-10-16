@@ -103,7 +103,9 @@ check_deps() {
     fi
     case "$pm" in
         apt)    run_with_sudo apt-get update && DEBIAN_FRONTEND=noninteractive run_with_sudo apt-get install -y "${missing[@]}" ;;
-        pacman) run_with_sudo pacman -Sy --needed --noconfirm "${missing[@]}" ;;
+        # без -Sy: на Arch это частичное обновление. Если база пакетов пустая или устарела - полное -Syu
+        pacman) run_with_sudo pacman -S --needed --noconfirm "${missing[@]}" \
+                    || run_with_sudo pacman -Syu --needed --noconfirm "${missing[@]}" ;;
         apk)    run_with_sudo apk add "${missing[@]}" ;;
     esac || {
         echo -e "${RED}Ошибка установки зависимостей.${NC}"
@@ -143,6 +145,13 @@ self_update() {
     echo "zapret-termux уже свежий."
 }
 
+# служба, созданная старой версией (без PIDFile), пересоздаётся с текущими настройками
+zt_refresh_unit() {
+    [[ -f "$ZT_UNIT" ]] && zt_use_systemd || return 0
+    grep -q '^PIDFile=' "$ZT_UNIT" && return 0
+    enable_autostart >/dev/null && echo -e "${GREEN}Служба zapret-termux обновлена (PIDFile).${NC}"
+}
+
 install_zapret() {
     echo -e "${BLUE}Установка zapret в $ZAPRET_DIR${NC}"
 
@@ -163,21 +172,30 @@ install_zapret() {
         echo -e "${RED}Ошибка клонирования. Текущая установка не тронута.${NC}"
         return 1
     }
+    # переустановка: останавливаем zapret, но автозапуск не трогаем (remove_zapret его отключал)
+    local was_running
+    was_running=$(zt_pause)
     if [[ -d "$ZAPRET_DIR" ]]; then
-        remove_zapret
+        if can_write_to_dir "$ZAPRET_DIR"; then rm -rf "$ZAPRET_DIR"; else run_with_sudo rm -rf "$ZAPRET_DIR"; fi
     fi
     mv "$tmpdir" "$ZAPRET_DIR" || return 1
 
     apply_udp_patch
     build_tpws || return 1
     install_self
+    zt_refresh_unit
 
     load_strategies
     if tpws_supports_udp && [[ ! -f "$UDP_FILE" ]]; then
         set_use_udp "1"
         echo -e "${GREEN}UDP включён по умолчанию (профиль: $(get_udp_profile)).${NC}"
     fi
-    echo -e "${GREEN}Установка завершена. Запуск: zapret start${NC}"
+    if [[ "$was_running" != "0" ]]; then
+        zt_resume "$was_running"
+        echo -e "${GREEN}Переустановка завершена.${NC}"
+    else
+        echo -e "${GREEN}Установка завершена. Запуск: zapret start${NC}"
+    fi
 }
 
 update_zapret() {
@@ -187,9 +205,6 @@ update_zapret() {
         install_zapret
         return
     fi
-    local was_running=0
-    pgrep -f "tpws.*--socks" > /dev/null && was_running=1
-
     check_deps || return 1
     echo -e "${GREEN}Обновление репозитория...${NC}"
     # откатываем прошлый патч, иначе pull упрётся в локальные изменения
@@ -200,9 +215,11 @@ update_zapret() {
         return 1
     }
     apply_udp_patch
-    [[ $was_running -eq 1 ]] && stop_zapret
-    build_tpws || return 1
+    local was_running
+    was_running=$(zt_pause)
+    build_tpws || { zt_resume "$was_running"; return 1; }
     install_self
-    [[ $was_running -eq 1 ]] && start_zapret
+    zt_refresh_unit
+    zt_resume "$was_running"
     return 0
 }

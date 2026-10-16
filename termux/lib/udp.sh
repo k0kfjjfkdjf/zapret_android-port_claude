@@ -53,7 +53,7 @@ tpws_supports_udp() {
 }
 
 restart_if_running() {
-    if pgrep -f "tpws.*--socks" > /dev/null; then
+    if zapret_running; then
         restart_zapret
     fi
 }

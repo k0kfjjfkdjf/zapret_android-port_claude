@@ -39,11 +39,8 @@ debug_zapret() {
     if ! is_zapret_installed; then
         echo -e "${RED}zapret не установлен.${NC}"; return 1
     fi
-    local was_running=0
-    if pgrep -f "tpws.*--socks" > /dev/null; then
-        was_running=1
-        pkill -f "tpws.*--socks"; sleep 1
-    fi
+    local was_running
+    was_running=$(zt_pause)   # и служба systemd, и ручной запуск
     local cmd
     cmd=$(get_command)
     cmd="${cmd/ --daemon/} --debug=1"
@@ -62,6 +59,6 @@ debug_zapret() {
     kill $tl 2>/dev/null; wait $tl 2>/dev/null
     trap - INT TERM
     debug_report "$log"
-    [[ $was_running -eq 1 ]] && start_zapret
+    zt_resume "$was_running"
     return 0
 }

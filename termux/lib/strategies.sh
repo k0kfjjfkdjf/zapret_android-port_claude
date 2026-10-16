@@ -79,7 +79,7 @@ get_command() {
 
     local port
     port=$(get_current_port)
-    local cmd="$TPWS_BIN --port=$port --bind-addr=127.0.0.1 --socks $ZT_UIDOPT ${STRATEGIES[$strategy]} --daemon"
+    local cmd="$TPWS_BIN --port=$port --bind-addr=127.0.0.1 --socks $ZT_UIDOPT ${STRATEGIES[$strategy]} --pidfile=$ZT_PIDFILE --daemon"
 
     if [[ "$(get_use_udp)" == "1" ]]; then
         if tpws_supports_udp; then
@@ -160,7 +160,7 @@ select_strategy() {
         local selected="${STRATEGY_NAMES[$((num-1))]}"
         echo "$selected" > "$STRATEGY_FILE"
         echo -e "${GREEN}Текущая стратегия изменена на '$selected'${NC}"
-        if pgrep -f "tpws.*--socks" > /dev/null; then
+        if zapret_running; then
             restart_zapret
         fi
     else

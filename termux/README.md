@@ -476,6 +476,17 @@ zapret update        # или пункт 13 в меню
 
 `update` следит за той веткой, из которой была установка (по умолчанию `termux-zapret-udp-script`). Если ветку переименуют, переустановите командой из раздела [Установка](#установка).
 
+### Предыдущая версия
+
+Версия до исправлений от 16.10.2026 (коммит `927caea`) сохранена в ветке `termux-zapret-udp-script-prev`. Откат на неё (отдельный клон, текущий `/opt/zapret-termux` не трогается):
+
+```sh
+ZT_BRANCH=termux-zapret-udp-script-prev ZT_DEST=/opt/zapret-termux-prev \
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/k0kfjjfkdjf/zapret_android-port_claude/termux-zapret-udp-script-prev/termux/install.sh)"
+```
+
+Команда `zapret` после этого указывает на старую версию; вернуться на новую можно командой `bash /opt/zapret-termux/termux/zapret install`. Настройки (`~/.zapret_*`) у обеих версий общие.
+
 ## Если что-то не работает
 
 | Симптом | Что проверить |

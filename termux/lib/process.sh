@@ -10,10 +10,10 @@ start_zapret() {
         return 1
     fi
 
-    if pgrep -f "tpws.*--socks" > /dev/null; then
+    if zapret_running; then
         echo -e "${YELLOW}Zapret уже запущен.${NC}"
     else
-        local cmd out
+        local cmd out w
         cmd=$(get_command)
         # сначала проверка параметров: при ошибке показываем, что именно не понравилось tpws
         if ! out=$(eval "${cmd/ --daemon/} --dry-run" 2>&1); then
@@ -22,8 +22,11 @@ start_zapret() {
             echo "Команда: zapret cmd. Проверьте стратегию (zapret strategy …) и UDP-профиль (zapret udp-profile …)."
             return 1
         fi
+        rm -f "$ZT_PIDFILE"
         eval "$cmd &>/dev/null"
-        if pgrep -f "tpws.*--socks" > /dev/null; then
+        # pid-файл пишет дочерний процесс после daemonize, родитель выходит раньше
+        for w in $(seq 1 20); do zapret_running && break; sleep 0.1; done
+        if zapret_running; then
             echo -e "${GREEN}Zapret запущен с стратегией '$(get_current_strategy_name)' на порту $(get_current_port)${NC}"
         else
             echo -e "${RED}Ошибка при запуске tpws.${NC}"
@@ -37,31 +40,41 @@ start_zapret() {
 }
 
 stop_zapret() {
-    if pgrep -f "tpws.*--socks" > /dev/null; then
-        pkill -f "tpws.*--socks"
+    local pid w
+    if pid=$(zapret_pid); then
+        # только основной tpws: временные tpws из blockcheck не трогаем
+        kill "$pid" 2>/dev/null
+        for w in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+        rm -f "$ZT_PIDFILE"
         echo -e "${GREEN}Zapret остановлен.${NC}"
     else
+        rm -f "$ZT_PIDFILE"
         echo -e "${YELLOW}Zapret не запущен.${NC}"
     fi
 }
 
 restart_zapret() {
+    if zt_service_active; then
+        # запущен службой: перезапуск через systemd, иначе tpws окажется вне службы
+        run_with_sudo systemctl restart zapret-termux \
+            && echo -e "${GREEN}Служба zapret-termux перезапущена (стратегия '$(get_current_strategy_name)').${NC}"
+        return
+    fi
     stop_zapret
-    sleep 1
     start_zapret
 }
 
 status_zapret() {
     echo -e "${BLUE}═════════════════════════════════════════════════${NC}"
-    if pgrep -f "tpws.*--socks" > /dev/null; then
-        local pid
-        pid=$(pgrep -f "tpws.*--socks" | head -1)
-        echo -e "Статус:             ${GREEN}Запущен${NC} (PID: $pid)"
+    local pid
+    if pid=$(zapret_pid); then
+        echo -e "Статус:             ${GREEN}Запущен${NC} (PID: $pid$(zt_service_active && echo ", служба systemd"))"
     else
         echo -e "Статус:             ${RED}Остановлен${NC}"
     fi
 
-    if grep -q "zapret start" "$BASHRC" 2>/dev/null; then
+    if zt_autostart_on; then
         echo -e "Автозапуск:         ${GREEN}Включён${NC}"
     else
         echo -e "Автозапуск:         ${RED}Выключен${NC}"
@@ -105,9 +118,8 @@ list_strategies() {
 info_zapret() {
     local running=0
     local pid=""
-    if pgrep -f "tpws.*--socks" > /dev/null; then
+    if pid=$(zapret_pid); then
         running=1
-        pid=$(pgrep -f "tpws.*--socks" | head -1)
     fi
 
     echo "status=$running"
@@ -188,7 +200,7 @@ select_hostlist_file() {
             if [[ -n "$file_name" ]]; then
                 set_selected_hostlist "$file_name"
                 echo -e "${GREEN}Selected: $file_name${NC}"
-                if pgrep -f "tpws.*--socks" > /dev/null; then
+                if zapret_running; then
                     if [[ $INTERACTIVE -eq 1 ]]; then
                         read -p "Restart zapret now? (y/n) " -n 1 -r
                         echo
@@ -209,7 +221,7 @@ select_hostlist_file() {
         if [[ -f "$HOSTLIST_DIR/$choice" ]]; then
             set_selected_hostlist "$choice"
             echo -e "${GREEN}Selected: $choice${NC}"
-            if pgrep -f "tpws.*--socks" > /dev/null; then
+            if zapret_running; then
                 restart_zapret
             fi
             return 0
@@ -225,7 +237,8 @@ select_hostlist_file() {
 # -------------------------------------------------------------------
 enable_autostart() {
     if zt_use_systemd; then
-        # обычный linux: служба systemd (tpws запускается с --daemon, отсюда Type=forking)
+        # обычный linux: служба systemd (tpws запускается с --daemon, отсюда Type=forking;
+        # PIDFile - чтобы systemd знал главный процесс, а не угадывал его)
         run_with_sudo tee "$ZT_UNIT" >/dev/null <<UNIT
 [Unit]
 Description=zapret-termux: tpws SOCKS5 proxy
@@ -235,6 +248,7 @@ Wants=network-online.target
 [Service]
 Type=forking
 Environment=HOME=$HOME
+PIDFile=$ZT_PIDFILE
 ExecStart=$SCRIPT_PATH start
 ExecStop=$SCRIPT_PATH stop
 
@@ -249,7 +263,7 @@ UNIT
     if ! grep -q "zapret start" "$BASHRC" 2>/dev/null; then
         echo "" >> "$BASHRC"
         echo "# Автозапуск zapret" >> "$BASHRC"
-        echo "if ! pgrep -f 'tpws.*--socks' > /dev/null; then $SCRIPT_PATH start; fi" >> "$BASHRC"
+        echo "if ! $SCRIPT_PATH running; then $SCRIPT_PATH start; fi" >> "$BASHRC"
         echo -e "${GREEN}Автозапуск включён.${NC}"
     else
         echo -e "${YELLOW}Автозапуск уже включён.${NC}"
@@ -266,7 +280,7 @@ disable_autostart() {
     fi
     if grep -q "zapret start" "$BASHRC" 2>/dev/null; then
         sed -i '/# Автозапуск zapret/d' "$BASHRC"
-        sed -i '/pgrep.*tpws.*--socks.*zapret start/d' "$BASHRC"
+        sed -i -e '/pgrep.*tpws.*--socks.*zapret start/d' -e '/zapret running.*zapret start/d' "$BASHRC"
         echo -e "${GREEN}Автозапуск отключён.${NC}"
     else
         echo -e "${YELLOW}Автозапуск не был включён.${NC}"

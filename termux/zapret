@@ -24,6 +24,7 @@ case "$1" in
     stop)           stop_zapret ;;
     restart)        restart_zapret ;;
     status)         status_zapret ;;
+    running)        zapret_running ;;   # код возврата: 0 - запущен (для скриптов и автозапуска)
     info)           info_zapret ;;
     cmd)            get_command ;;
     debug)          debug_zapret ;;

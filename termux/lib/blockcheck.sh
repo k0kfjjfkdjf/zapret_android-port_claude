@@ -106,7 +106,8 @@ bc_tcp_ok() {
     if [[ "$hp" == \[*\]* ]]; then host="${hp%%]*}"; host="${host#[}"; port="${hp##*]:}"; [[ "$port" == "$hp" || "$port" == \[* ]] && port=""
     else host="${hp%%:*}"; port="${hp##*:}"; [[ "$port" == "$hp" ]] && port=""; fi
     [[ -z "$port" ]] && { [[ "$u" == https://* ]] && port=443 || port=80; }
-    timeout 4 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null
+    # хост и порт - аргументами, а не внутри строки: адреса приходят и из сторонних списков
+    timeout 4 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$host" "$port" 2>/dev/null
 }
 
 # предупреждение о неработающем DNS: иначе проверка "напрямую" выглядит как блокировка

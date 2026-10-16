@@ -12,7 +12,14 @@ update_lists() {
         echo -e "${RED}zapret не установлен.${NC}"; return 1
     fi
     if [[ -d "$CFGS_DIR/.git" ]]; then
-        git -C "$CFGS_DIR" pull -q --ff-only || rm -rf "$CFGS_DIR"
+        # нет сети - остаёмся на уже скачанной версии, а не стираем её
+        if ! git -C "$CFGS_DIR" pull -q --ff-only; then
+            if git -C "$CFGS_DIR" rev-parse -q HEAD &>/dev/null; then
+                echo -e "${YELLOW}Не удалось обновить $CFGS_REPO, использую уже скачанные списки.${NC}"
+            else
+                rm -rf "$CFGS_DIR"   # клон повреждён - скачать заново
+            fi
+        fi
     fi
     if [[ ! -d "$CFGS_DIR/.git" ]]; then
         git clone -q --depth 1 "$CFGS_REPO" "$CFGS_DIR" || { echo -e "${RED}Не удалось скачать $CFGS_REPO${NC}"; return 1; }

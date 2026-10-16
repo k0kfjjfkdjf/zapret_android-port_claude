@@ -108,7 +108,11 @@ set_selected_hostlist() {
 
 get_hostlist_files() {
     if [[ -d "$HOSTLIST_DIR" ]]; then
-        find "$HOSTLIST_DIR" -maxdepth 1 -type f -printf "%f\n" 2>/dev/null | sort
+        # без find -printf: его нет в busybox (Alpine)
+        local f
+        for f in "$HOSTLIST_DIR"/*; do
+            [[ -f "$f" ]] && echo "${f##*/}"
+        done | sort
     else
         echo ""
     fi
@@ -158,6 +162,72 @@ zt_autostart_on() {
     else
         grep -q "zapret start" "$BASHRC" 2>/dev/null
     fi
+}
+
+# -------------------------------------------------------------------
+# Основной процесс tpws: определяется по pid-файлу, а не по pgrep "tpws.*--socks",
+# который ловил и временные tpws из blockcheck
+# -------------------------------------------------------------------
+ZT_PIDFILE="$HOME/.zapret.pid"
+
+# PID основного tpws или пусто. Без pid-файла (процесс запущен старой версией скрипта)
+# ищем tpws на текущем порту: у blockcheck порты свои (1090-1190)
+zapret_pid() {
+    local pid=""
+    if [[ -f "$ZT_PIDFILE" ]]; then
+        pid=$(tr -cd '0-9' < "$ZT_PIDFILE" 2>/dev/null)
+        if [[ -n "$pid" ]] && zt_is_main_tpws "$pid" ""; then
+            echo "$pid"; return 0
+        fi
+    fi
+    local port
+    port=$(get_current_port)
+    for pid in $(pgrep -f -- "--port=$port --bind-addr=127.0.0.1 --socks" 2>/dev/null); do
+        zt_is_main_tpws "$pid" "$port" && { echo "$pid"; return 0; }
+    done
+    return 1
+}
+
+# это процесс tpws (argv[0], а не оболочка, в командной строке которой встречается "tpws"),
+# в режиме --socks и, если задан $2, на этом порту
+zt_is_main_tpws() {
+    local pid="$1" port="$2"
+    local -a argv
+    kill -0 "$pid" 2>/dev/null || return 1
+    mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || return 1
+    [[ "${argv[0]##*/}" == tpws ]] || return 1
+    [[ " ${argv[*]} " == *" --socks "* ]] || return 1
+    [[ -z "$port" || "${argv[1]}" == "--port=$port" ]]
+}
+
+zapret_running() {
+    zapret_pid >/dev/null
+}
+
+# работает ли zapret как служба systemd
+zt_service_active() {
+    zt_use_systemd && systemctl is-active -q zapret-termux 2>/dev/null
+}
+
+# остановить zapret на время (update, debug, collect). Печатает состояние для zt_resume:
+# 0 - не работал, 1 - запущен вручную, 2 - служба systemd
+zt_pause() {
+    if zt_service_active; then
+        run_with_sudo systemctl stop zapret-termux &>/dev/null
+        echo 2
+    elif zapret_running; then
+        stop_zapret &>/dev/null
+        echo 1
+    else
+        echo 0
+    fi
+}
+
+zt_resume() {
+    case "$1" in
+        2) run_with_sudo systemctl start zapret-termux && echo -e "${GREEN}Служба zapret-termux снова запущена.${NC}" ;;
+        1) start_zapret ;;
+    esac
 }
 
 zt_version() {

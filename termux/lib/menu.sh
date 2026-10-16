@@ -61,6 +61,7 @@ show_help() {
 
   (без аргументов) | menu      интерактивное меню
   start | stop | restart | status | info
+  running                      код возврата 0, если zapret запущен (для скриптов)
   strategies                   список TCP-стратегий
   strategy <name>              выбрать TCP-стратегию
   set-port <port> [-y]         сменить порт SOCKS
