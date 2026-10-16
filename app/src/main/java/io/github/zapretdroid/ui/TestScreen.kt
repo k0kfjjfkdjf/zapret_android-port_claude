@@ -66,7 +66,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
     var set by rememberSaveable { mutableStateOf(StrategySet.QUICK) }
     var sni by rememberSaveable { mutableStateOf(TestPlan.DEFAULT_SNI) }
     var attempts by rememberSaveable { mutableIntStateOf(1) }
-    var tlsChoice by rememberSaveable { mutableIntStateOf(0) } // 0 auto, 1 TLS 1.2, 2 TLS 1.3, 3 both
+    var tlsChoice by rememberSaveable { mutableIntStateOf(0) } // 0 auto, 1 TLS 1.2, 2 TLS 1.3, 3 both, 4 Chrome, 5 Android + Chrome
     val siteGroups = remember { TestPlan.siteGroups(context) }
     val candidates = remember(set, sni) { TestPlan.strategies(context, set, sni) }
     val hosts = remember(groups, custom) {
@@ -137,6 +137,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                                         when (option) {
                                             StrategySet.QUICK -> R.string.test_quick
                                             StrategySet.FULL -> R.string.test_full
+                                            StrategySet.OURS -> R.string.test_ours
                                             StrategySet.COMMUNITY -> R.string.test_community
                                             StrategySet.UDP -> R.string.test_udp
                                         },
@@ -185,11 +186,10 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
             }
             if (set != StrategySet.UDP) {
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("TLS", style = MaterialTheme.typography.bodyMedium)
-                        listOf(R.string.test_tls_auto, R.string.test_tls12, R.string.test_tls13, R.string.test_tls_both).forEachIndexed { i, label ->
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(R.string.test_tls_auto, R.string.test_tls12, R.string.test_tls13, R.string.test_tls_both, R.string.test_tls_chrome, R.string.test_tls_android_chrome).forEachIndexed { i, label ->
                             // TLS 1.3 can be forced only on Android 10+.
-                            val available = i == 0 || i == 1 || android.os.Build.VERSION.SDK_INT >= 29
+                            val available = i != 2 && i != 3 || android.os.Build.VERSION.SDK_INT >= 29
                             FilterChip(
                                 selected = tlsChoice == i,
                                 enabled = !running && available,
@@ -212,6 +212,8 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                                 1 -> listOf(TlsMode.TLS12)
                                 2 -> listOf(TlsMode.TLS13)
                                 3 -> listOf(TlsMode.TLS12, TlsMode.TLS13)
+                                4 -> listOf(TlsMode.CHROME)
+                                5 -> listOf(TlsMode.ANY, TlsMode.CHROME)
                                 else -> listOf(TlsMode.ANY)
                             }
                             StrategyTester.start(context, hosts, candidates, settings.dns, attempts, udp = set == StrategySet.UDP, tls = tls)
@@ -219,7 +221,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                         enabled = hosts.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        val targets = if (set == StrategySet.UDP) TestPlan.udpTargets(hosts).size else hosts.size * (if (tlsChoice == 3) 2 else 1)
+                        val targets = if (set == StrategySet.UDP) TestPlan.udpTargets(hosts).size else hosts.size * (if (tlsChoice == 3 || tlsChoice == 5) 2 else 1)
                         Text(stringResource(R.string.test_start, targets, candidates.size))
                     }
                 }

@@ -17,7 +17,16 @@ import javax.net.ssl.SSLSocketFactory
 enum class ProbeStage { PROXY, CONNECT, TLS, CERTIFICATE, RESPONSE, BODY, DONE }
 
 /** TLS versions a probe may use: any (as the system offers), or only one of them. */
-enum class TlsMode(val protocol: String?, val label: String) { ANY(null, ""), TLS12("TLSv1.2", "tls1.2"), TLS13("TLSv1.3", "tls1.3") }
+enum class TlsMode(val protocol: String?, val label: String) {
+    ANY(null, ""), TLS12("TLSv1.2", "tls1.2"), TLS13("TLSv1.3", "tls1.3"),
+
+    /**
+     * A real Chrome ClientHello with the post-quantum key share (~1.8 KB, two TCP segments) is
+     * replayed for the host; the ServerHello means the handshake got through DPI. Android's own
+     * ClientHello is 517 bytes, which DPI parses more easily than a browser's.
+     */
+    CHROME(null, "chrome"),
+}
 
 /**
  * What to open: "host", "host/path", or "big:host/path" for a large download that must deliver
@@ -109,6 +118,10 @@ object SiteProbe {
     @Volatile
     var hostnameVerifier: HostnameVerifier? = null
 
+    /** Browser ClientHello record replayed in [TlsMode.CHROME] (set from the fake payloads). */
+    @Volatile
+    var browserHello: ByteArray? = null
+
     /** TLS socket factory; the platform default unless a test sets its own. */
     @Volatile
     var socketFactory: SSLSocketFactory? = null
@@ -120,6 +133,7 @@ object SiteProbe {
     fun probe(proxyPort: Int, host: String, address: InetAddress?, timeoutMs: Int, tls: TlsMode = TlsMode.ANY, readLimit: Int = 0): ProbeResult {
         var target = ProbeTarget.parse(host)
         val label = target.spec + if (tls == TlsMode.ANY) "" else " [${tls.label}]"
+        if (tls == TlsMode.CHROME) return handshake(proxyPort, target.host, label, address, timeoutMs)
         var result = probe(proxyPort, target, label, address, timeoutMs, tls, readLimit)
         // A download link usually redirects to the file: follow it, like curl -L.
         var hops = 0
@@ -211,6 +225,47 @@ object SiteProbe {
      * [complete]: the body was read to its end (or to Content-Length); [stalledAt]: the server
      * stopped sending after this many bytes, which were enough to count as opened.
      */
+    /** Sends a browser ClientHello for [host] and waits for the ServerHello. */
+    private fun handshake(proxyPort: Int, host: String, label: String, address: InetAddress?, timeoutMs: Int): ProbeResult {
+        val start = System.currentTimeMillis()
+        var stage = ProbeStage.PROXY
+        var connectMs: Long? = null
+        val addr = address?.hostAddress
+        fun elapsed() = System.currentTimeMillis() - start
+        val hello = browserHello ?: return ProbeResult(label, addr, false, "no browser ClientHello loaded", stage, totalMs = 0)
+        return try {
+            Socket().use { raw ->
+                raw.soTimeout = timeoutMs
+                raw.connect(InetSocketAddress("127.0.0.1", proxyPort), timeoutMs)
+                stage = ProbeStage.CONNECT
+                socksConnect(raw, host, address, 443)
+                connectMs = elapsed()
+                stage = ProbeStage.TLS
+                val record = ClientHello.withSni(hello, host)
+                raw.getOutputStream().apply { write(record); flush() }
+                val input = raw.getInputStream()
+                val head = readN(input, 6)
+                val tlsMs = elapsed() - connectMs!!
+                val type = head[0].toInt() and 0xff
+                val version = "%d.%d".format(head[1].toInt(), head[2].toInt())
+                when {
+                    type == 0x16 && head[5].toInt() == 0x02 -> ProbeResult(
+                        label, addr, true, "ServerHello to a ${record.size}-byte Chrome ClientHello (record version $version)",
+                        ProbeStage.DONE, connectMs = connectMs, tlsMs = tlsMs, totalMs = elapsed(), bytes = 6,
+                    )
+                    // An alert from the server also means the ClientHello reached it.
+                    type == 0x15 -> ProbeResult(
+                        label, addr, true, "TLS alert from the server (it got the ClientHello)",
+                        ProbeStage.DONE, connectMs = connectMs, tlsMs = tlsMs, totalMs = elapsed(), bytes = 6,
+                    )
+                    else -> ProbeResult(label, addr, false, "not a TLS answer (first byte 0x%02x)".format(type), stage, connectMs = connectMs, totalMs = elapsed())
+                }
+            }
+        } catch (e: Exception) {
+            ProbeResult(label, addr, false, describe(e, stage), stage, connectMs = connectMs, totalMs = elapsed())
+        }
+    }
+
     private class Response(val code: Int, val statusLine: String, val location: String?, val complete: Boolean = true, val stalledAt: Int? = null)
 
     private fun socksConnect(socket: Socket, host: String, address: InetAddress?, port: Int) {

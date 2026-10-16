@@ -9,7 +9,7 @@ import io.github.zapretdroid.core.Strategies
 data class SiteGroup(val id: String, @StringRes val title: Int, val hosts: List<String>)
 
 /** A set of strategies to try. */
-enum class StrategySet { QUICK, FULL, COMMUNITY, UDP }
+enum class StrategySet { QUICK, FULL, OURS, COMMUNITY, UDP }
 
 object TestPlan {
     private val GROUPS = listOf(
@@ -36,6 +36,8 @@ object TestPlan {
         // Strategies collected by the ByeByeDPI community (assets/strategies/byebyedpi.list).
         StrategySet.COMMUNITY -> readLines(context, "strategies/byebyedpi.list")
             .map { it.replace("{sni}", sni.ifBlank { DEFAULT_SNI }) }
+        // Strategies on ZapretDroid's own additions (assets/strategies/zapretdroid.list).
+        StrategySet.OURS -> readLines(context, "strategies/zapretdroid.list")
         StrategySet.UDP -> udp
     }
 

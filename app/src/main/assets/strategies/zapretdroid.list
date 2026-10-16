@@ -1,0 +1,89 @@
+# Strategies built on what ZapretDroid adds to ByeDPI: tpws position markers, zapret2 fake
+# payloads, fake SNI with TLS mods, tlsminor. Same format as byebyedpi.list; {fake:name} and
+# {list:name} are resolved by the app.
+
+# Every split method at tpws markers (SNI extension, middle of the second-level domain, host)
+--split 1
+--disorder 1
+--oob 1
+--disoob 1
+--tlsrec 1
+--split sniext
+--disorder sniext
+--oob sniext
+--disoob sniext
+--tlsrec sniext
+--split sniext+1
+--disorder sniext+1
+--oob sniext+1
+--disoob sniext+1
+--tlsrec sniext+1
+--split midsld
+--disorder midsld
+--oob midsld
+--disoob midsld
+--tlsrec midsld
+--split host+1
+--disorder host+1
+--oob host+1
+--disoob host+1
+--tlsrec host+1
+--split endhost-1
+--disorder endhost-1
+--oob endhost-1
+--disoob endhost-1
+--tlsrec endhost-1
+--split sld+1
+--disorder sld+1
+--oob sld+1
+--disoob sld+1
+--tlsrec sld+1
+
+# TLS record split at the SNI combined with a split or disorder inside the name
+--tlsrec sniext --disorder midsld
+--tlsrec sniext+1 --split midsld --disorder 1
+--tlsrec sniext --disorder sniext+1
+--tlsrec sniext+1 --split sniext+1 --disorder 1
+--tlsrec sniext --disorder host+1
+--tlsrec sniext+1 --split host+1 --disorder 1
+
+# TLS minor version in the record header (ByeDPI --tlsminor)
+--tlsrec 1+s --tlsminor 1
+--disorder 1 --tlsminor 4
+
+# zapret2 fake ClientHellos (Android-sized and Chrome-sized with the post-quantum key share), TTL sweep
+--fake -1 --ttl 4 --fake-data {fake:tls_clienthello_www_google_com.bin}
+--fake -1 --ttl 6 --fake-data {fake:tls_clienthello_www_google_com.bin}
+--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_www_google_com.bin}
+--fake -1 --ttl 4 --fake-data {fake:tls_clienthello_vk_com_kyber.bin}
+--fake -1 --ttl 6 --fake-data {fake:tls_clienthello_vk_com_kyber.bin}
+--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_vk_com_kyber.bin}
+--fake -1 --ttl 4 --fake-data {fake:tls_clienthello_gosuslugi_ru.bin}
+--fake -1 --ttl 6 --fake-data {fake:tls_clienthello_gosuslugi_ru.bin}
+--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_gosuslugi_ru.bin}
+--fake -1 --ttl 4 --fake-data {fake:tls_clienthello_iana_org.bin}
+--fake -1 --ttl 6 --fake-data {fake:tls_clienthello_iana_org.bin}
+--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_iana_org.bin}
+
+# Fake with an allowed SNI before the real ClientHello: aimed at the IP-based freeze after
+# 16-20 KB (the flow may be classified by the fake). TTL 2-10 for www.google.com, a few for others.
+--fake -1 --ttl 2 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 3 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 4 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 5 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 7 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 8 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 9 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 10 --fake-tls-mod rand,orig --fake-sni www.google.com
+--fake -1 --ttl 3 --fake-tls-mod rand,orig --fake-sni vk.com
+--fake -1 --ttl 5 --fake-tls-mod rand,orig --fake-sni vk.com
+--fake -1 --ttl 7 --fake-tls-mod rand,orig --fake-sni vk.com
+--fake -1 --ttl 3 --fake-tls-mod rand,orig --fake-sni gosuslugi.ru
+--fake -1 --ttl 5 --fake-tls-mod rand,orig --fake-sni gosuslugi.ru
+--fake -1 --ttl 7 --fake-tls-mod rand,orig --fake-sni gosuslugi.ru
+
+# Fake with an allowed SNI plus disorder at the SNI
+--disorder sniext+1 --fake -1 --ttl 4 --fake-tls-mod rand,orig --fake-sni www.google.com
+--disorder sniext+1 --fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com
+--disorder sniext+1 --fake -1 --ttl 8 --fake-tls-mod rand,orig --fake-sni www.google.com

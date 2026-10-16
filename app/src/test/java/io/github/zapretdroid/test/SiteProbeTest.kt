@@ -146,6 +146,13 @@ class SiteProbeTest {
         assertEquals(ProbeTarget("x.org", "/", big = true), ProbeTarget.parse("big:x.org"))
         assertEquals("big:x.org/a", ProbeTarget.parse("big:x.org/a").spec)
     }
+    @Test fun chromeHandshake() {
+        val dir = listOf("src/main/assets/fake", "app/src/main/assets/fake").map { java.io.File(it) }.first { it.isDirectory }
+        SiteProbe.browserHello = java.io.File(dir, TestEngine.BROWSER_HELLO).readBytes()
+        val r = run("ok", tls = TlsMode.CHROME)
+        assertTrue(r.summary(), r.ok)
+        assertEquals("localhost [chrome]", r.host)
+    }
     @Test fun refusedReason() { assertEquals('c', run("refused").reason) }
     @Test fun connectRefused() { val r = run("refused"); assertTrue(r.summary(), !r.ok); assertEquals(r.summary(), ProbeStage.CONNECT, r.stage) }
 }

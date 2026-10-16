@@ -393,6 +393,12 @@ object SelfCheck {
                             val r = SiteProbe.probe(PORT, host, resolved[host] ?: system[host], TIMEOUT_MS)
                             (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
                         }
+                        // The same handshake with Chrome's ~1.8 KB ClientHello: browsers and apps
+                        // built on Chromium can pass where Android's 517-byte one does not.
+                        check(g, "TLS as Chrome $host, $label") {
+                            val r = SiteProbe.probe(PORT, host, resolved[host] ?: system[host], TIMEOUT_MS, TlsMode.CHROME)
+                            (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
+                        }
                     }
                     check(g, "QUIC www.youtube.com, $label") {
                         val r = UdpProbe.probe(PORT, UdpTarget(UdpTarget.Kind.QUIC, "www.youtube.com", 443), resolved["www.youtube.com"] ?: system["www.youtube.com"], TIMEOUT_MS)

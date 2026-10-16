@@ -263,4 +263,7 @@
     <string name="collect_blocked">блокировка %1$d×</string>
     <string name="collect_ips">По IP-адресу и UDP (в список хостов не попадают)</string>
     <string name="dns_system">Системный (роутер)</string>
+    <string name="test_tls_chrome">как Chrome</string>
+    <string name="test_tls_android_chrome">Android + Chrome</string>
+    <string name="test_ours">Функции ZapretDroid (%1$d)</string>
 </resources>

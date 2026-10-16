@@ -10,6 +10,9 @@ import kotlin.concurrent.thread
 
 /** Runs the ByeDPI engine as a local SOCKS5 proxy in this process for tests. */
 object TestEngine {
+    /** Chrome's ClientHello with the post-quantum key share, from zapret2's fake payloads. */
+    const val BROWSER_HELLO = "tls_clienthello_vk_com_kyber.bin"
+
     class Failed(val exitCode: Int) : Exception("engine did not start (code $exitCode)")
 
     /**
@@ -19,6 +22,9 @@ object TestEngine {
      */
     @Synchronized
     fun <T> with(strategy: String, port: Int, fakeDir: File, listDir: File, connLog: Boolean = true, block: () -> T): T {
+        if (SiteProbe.browserHello == null) {
+            SiteProbe.browserHello = runCatching { File(fakeDir, BROWSER_HELLO).readBytes() }.getOrNull()
+        }
         val args = listOf("ciadpi", "--ip", "127.0.0.1", "--port", port.toString()) +
             (if (connLog) listOf("--conn-log") else emptyList()) +
             ArgTemplates.resolve(splitArgs(strategy), fakeDir, listDir)

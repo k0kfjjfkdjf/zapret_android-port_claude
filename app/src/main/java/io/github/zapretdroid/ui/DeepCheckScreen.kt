@@ -140,7 +140,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
             item { Text(stringResource(R.string.deep_strategies), style = MaterialTheme.typography.titleSmall) }
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(StrategySet.QUICK to R.string.test_quick, StrategySet.FULL to R.string.test_full, StrategySet.COMMUNITY to R.string.test_community)
+                    listOf(StrategySet.QUICK to R.string.test_quick, StrategySet.FULL to R.string.test_full, StrategySet.OURS to R.string.test_ours, StrategySet.COMMUNITY to R.string.test_community)
                         .forEach { (option, label) ->
                             FilterChip(
                                 selected = set == option, enabled = !running, onClick = { set = option },
@@ -165,7 +165,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("TLS", style = MaterialTheme.typography.bodyMedium)
-                    listOf(TlsMode.ANY to R.string.test_tls_auto, TlsMode.TLS12 to R.string.test_tls12, TlsMode.TLS13 to R.string.test_tls13).forEach { (mode, label) ->
+                    listOf(TlsMode.ANY to R.string.test_tls_auto, TlsMode.TLS12 to R.string.test_tls12, TlsMode.TLS13 to R.string.test_tls13, TlsMode.CHROME to R.string.test_tls_chrome).forEach { (mode, label) ->
                         FilterChip(
                             selected = tls == mode,
                             enabled = !running && (mode != TlsMode.TLS13 || android.os.Build.VERSION.SDK_INT >= 29),
