@@ -48,6 +48,90 @@ get_udp_profile() {
     echo "$p"
 }
 
+# -------------------------------------------------------------------
+# Случайный SNI в фейковых QUIC Initial (--udp-fake-quic-sni, нужен свежий патч tpws)
+# -------------------------------------------------------------------
+get_udp_sni() {
+    [[ -f "$UDP_SNI_FILE" ]] && cat "$UDP_SNI_FILE"
+}
+
+# значение для tpws: default -> файл из data/, остальное как есть
+udp_sni_arg() {
+    local v
+    v=$(get_udp_sni)
+    case "$v" in
+        ""|off) return 1 ;;
+        default) echo "$ZT_QUIC_SNI_DEFAULT" ;;
+        *) echo "$v" ;;
+    esac
+}
+
+udp_sni_text() {
+    local v n
+    v=$(get_udp_sni)
+    case "$v" in
+        ""|off) echo "выключен" ;;
+        default) n=$(grep -cvE '^[[:space:]]*(#|$)' "$ZT_QUIC_SNI_DEFAULT" 2>/dev/null); echo "список по умолчанию ($n доменов)" ;;
+        */*) n=$(grep -cvE '^[[:space:]]*(#|$)' "$v" 2>/dev/null); echo "$v (${n:-0} доменов)" ;;
+        *) echo "$v" ;;
+    esac
+}
+
+tpws_supports_quic_sni() {
+    [[ -x "$TPWS_BIN" ]] && "$TPWS_BIN" --help 2>&1 | grep -q -- "--udp-fake-quic-sni"
+}
+
+set_udp_sni() {
+    local v="$1"
+    if [[ -z "$v" ]]; then
+        if [[ $INTERACTIVE -eq 0 ]]; then
+            echo "Использование: zapret udp-sni default|off|<файл>|<домен,домен,...>" >&2
+            return 1
+        fi
+        echo -e "${BLUE}Случайный SNI в фейковых QUIC Initial: $(udp_sni_text)${NC}"
+        echo "  1) список по умолчанию ($ZT_QUIC_SNI_DEFAULT)"
+        echo "  2) свой файл (домен в строке)"
+        echo "  3) домены через запятую"
+        echo "  4) выключить"
+        read -p "Номер (0 для отмены): " num
+        case "$num" in
+            1) v=default ;;
+            2) read -p "Путь к файлу: " v; v="${v/#\~/$HOME}" ;;
+            3) read -p "Домены: " v; v=$(echo "$v" | tr -d '[:space:]') ;;
+            4) v=off ;;
+            *) return 0 ;;
+        esac
+    fi
+    case "$v" in
+        off|none|0)
+            rm -f "$UDP_SNI_FILE"
+            echo -e "${GREEN}Случайный SNI выключен: QUIC-фейки берутся из файла профиля.${NC}" ;;
+        default)
+            echo "default" > "$UDP_SNI_FILE"
+            echo -e "${GREEN}Случайный SNI: $(udp_sni_text)${NC}" ;;
+        *)
+            if [[ -f "$v" ]]; then
+                v=$(readlink -f "$v")
+                [[ -r "$v" ]] || { echo -e "${RED}Нет доступа к файлу $v${NC}" >&2; return 1; }
+                grep -qvE '^[[:space:]]*(#|$)' "$v" || { echo -e "${RED}В файле $v нет доменов.${NC}" >&2; return 1; }
+                # tpws читает файл при запуске, но после сброса прав он нужен ещё и для перезапуска
+                chmod a+r "$v" 2>/dev/null
+            elif [[ "$v" =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ && "$v" == *.* ]]; then
+                :
+            else
+                echo -e "${RED}'$v': ни файла, ни списка доменов через запятую.${NC}" >&2
+                return 1
+            fi
+            echo "$v" > "$UDP_SNI_FILE"
+            echo -e "${GREEN}Случайный SNI: $(udp_sni_text)${NC}" ;;
+    esac
+    if ! tpws_supports_quic_sni && is_zapret_installed; then
+        echo -e "${YELLOW}tpws собран без --udp-fake-quic-sni: выполните zapret update.${NC}"
+    fi
+    [[ "$(get_use_udp)" == "1" ]] && restart_if_running
+    return 0
+}
+
 tpws_supports_udp() {
     [[ -x "$TPWS_BIN" ]] && "$TPWS_BIN" --help 2>&1 | grep -q -- "--socks-udp"
 }

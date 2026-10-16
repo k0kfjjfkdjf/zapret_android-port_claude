@@ -19,6 +19,8 @@ HOSTLIST_DIR="$ZAPRET_DIR/ipset"
 UDP_FILE="$HOME/.zapret_use_udp"
 UDP_PROFILE_FILE="$HOME/.zapret_udp_profile"
 UDP_CUSTOM_FILE="$HOME/.zapret_udp_custom"
+UDP_SNI_FILE="$HOME/.zapret_udp_sni"          # off/пусто, default, путь к файлу или домены через запятую
+ZT_QUIC_SNI_DEFAULT="$ZT_HOME/data/quic-sni.txt"
 FAKE_DIR="$ZAPRET_DIR/files/fake"
 ZAPRET_REPO="https://github.com/bol-van/zapret.git"
 

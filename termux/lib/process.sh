@@ -97,6 +97,7 @@ status_zapret() {
 
     if [[ "$(get_use_udp)" == "1" ]]; then
         echo -e "UDP:                ${GREEN}Включён${NC} (профиль: $(get_udp_profile))"
+        echo -e "SNI QUIC-фейков:    $(udp_sni_arg >/dev/null && echo "${GREEN}случайный${NC}, $(udp_sni_text)" || echo "из файла профиля")"
     else
         echo -e "UDP:                ${RED}Выключен${NC}"
     fi
@@ -134,6 +135,8 @@ info_zapret() {
     echo "udp=$(get_use_udp)"
     echo "udp_profile=$(get_udp_profile)"
     echo "udp_supported=$(tpws_supports_udp && echo 1 || echo 0)"
+    echo "udp_sni=$(get_udp_sni)"
+    echo "udp_sni_supported=$(tpws_supports_quic_sni && echo 1 || echo 0)"
 }
 
 list_hostlist_files() {

@@ -114,6 +114,7 @@ zapret start
 | `zapret udp on\|off` | UDP через SOCKS5 UDP ASSOCIATE |
 | `zapret udp-profiles` / `udp-profile <имя>` | UDP-профили |
 | `zapret udp-custom "<параметры>"` | свой UDP-профиль |
+| `zapret udp-sni default\|off\|<файл>\|<домены>` | [случайный SNI в QUIC-фейках](#случайный-sni-в-quic-фейках) |
 | `zapret hostlist [-y]` | включить или выключить hostlist |
 | `zapret hostlist-list` / `hostlist-select <файл>` | списки доменов |
 | `zapret lists-update` | скачать списки из zapret.cfgs |
@@ -179,6 +180,19 @@ UDP нужен для QUIC (HTTP/3 у YouTube и Cloudflare), голоса Disco
 tpws сам определяет протокол по первому пакету потока (QUIC Initial, IP discovery Discord, STUN) и берёт для него свой фейк из `/opt/zapret/files/fake/`.
 
 **Как подобрать TTL.** Фейк должен дойти до DPI провайдера, но не до сервера. Обычно подходит 3–6. Если не работает, попробуйте `discord_low_ttl` или `discord_high_ttl`.
+
+### Случайный SNI в QUIC-фейках
+
+По умолчанию QUIC-фейк — один и тот же файл (`quic_initial_www_google_com.bin`): DPI каждый раз видит одинаковый пакет с SNI `www.google.com`. С `udp-sni` tpws для **каждого** фейка собирает новый QUIC Initial со случайным доменом из списка:
+
+```sh
+zapret udp-sni default                  # список data/quic-sni.txt (yandex.ru, vk.com, gosuslugi.ru, …)
+zapret udp-sni ~/my-sni.txt             # свой файл: домен в строке, # комментарии, формат hostlist
+zapret udp-sni vk.com,ok.ru,mail.ru     # домены прямо в команде
+zapret udp-sni off                      # обратно к фейку из файла профиля
+```
+
+Работает с любым UDP-профилем, где есть QUIC-фейки (`discord*`, `quic`, `all_ports`, `custom`), и заменяет только фейк для QUIC; фейки Discord и STUN не меняются. Пакет настоящий: QUIC v1 Initial 1250 байт со случайным DCID, внутри TLS 1.3 ClientHello (ALPN `h3`, x25519) с выбранным SNI, зашифрованный initial-ключами по RFC 9001 — DPI расшифровывает его так же, как настоящий, и видит разрешённый домен. Домены в списке должны быть такими, которые DPI пропускает. Проверить, что уходит: `zapret debug`, в логе строки `udp desync : 6 fake(s) size=1250 ttl=4 proto=quic sni=…`. Нужен tpws с текущим патчем (`zapret update`); `zapret info` показывает `udp_sni_supported=1`.
 
 ## Подбор стратегии: blockcheck
 
@@ -551,6 +565,7 @@ termux/
 - **SOCKS5 UDP ASSOCIATE** (RFC 1928). Relay-сокет на адресе, по которому клиент подключился к tpws. Связка живёт, пока открыто TCP-соединение управления, или до таймаута простоя.
 - **Фейки с низким TTL** перед первыми N датаграммами каждого потока. Отдельные фейки для QUIC Initial, IP discovery Discord и STUN.
 - **Асинхронное разрешение доменов** в UDP-заголовках (ATYP=domain, режим Remote DNS в hev-socks5-tunnel). Работает через резолвер tpws, пакеты буферизуются до ответа DNS, результаты кэшируются на 5 минут.
+- **Генерация QUIC-фейков со случайным SNI** (`--udp-fake-quic-sni`): для каждого фейка собирается QUIC v1 Initial (RFC 9000/9001) с TLS 1.3 ClientHello и доменом из списка, шифруется initial-ключами от случайного DCID. Используются AES-GCM и HKDF из `nfq/crypto` (патч добавляет их в `SRC_FILES` tpws), сам код — `tpws/quicfake.c`.
 - **`--tlsminor`** (TCP, из ByeDPI): подменяет младший байт версии в заголовке TLS-записи с ClientHello (`16 03 XX`), в том числе во второй записи после `--tlsrec`. Часть DPI ждёт здесь стандартное значение и пропускает необычное. Серверы на OpenSSL такой ClientHello принимают; совместимость с другими серверами покажет `blockcheck full`.
 - **Диагностика в логе** (`--debug=1`): события UDP-потоков с временем (`udp flow start … fakes_before_first=N`, `first reply … after Nms`, `ip discovery RETRY`, сводка `udp flow end … first_reply= fakes= NO REPLY`) и время TCP-подключений через SOCKS (`socks tcp connected … in Nms`).
 
@@ -566,11 +581,12 @@ termux/
 | `--udp-desync-ports=<список>` | все | порты назначения, например `443,50000-65535` |
 | `--udp-fake=<файл>` | 64 нулевых байта | фейк для неизвестного UDP |
 | `--udp-fake-quic=<файл>` / `--udp-fake-discord=<файл>` / `--udp-fake-stun=<файл>` | `--udp-fake` | фейки по протоколу |
+| `--udp-fake-quic-sni=<файл>\|<домены>` | — | QUIC-фейки генерируются, SNI случайный из файла или списка через запятую; можно указать несколько раз |
 | `--tlsminor=<0..255>\|0xHEX` | — | байт версии в заголовке TLS-записи ClientHello (TCP) |
 
 Из возможностей ByeDPI в tpws уже были: `--oob-data` (свой байт OOB вместо 0x00) и `--disorder --oob` (аналог `--disoob`). В режиме `blockcheck full` перебираются и они, и `--tlsminor`.
 
-Разработка патча: склонируйте bol-van/zapret, примените патч (`git apply`), внесите изменения в `tpws/` и пересоздайте его командой `git add -N tpws/udp.c tpws/udp.h && git diff -- 'tpws/*.c' 'tpws/*.h' > tpws-socks-udp.patch`.
+Разработка патча: склонируйте bol-van/zapret, примените патч (`git apply`), внесите изменения в `tpws/` и пересоздайте его командой `git add -N tpws/udp.c tpws/udp.h tpws/quicfake.c tpws/quicfake.h && git diff -- 'tpws/*.c' 'tpws/*.h' tpws/Makefile > tpws-socks-udp.patch`.
 
 ## Благодарности и лицензии
 

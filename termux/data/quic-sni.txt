@@ -1,0 +1,18 @@
+# SNI для фейковых QUIC Initial (zapret udp-sni default).
+# Для каждого фейка tpws берёт случайный домен отсюда. Нужны сайты, которые DPI пропускает:
+# фейк должен выглядеть как разрешённое подключение. Свой список: zapret udp-sni /путь/к/файлу
+# Формат как у hostlist: домен в строке, # комментарии, префикс "*." допускается.
+www.google.com
+yandex.ru
+ya.ru
+vk.com
+mail.ru
+ok.ru
+dzen.ru
+gosuslugi.ru
+sberbank.ru
+ozon.ru
+wildberries.ru
+avito.ru
+rutube.ru
+kinopoisk.ru

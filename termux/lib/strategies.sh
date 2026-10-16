@@ -84,6 +84,14 @@ get_command() {
     if [[ "$(get_use_udp)" == "1" ]]; then
         if tpws_supports_udp; then
             cmd="$cmd --socks-udp ${UDP_PROFILES[$(get_udp_profile)]}"
+            local sni
+            if sni=$(udp_sni_arg); then
+                if tpws_supports_quic_sni; then
+                    cmd="$cmd --udp-fake-quic-sni=$(printf '%q' "$sni")"
+                else
+                    >&2 echo -e "${YELLOW}Warning: случайный SNI включён, но tpws собран без него (zapret update)${NC}"
+                fi
+            fi
         else
             >&2 echo -e "${YELLOW}Warning: UDP включён, но tpws собран без поддержки UDP (zapret update)${NC}"
         fi

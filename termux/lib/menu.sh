@@ -27,6 +27,7 @@ show_menu() {
         echo "15) Отладка (лог + сводка UDP)"
         echo "16) Подобрать стратегию (blockcheck)"
         echo "17) Обновить списки доменов (zapret.cfgs)"
+        echo "18) Случайный SNI в QUIC-фейках"
         echo " 0) Выход"
         echo ""
         read -p "Выбор: " ch || { echo; exit 0; }   # EOF: выйти
@@ -48,6 +49,7 @@ show_menu() {
             15) debug_zapret ;;
             16) blockcheck_menu; INTERACTIVE=1; continue ;;
             17) update_lists ;;
+            18) set_udp_sni ;;
             0|q) exit 0 ;;
             *) echo -e "${RED}Неверный выбор.${NC}" ;;
         esac
@@ -72,6 +74,8 @@ show_help() {
   udp-profiles                 список UDP-профилей
   udp-profile <name>           выбрать UDP-профиль
   udp-custom "<параметры>"     свой UDP-профиль
+  udp-sni default|off|<файл>|<домены>
+                               QUIC-фейки со случайным SNI из списка (каждый фейк - новый домен)
   autostart on|off
   install | remove
   update                       обновить скрипты из репозитория, zapret, патч и пересобрать tpws

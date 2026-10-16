@@ -1,12 +1,32 @@
+diff --git a/tpws/Makefile b/tpws/Makefile
+index 821a3fe..d377ce6 100644
+--- a/tpws/Makefile
++++ b/tpws/Makefile
+@@ -11,7 +11,7 @@ LDFLAGS_MAC = -Wl,-dead_strip
+ LIBS = -lz -lpthread
+ LIBS_SYSTEMD = -lsystemd
+ LIBS_ANDROID = -lz
+-SRC_FILES = *.c
++SRC_FILES = *.c ../nfq/crypto/*.c
+ SRC_FILES_ANDROID = $(SRC_FILES) andr/*.c
+ 
+ all: tpws
 diff --git a/tpws/params.c b/tpws/params.c
-index 0690e68..2aaeece 100644
+index 0690e68..303a460 100644
 --- a/tpws/params.c
 +++ b/tpws/params.c
-@@ -277,5 +277,6 @@ void cleanup_params(struct params_s *params)
+@@ -1,4 +1,5 @@
+ #include "params.h"
++#include "quicfake.h"
+ #include <stdarg.h>
+ #include <syslog.h>
+ #include <errno.h>
+@@ -277,5 +278,7 @@ void cleanup_params(struct params_s *params)
  	hostlist_files_destroy(&params->hostlists);
  	ipset_files_destroy(&params->ipsets);
  	ipcacheDestroy(&params->ipcache);
 +	port_filters_destroy(&params->udp_pf);
++	quicfake_cleanup();
  	free(params->user); params->user=NULL;
  }
 diff --git a/tpws/params.h b/tpws/params.h
@@ -40,6 +60,303 @@ index a0f2a11..654f91e 100644
  	unsigned int ipcache_lifetime;
  	bool cache_hostname;
  	ip_cache ipcache;
+diff --git a/tpws/quicfake.c b/tpws/quicfake.c
+new file mode 100644
+index 0000000..95abdaf
+--- /dev/null
++++ b/tpws/quicfake.c
+@@ -0,0 +1,264 @@
++#define _GNU_SOURCE
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <ctype.h>
++#include <time.h>
++#include <unistd.h>
++#include <fcntl.h>
++
++#include "quicfake.h"
++#include "../nfq/crypto/sha.h"
++#include "../nfq/crypto/aes-gcm.h"
++
++#define SNI_MAX_LEN	253
++#define SNI_MAX_COUNT	100000
++
++static char **sni_list;
++static size_t sni_count, sni_alloc;
++static uint64_t rnd_state;
++static bool crypto_ready;
++
++// --- random (xorshift64*, not crypto: only for SNI choice, DCID and ClientHello random) ---
++static void rnd_init(void)
++{
++	int fd;
++	if (rnd_state) return;
++	if ((fd = open("/dev/urandom", O_RDONLY)) >= 0)
++	{
++		if (read(fd, &rnd_state, sizeof(rnd_state)) != sizeof(rnd_state)) rnd_state = 0;
++		close(fd);
++	}
++	if (!rnd_state) rnd_state = ((uint64_t)time(NULL) << 32) ^ (uint64_t)getpid() ^ (uint64_t)(uintptr_t)&fd;
++	if (!rnd_state) rnd_state = 0x9E3779B97F4A7C15ULL;
++}
++static uint64_t rnd64(void)
++{
++	rnd_init();
++	rnd_state ^= rnd_state >> 12;
++	rnd_state ^= rnd_state << 25;
++	rnd_state ^= rnd_state >> 27;
++	return rnd_state * 0x2545F4914F6CDD1DULL;
++}
++static void rnd_fill(uint8_t *p, size_t n)
++{
++	while (n)
++	{
++		uint64_t r = rnd64();
++		size_t k = n < 8 ? n : 8;
++		memcpy(p, &r, k);
++		p += k; n -= k;
++	}
++}
++
++// --- SNI list ---
++static bool sni_valid(const char *s, size_t len)
++{
++	size_t i;
++	if (!len || len > SNI_MAX_LEN || s[0] == '.' || s[len-1] == '.') return false;
++	for (i = 0; i < len; i++)
++		if (!isalnum((unsigned char)s[i]) && s[i] != '.' && s[i] != '-' && s[i] != '_') return false;
++	return true;
++}
++// one entry: trims spaces, comments, "*." prefix and ":*" suffix (hostlist format). invalid entries are skipped
++static bool sni_push(const char *s, size_t len)
++{
++	char *d;
++	while (len && isspace((unsigned char)*s)) { s++; len--; }
++	const char *c = memchr(s, '#', len);
++	if (c) len = c - s;
++	while (len && isspace((unsigned char)s[len-1])) len--;
++	if (len >= 2 && s[0] == '*' && s[1] == '.') { s += 2; len -= 2; }
++	if (len >= 2 && s[len-2] == ':' && s[len-1] == '*') len -= 2;
++	if (!len) return true;
++	if (!sni_valid(s, len)) return true;
++	if (sni_count >= SNI_MAX_COUNT) return true;
++	if (sni_count == sni_alloc)
++	{
++		size_t na = sni_alloc ? sni_alloc * 2 : 64;
++		char **nl = realloc(sni_list, na * sizeof(char*));
++		if (!nl) return false;
++		sni_list = nl; sni_alloc = na;
++	}
++	if (!(d = malloc(len + 1))) return false;
++	memcpy(d, s, len); d[len] = 0;
++	for (char *p = d; *p; p++) *p = (char)tolower((unsigned char)*p);
++	sni_list[sni_count++] = d;
++	return true;
++}
++
++bool quicfake_sni_add(const char *arg)
++{
++	FILE *F = fopen(arg, "r");
++	if (F)
++	{
++		char line[1024];
++		while (fgets(line, sizeof(line), F))
++			if (!sni_push(line, strlen(line))) { fclose(F); return false; }
++		fclose(F);
++	}
++	else
++	{
++		// not a file: comma separated domains
++		const char *p = arg, *e;
++		if (!strchr(arg, '.')) return false;	// most likely a missing file
++		for (;;)
++		{
++			e = strchr(p, ',');
++			if (!sni_push(p, e ? (size_t)(e - p) : strlen(p))) return false;
++			if (!e) break;
++			p = e + 1;
++		}
++	}
++	return sni_count > 0;
++}
++
++size_t quicfake_sni_count(void)
++{
++	return sni_count;
++}
++
++const char *quicfake_sni_random(void)
++{
++	return sni_count ? sni_list[rnd64() % sni_count] : NULL;
++}
++
++void quicfake_cleanup(void)
++{
++	size_t i;
++	for (i = 0; i < sni_count; i++) free(sni_list[i]);
++	free(sni_list);
++	sni_list = NULL; sni_count = sni_alloc = 0;
++}
++
++// --- TLS 1.3 ClientHello for QUIC (handshake message, without TLS record layer) ---
++#define PUT8(v)  do { if (o + 1 > cap) return 0; b[o++] = (uint8_t)(v); } while(0)
++#define PUT16(v) do { if (o + 2 > cap) return 0; b[o++] = (uint8_t)((v) >> 8); b[o++] = (uint8_t)(v); } while(0)
++#define PUTB(p,n) do { if (o + (n) > cap) return 0; memcpy(b + o, (p), (n)); o += (n); } while(0)
++#define SET16(at,v) do { b[at] = (uint8_t)((v) >> 8); b[(at)+1] = (uint8_t)(v); } while(0)
++
++static size_t build_client_hello(uint8_t *b, size_t cap, const char *sni)
++{
++	static const uint8_t ciphers[] = { 0x13,0x01, 0x13,0x02, 0x13,0x03 };
++	static const uint8_t groups[] = { 0x00,0x1d, 0x00,0x17, 0x00,0x18 };
++	static const uint8_t sigalgs[] = { 0x04,0x03, 0x08,0x04, 0x04,0x01, 0x05,0x03, 0x08,0x05, 0x05,0x01, 0x08,0x06, 0x06,0x01 };
++	// quic_transport_parameters: max_idle_timeout 30000, initial_max_data 15M, stream data 6M,
++	// max streams bidi 100 / uni 103, empty initial_source_connection_id (SCID is empty)
++	static const uint8_t tparams[] = {
++		0x01,0x04, 0x80,0x00,0x75,0x30,
++		0x04,0x04, 0x80,0xf0,0x00,0x00,
++		0x05,0x04, 0x80,0x60,0x00,0x00,
++		0x06,0x04, 0x80,0x60,0x00,0x00,
++		0x07,0x04, 0x80,0x60,0x00,0x00,
++		0x08,0x02, 0x40,0x64,
++		0x09,0x02, 0x40,0x67,
++		0x0f,0x00
++	};
++	size_t o = 0, hs_len_at, ext_len_at, ext_start, at;
++	size_t sni_len = strlen(sni);
++	uint8_t r[32];
++
++	PUT8(0x01);				// ClientHello
++	hs_len_at = o; PUT8(0); PUT16(0);	// length (24 bit), filled later
++	PUT16(0x0303);				// legacy_version
++	rnd_fill(r, 32); PUTB(r, 32);		// random
++	PUT8(0);				// legacy_session_id: empty in QUIC
++	PUT16(sizeof(ciphers)); PUTB(ciphers, sizeof(ciphers));
++	PUT8(1); PUT8(0);			// compression: null
++	ext_len_at = o; PUT16(0);
++	ext_start = o;
++
++	// server_name
++	PUT16(0x0000); PUT16(sni_len + 5); PUT16(sni_len + 3); PUT8(0); PUT16(sni_len); PUTB(sni, sni_len);
++	// supported_groups
++	PUT16(0x000a); PUT16(sizeof(groups) + 2); PUT16(sizeof(groups)); PUTB(groups, sizeof(groups));
++	// signature_algorithms
++	PUT16(0x000d); PUT16(sizeof(sigalgs) + 2); PUT16(sizeof(sigalgs)); PUTB(sigalgs, sizeof(sigalgs));
++	// ALPN: h3
++	PUT16(0x0010); PUT16(5); PUT16(3); PUT8(2); PUTB("h3", 2);
++	// psk_key_exchange_modes: psk_dhe_ke
++	PUT16(0x002d); PUT16(2); PUT8(1); PUT8(1);
++	// supported_versions: TLS 1.3
++	PUT16(0x002b); PUT16(3); PUT8(2); PUT16(0x0304);
++	// key_share: x25519 with random key
++	PUT16(0x0033); PUT16(38); PUT16(36); PUT16(0x001d); PUT16(32); rnd_fill(r, 32); PUTB(r, 32);
++	// quic_transport_parameters
++	PUT16(0x0039); PUT16(sizeof(tparams)); PUTB(tparams, sizeof(tparams));
++
++	SET16(ext_len_at, o - ext_start);
++	at = o - 4;
++	b[hs_len_at] = (uint8_t)(at >> 16); SET16(hs_len_at + 1, at);
++	return o;
++}
++
++// --- QUIC v1 Initial protection (RFC 9001 5.2-5.4) ---
++static bool hkdf_expand_label(const uint8_t *secret, const char *label, uint8_t *out, size_t out_len)
++{
++	uint8_t info[64];
++	size_t ll = strlen(label);
++	if (6 + ll > 255 || 2 + 1 + 6 + ll + 1 > sizeof(info)) return false;
++	info[0] = (uint8_t)(out_len >> 8); info[1] = (uint8_t)out_len;
++	info[2] = (uint8_t)(6 + ll);
++	memcpy(info + 3, "tls13 ", 6);
++	memcpy(info + 9, label, ll);
++	info[9 + ll] = 0;	// empty context
++	return !hkdfExpand(SHA256, secret, SHA256HashSize, info, 10 + ll, out, out_len);
++}
++
++size_t quicfake_build(uint8_t *out, size_t out_size, const char *sni)
++{
++	static const uint8_t salt_v1[20] = {
++		0x38,0x76,0x2c,0xf7,0xf5,0x59,0x34,0xb3,0x4d,0x17,
++		0x9a,0xe6,0xa4,0xc8,0x0c,0xad,0xcc,0xbb,0x7f,0x0a
++	};
++	enum { DCID_LEN = 8, PN_LEN = 1, PN_OFFSET = 1 + 4 + 1 + DCID_LEN + 1 + 1 + 2, HDR_LEN = PN_OFFSET + PN_LEN };
++	uint8_t plain[QUICFAKE_SIZE], prk[USHAMaxHashSize], secret[SHA256HashSize];
++	uint8_t key[16], iv[12], hp[16], tag[16], mask[16];
++	size_t hl, plen, payload_len;
++	uint8_t pn;
++	aes_context actx;
++
++	if (!sni || out_size < QUICFAKE_SIZE) return 0;
++	if (!crypto_ready) { gcm_initialize(); crypto_ready = true; }
++
++	plen = QUICFAKE_SIZE - HDR_LEN - sizeof(tag);
++	payload_len = PN_LEN + plen + sizeof(tag);
++
++	// header: long, Initial, v1, random DCID, empty SCID, no token, 2-byte length, 1-byte PN
++	pn = (uint8_t)(rnd64() & 0x0f);
++	out[0] = 0xc0 | (PN_LEN - 1);
++	out[1] = 0; out[2] = 0; out[3] = 0; out[4] = 1;
++	out[5] = DCID_LEN; rnd_fill(out + 6, DCID_LEN);
++	out[6 + DCID_LEN] = 0;			// SCID length
++	out[7 + DCID_LEN] = 0;			// token length
++	out[8 + DCID_LEN] = 0x40 | (uint8_t)(payload_len >> 8);
++	out[9 + DCID_LEN] = (uint8_t)payload_len;
++	out[PN_OFFSET] = pn;
++
++	// payload: CRYPTO(offset 0, ClientHello) + PADDING
++	memset(plain, 0, sizeof(plain));
++	plain[0] = 0x06; plain[1] = 0x00;
++	if (!(hl = build_client_hello(plain + 4, plen - 4, sni)) || hl > 0x3fff) return 0;
++	plain[2] = 0x40 | (uint8_t)(hl >> 8); plain[3] = (uint8_t)hl;
++
++	// keys from DCID
++	if (hkdfExtract(SHA256, salt_v1, sizeof(salt_v1), out + 6, DCID_LEN, prk) ||
++		!hkdf_expand_label(prk, "client in", secret, sizeof(secret)) ||
++		!hkdf_expand_label(secret, "quic key", key, sizeof(key)) ||
++		!hkdf_expand_label(secret, "quic iv", iv, sizeof(iv)) ||
++		!hkdf_expand_label(secret, "quic hp", hp, sizeof(hp)))
++		return 0;
++
++	iv[sizeof(iv) - 1] ^= pn;	// nonce = iv xor packet number
++	if (aes_gcm_crypt(AES_ENCRYPT, out + HDR_LEN, plain, plen, key, sizeof(key), iv, sizeof(iv), out, HDR_LEN, tag, sizeof(tag)))
++		return 0;
++	memcpy(out + HDR_LEN + plen, tag, sizeof(tag));
++
++	// header protection: sample starts 4 bytes after the start of packet number
++	if (aes_setkey(&actx, AES_ENCRYPT, hp, sizeof(hp)) || aes_cipher(&actx, out + PN_OFFSET + 4, mask))
++		return 0;
++	out[0] ^= mask[0] & 0x0f;
++	out[PN_OFFSET] ^= mask[1];
++
++	return QUICFAKE_SIZE;
++}
+diff --git a/tpws/quicfake.h b/tpws/quicfake.h
+new file mode 100644
+index 0000000..729f9e1
+--- /dev/null
++++ b/tpws/quicfake.h
+@@ -0,0 +1,21 @@
++#pragma once
++
++// zapret-termux: fake QUIC Initial packets with a random SNI
++// the packet is a real QUIC v1 Initial (RFC 9000/9001): TLS 1.3 ClientHello in a CRYPTO frame,
++// encrypted with initial keys derived from a random DCID, so DPI can decrypt it and sees the SNI
++
++#include <stdint.h>
++#include <stddef.h>
++#include <stdbool.h>
++
++#define QUICFAKE_SIZE	1250	// chromium pads Initial datagrams to 1250 bytes
++
++// arg: file with domains (one per line, # comments, "*." prefix allowed) or comma separated list.
++// can be called several times, lists are merged
++bool quicfake_sni_add(const char *arg);
++size_t quicfake_sni_count(void);
++// random domain from the list or NULL if the list is empty
++const char *quicfake_sni_random(void);
++// build encrypted QUIC Initial with given SNI into out (at least QUICFAKE_SIZE bytes). returns size or 0
++size_t quicfake_build(uint8_t *out, size_t out_size, const char *sni);
++void quicfake_cleanup(void);
 diff --git a/tpws/tamper.c b/tpws/tamper.c
 index 8e91756..9f3434f 100644
 --- a/tpws/tamper.c
@@ -75,10 +392,18 @@ index 8e91756..9f3434f 100644
  			{
  				if (ctrack->dp->disorder_tls) *split_flags |= SPLIT_FLAG_DISORDER;
 diff --git a/tpws/tpws.c b/tpws/tpws.c
-index 69e6d39..163e7c7 100644
+index 69e6d39..4c7391e 100644
 --- a/tpws/tpws.c
 +++ b/tpws/tpws.c
-@@ -192,6 +192,17 @@ static void exithelp(void)
+@@ -46,6 +46,7 @@
+ #include "helpers.h"
+ #include "gzip.h"
+ #include "pools.h"
++#include "quicfake.h"
+ 
+ 
+ #define MAX_CONFIG_FILE_SIZE 16384
+@@ -192,6 +193,18 @@ static void exithelp(void)
  		" --port=<port>\t\t\t\t; only one port number for all binds is supported\n"
  		" --socks\t\t\t\t; implement socks4/5 proxy instead of transparent proxy\n"
  		" --no-resolve\t\t\t\t; disable socks5 remote dns ability\n"
@@ -93,10 +418,11 @@ index 69e6d39..163e7c7 100644
 +		" --udp-fake-quic=<filename>\t\t; fake payload for QUIC Initial. default = --udp-fake\n"
 +		" --udp-fake-discord=<filename>\t\t; fake payload for Discord voice flows (ip discovery). default = --udp-fake\n"
 +		" --udp-fake-stun=<filename>\t\t; fake payload for STUN flows. default = --udp-fake\n"
++		" --udp-fake-quic-sni=<file|list>\t; QUIC fakes are generated: Initial with a random SNI from file or comma list\n"
  		" --resolver-threads=<int>\t\t; number of resolver worker threads\n"
  		" --local-rcvbuf=<bytes>\n"
  		" --local-sndbuf=<bytes>\n"
-@@ -274,6 +285,7 @@ static void exithelp(void)
+@@ -274,6 +287,7 @@ static void exithelp(void)
  		" --methodeol\t\t\t\t; add end-of-line before method\n"
  		" --unixeol\t\t\t\t; replace 0D0A to 0A\n"
  		" --tlsrec=N|-N|marker+N|marker-N\t; make 2 TLS records. split records at specified position.\n"
@@ -104,7 +430,7 @@ index 69e6d39..163e7c7 100644
  #ifdef __linux__
  		" --mss=<int>\t\t\t\t; set client MSS. forces server to split messages but significantly decreases speed !\n"
  #endif
-@@ -454,6 +466,8 @@ static void SplitDebug(void)
+@@ -454,6 +468,8 @@ static void SplitDebug(void)
  			VPRINT("profile %d multisplit %s %d\n",dp->n,posmarker_name(dp->splits[x].marker),dp->splits[x].pos);
  		if (!PROTO_POS_EMPTY(&dp->tlsrec))
  			VPRINT("profile %d tlsrec %s %d\n",dp->n,posmarker_name(dp->tlsrec.marker),dp->tlsrec.pos);
@@ -113,7 +439,7 @@ index 69e6d39..163e7c7 100644
  	}
  }
  
-@@ -675,6 +689,7 @@ enum opt_indices {
+@@ -675,6 +691,7 @@ enum opt_indices {
  	IDX_UNIXEOL,
  	IDX_TLSREC,
  	IDX_TLSREC_POS,
@@ -121,7 +447,7 @@ index 69e6d39..163e7c7 100644
  	IDX_HOSTLIST,
  	IDX_HOSTLIST_DOMAINS,
  	IDX_HOSTLIST_EXCLUDE,
-@@ -695,6 +710,17 @@ enum opt_indices {
+@@ -695,6 +712,18 @@ enum opt_indices {
  	IDX_REMOTE_SNDBUF,
  	IDX_SOCKS,
  	IDX_NO_RESOLVE,
@@ -136,10 +462,11 @@ index 69e6d39..163e7c7 100644
 +	IDX_UDP_FAKE_QUIC,
 +	IDX_UDP_FAKE_DISCORD,
 +	IDX_UDP_FAKE_STUN,
++	IDX_UDP_FAKE_QUIC_SNI,
  	IDX_RESOLVER_THREADS,
  	IDX_SKIP_NODELAY,
  	IDX_TAMPER_START,
-@@ -768,6 +794,7 @@ static const struct option long_options[] = {
+@@ -768,6 +797,7 @@ static const struct option long_options[] = {
  	[IDX_UNIXEOL] = {"unixeol", no_argument, 0, 0},
  	[IDX_TLSREC] = {"tlsrec", required_argument, 0, 0},
  	[IDX_TLSREC_POS] = {"tlsrec-pos", required_argument, 0, 0},
@@ -147,7 +474,7 @@ index 69e6d39..163e7c7 100644
  	[IDX_HOSTLIST] = {"hostlist", required_argument, 0, 0},
  	[IDX_HOSTLIST_DOMAINS] = {"hostlist-domains", required_argument, 0, 0},
  	[IDX_HOSTLIST_EXCLUDE] = {"hostlist-exclude", required_argument, 0, 0},
-@@ -788,6 +815,17 @@ static const struct option long_options[] = {
+@@ -788,6 +818,18 @@ static const struct option long_options[] = {
  	[IDX_REMOTE_SNDBUF] = {"remote-sndbuf", required_argument, 0, 0},
  	[IDX_SOCKS] = {"socks", no_argument, 0, 0},
  	[IDX_NO_RESOLVE] = {"no-resolve", no_argument, 0, 0},
@@ -162,10 +489,11 @@ index 69e6d39..163e7c7 100644
 +	[IDX_UDP_FAKE_QUIC] = {"udp-fake-quic", required_argument, 0, 0},
 +	[IDX_UDP_FAKE_DISCORD] = {"udp-fake-discord", required_argument, 0, 0},
 +	[IDX_UDP_FAKE_STUN] = {"udp-fake-stun", required_argument, 0, 0},
++	[IDX_UDP_FAKE_QUIC_SNI] = {"udp-fake-quic-sni", required_argument, 0, 0},
  	[IDX_RESOLVER_THREADS] = {"resolver-threads", required_argument, 0, 0},
  	[IDX_SKIP_NODELAY] = {"skip-nodelay", no_argument, 0, 0},
  	[IDX_TAMPER_START] = {"tamper-start", required_argument, 0, 0},
-@@ -832,6 +870,10 @@ void parse_params(int argc, char *argv[])
+@@ -832,6 +874,10 @@ void parse_params(int argc, char *argv[])
  
  	memset(&params, 0, sizeof(params));
  	params.maxconn = DEFAULT_MAX_CONN;
@@ -176,7 +504,7 @@ index 69e6d39..163e7c7 100644
  	params.max_orphan_time = DEFAULT_MAX_ORPHAN_TIME;
  	params.binds_last = -1;
  	params.ipcache_lifetime = IPCACHE_LIFETIME;
-@@ -1148,6 +1190,20 @@ void parse_params(int argc, char *argv[])
+@@ -1148,6 +1194,20 @@ void parse_params(int argc, char *argv[])
  			}
  #endif
  			break;
@@ -197,7 +525,7 @@ index 69e6d39..163e7c7 100644
  		case IDX_OOB_DATA:
  			{
  				size_t l = strlen(optarg);
-@@ -1395,6 +1451,71 @@ void parse_params(int argc, char *argv[])
+@@ -1395,6 +1455,79 @@ void parse_params(int argc, char *argv[])
  		case IDX_NO_RESOLVE:
  			params.no_resolve = true;
  			break;
@@ -266,10 +594,18 @@ index 69e6d39..163e7c7 100644
 +				memcpy(b,tmp,*sz);
 +			}
 +			break;
++		case IDX_UDP_FAKE_QUIC_SNI:
++			if (!quicfake_sni_add(optarg))
++			{
++				DLOG_ERR("could not load quic fake sni list '%s' (no file and no valid domains)\n", optarg);
++				exit_clean(1);
++			}
++			params.udp_desync = true;
++			break;
  		case IDX_RESOLVER_THREADS:
  			params.resolver_threads = atoi(optarg);
  			if (params.resolver_threads<1 || params.resolver_threads>300)
-@@ -1631,6 +1752,15 @@ void parse_params(int argc, char *argv[])
+@@ -1631,6 +1764,15 @@ void parse_params(int argc, char *argv[])
  		params.binds_last=0; // default bind to all
  	}
  	if (!params.resolver_threads) params.resolver_threads = 5 + params.maxconn/50;
@@ -482,10 +818,10 @@ index 9c81550..41a5d13 100644
  	// if we dont disable notifications they will come endlessly until condition becomes false and will eat all cpu time
 diff --git a/tpws/udp.c b/tpws/udp.c
 new file mode 100644
-index 0000000..8651671
+index 0000000..fb9afed
 --- /dev/null
 +++ b/tpws/udp.c
-@@ -0,0 +1,821 @@
+@@ -0,0 +1,835 @@
 +#define _GNU_SOURCE
 +#include <stdio.h>
 +#include <stdlib.h>
@@ -504,6 +840,7 @@ index 0000000..8651671
 +#include "socks.h"
 +#include "pools.h"
 +#include "resolver.h"
++#include "quicfake.h"
 +
 +#define UDP_BUF_SIZE	65536
 +#define S5_UDP_HDR_MAX	(4+1+255+2)
@@ -910,6 +1247,10 @@ index 0000000..8651671
 +	const uint8_t *fake = params.udp_fake;
 +	size_t fake_size = params.udp_fake_size;
 +	int ttl, k;
++	// QUIC fake generated per datagram: Initial with a random SNI from --udp-fake-quic-sni
++	bool gen_quic = proto==UDP_PROTO_QUIC && quicfake_sni_count();
++	uint8_t qbuf[QUICFAKE_SIZE];
++	const char *sni = NULL;
 +
 +	ttl = dst->sa_family==AF_INET6 ? params.udp_fake_ttl6 : params.udp_fake_ttl;
 +	if (!ttl) return 0;
@@ -926,7 +1267,7 @@ index 0000000..8651671
 +			if (params.udp_fake_stun_size) { fake=params.udp_fake_stun; fake_size=params.udp_fake_stun_size; }
 +			break;
 +	}
-+	if (!fake_size) return 0;
++	if (!fake_size && !gen_quic) return 0;
 +
 +	if (!udp_set_ttl(fd, dst->sa_family, ttl))
 +	{
@@ -935,6 +1276,15 @@ index 0000000..8651671
 +	}
 +	for (k=0;k<params.udp_fake_repeats;k++)
 +	{
++		if (gen_quic)
++		{
++			size_t sz;
++			sni = quicfake_sni_random();
++			if ((sz = quicfake_build(qbuf, sizeof(qbuf), sni)))
++			{
++				fake = qbuf; fake_size = sz;
++			}
++		}
 +		if (sendto(fd, fake, fake_size, 0, (struct sockaddr*)dst, sa46len((struct sockaddr*)dst))<0)
 +		{
 +			DLOG_PERROR("udp sendto (fake)");
@@ -949,7 +1299,7 @@ index 0000000..8651671
 +	{
 +		char s[48];
 +		ntop46_port((struct sockaddr*)dst,s,sizeof(s));
-+		DBGPRINT("udp desync : %d fake(s) size=%zu ttl=%d proto=%s -> %s\n", k, fake_size, ttl, udp_proto_name(proto), s);
++		DBGPRINT("udp desync : %d fake(s) size=%zu ttl=%d proto=%s%s%s -> %s\n", k, fake_size, ttl, udp_proto_name(proto), sni ? " sni=" : "", sni ? sni : "", s);
 +	}
 +	return k;
 +}
