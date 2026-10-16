@@ -48,7 +48,7 @@
 
     <string name="section_network">Сеть</string>
     <string name="dns_server">DNS-сервер</string>
-    <string name="dns_server_hint">IP-адрес; DNS-запросы идут через обход</string>
+    <string name="dns_server_hint">IP-адрес или «system» (DNS самой сети, обычно роутера: некоторые провайдеры подменяют ответы 8.8.8.8 для YouTube); DNS-запросы идут через обход</string>
     <string name="dns_server_invalid">Введите IPv4- или IPv6-адрес</string>
     <string name="ipv6">IPv6</string>
     <string name="ipv6_desc">Пропускать через обход и IPv6. Включайте, только если в сети есть IPv6.</string>
@@ -262,4 +262,5 @@
     <string name="collect_saved">Сохранено %1$d доменов в список %2$s</string>
     <string name="collect_blocked">блокировка %1$d×</string>
     <string name="collect_ips">По IP-адресу и UDP (в список хостов не попадают)</string>
+    <string name="dns_system">Системный (роутер)</string>
 </resources>

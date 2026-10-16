@@ -618,7 +618,10 @@ static int on_accept(struct poolhd *pool, struct eval *val, int et)
             if (get_e() == EAGAIN ||
                     get_e() == EINPROGRESS)
                 break;
-            uniperror("accept");
+            // EINVAL is how a stop (shutdown of the listening socket) ends accept: not an error.
+            if (get_e() != EINVAL) {
+                uniperror("accept");
+            }
             pool->brk = 1;
             return -1;
         }

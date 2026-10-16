@@ -27,6 +27,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -271,12 +273,29 @@ fun SettingsScreen(
 
             item { SectionHeader(R.string.section_network) }
             item {
-                val valid = isIpLiteral(dns.trim())
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+                ) {
+                    listOf(Settings.SYSTEM_DNS, "77.88.8.8", "1.1.1.1", "8.8.8.8").forEach { option ->
+                        FilterChip(
+                            selected = dns.trim() == option,
+                            onClick = {
+                                dns = option
+                                settings.dns = option
+                            },
+                            label = { Text(if (option == Settings.SYSTEM_DNS) stringResource(R.string.dns_system) else option) },
+                        )
+                    }
+                }
+            }
+            item {
+                val valid = isIpLiteral(dns.trim()) || dns.trim() == Settings.SYSTEM_DNS
                 OutlinedTextField(
                     value = dns,
                     onValueChange = {
                         dns = it
-                        if (isIpLiteral(it.trim())) settings.dns = it.trim()
+                        if (isIpLiteral(it.trim()) || it.trim() == Settings.SYSTEM_DNS) settings.dns = it.trim()
                     },
                     label = { Text(stringResource(R.string.dns_server)) },
                     supportingText = {

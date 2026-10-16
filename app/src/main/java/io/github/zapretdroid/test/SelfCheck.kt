@@ -19,6 +19,7 @@ import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.core.isIpLiteral
 import io.github.zapretdroid.service.VpnStatus
 import java.io.File
 import java.net.DatagramPacket
@@ -340,22 +341,46 @@ object SelfCheck {
                 CheckStatus.OK to "${a?.hostAddress} in ${System.currentTimeMillis() - start} ms"
             }
         }
+        // Public resolvers side by side: a provider that intercepts DNS answers NXDOMAIN or a
+        // private address for blocked names from some of them.
         val resolved = mutableMapOf<String, InetAddress?>()
-        names.forEach { host ->
-            check(g, "DNS ${settings.dns}: $host") {
-                val start = System.currentTimeMillis()
-                val a = DnsClient.resolve(host, InetAddress.getByName(settings.dns)).firstOrNull()
-                resolved[host] = a
-                val ms = System.currentTimeMillis() - start
-                val sys = system[host]
-                when {
-                    a == null -> CheckStatus.FAIL to "no answer"
-                    a.isAnyLocalAddress || a.isLoopbackAddress || a.isSiteLocalAddress ->
-                        CheckStatus.WARN to "${a.hostAddress} in $ms ms: looks like a DNS block"
-                    sys != null && (sys.isAnyLocalAddress || sys.isLoopbackAddress || sys.isSiteLocalAddress) ->
-                        CheckStatus.WARN to "${a.hostAddress} in $ms ms, but the system DNS answers ${sys.hostAddress}: the provider's DNS blocks it"
-                    else -> CheckStatus.OK to "${a.hostAddress} in $ms ms"
+        val servers = (listOf("8.8.8.8", "1.1.1.1", "77.88.8.8", "9.9.9.9") + listOfNotNull(settings.dns.trim().takeIf { isIpLiteral(it) })).distinct()
+        val clean = mutableListOf<String>()
+        val spoofed = mutableListOf<String>()
+        servers.forEach { server ->
+            check(g, "DNS $server") {
+                val parts = mutableListOf<String>()
+                var bad = false
+                names.forEach { host ->
+                    val start = System.currentTimeMillis()
+                    val answer = runCatching { DnsClient.resolve(host, InetAddress.getByName(server)).firstOrNull() }
+                    val ms = System.currentTimeMillis() - start
+                    answer.onSuccess { a ->
+                        if (a == null || a.isAnyLocalAddress || a.isLoopbackAddress || a.isSiteLocalAddress) {
+                            bad = true
+                            parts += "$host=${a?.hostAddress ?: "empty"} (block?)"
+                        } else {
+                            if (resolved[host] == null) resolved[host] = a
+                            parts += "$host=${a.hostAddress} ${ms}ms"
+                        }
+                    }.onFailure { e ->
+                        bad = true
+                        val nx = e.message?.contains("code 3") == true
+                        parts += "$host: " + if (nx) "NXDOMAIN (the name exists: answer spoofed)" else (e.message ?: e.javaClass.simpleName)
+                    }
                 }
+                if (bad) spoofed += server else clean += server
+                (if (bad) CheckStatus.WARN else CheckStatus.OK) to parts.joinToString("; ")
+            }
+        }
+        check(g, "DNS recommendation") {
+            val current = settings.dns.trim()
+            when {
+                current == Settings.SYSTEM_DNS -> CheckStatus.OK to "the network's own DNS is used (${system.values.firstOrNull()?.let { "it resolves" } ?: "?"})"
+                current in spoofed -> CheckStatus.WARN to "the DNS in settings ($current) gives spoofed answers here: choose " +
+                    (clean.firstOrNull()?.let { "$it or " } ?: "") + "\"system\" in Settings -> DNS"
+                spoofed.isNotEmpty() -> CheckStatus.INFO to "spoofed here: ${spoofed.joinToString()}; clean: ${clean.joinToString().ifEmpty { "none, use \"system\"" }}"
+                else -> CheckStatus.OK to "all checked resolvers answer correctly"
             }
         }
         val strategy = settings.strategyArgs
@@ -382,6 +407,29 @@ object SelfCheck {
                     }
                 }
             }.onFailure { add(g, "engine with $label", CheckStatus.FAIL, it.message ?: it.toString(), 0) }
+        }
+        // UDP with the protocol fakes of the "Discord and calls" preset, whatever is selected.
+        runCatching {
+            TestEngine.with("--proto u ${Strategies.UDP_FAKES}", PORT, fakeDir, listDir) {
+                (TestPlan.stunServers + UdpTarget(UdpTarget.Kind.QUIC, "www.youtube.com", 443)).forEach { t ->
+                    check(g, "${t.label}, UDP fakes of the Discord preset") {
+                        val addr = resolved[t.host] ?: InetAddress.getAllByName(t.host).firstOrNull { it is Inet4Address }
+                        val r = UdpProbe.probe(PORT, t, addr, TIMEOUT_MS)
+                        (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
+                    }
+                }
+            }
+        }.onFailure { add(g, "engine with UDP fakes", CheckStatus.FAIL, it.message ?: it.toString(), 0) }
+        // Discord's avatar CDN: where the 16-20 KB freeze shows up.
+        runCatching {
+            TestEngine.with(strategy, PORT, fakeDir, listDir) {
+                listOf("cdn.discordapp.com/embed/avatars/0.png", "big:discord.com/api/download?platform=linux&format=tar.gz").forEach { spec ->
+                    check(g, "HTTPS $spec, current strategy") {
+                        val r = SiteProbe.probe(PORT, spec, null, TIMEOUT_MS)
+                        (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
+                    }
+                }
+            }
         }
     }
 

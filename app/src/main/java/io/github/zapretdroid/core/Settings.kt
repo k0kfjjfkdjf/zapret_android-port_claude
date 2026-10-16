@@ -119,6 +119,9 @@ class Settings(context: Context) {
 
     companion object {
         const val DEFAULT_DNS = "8.8.8.8"
+
+        /** DNS setting value for the network's own DNS servers (usually the router). */
+        const val SYSTEM_DNS = "system"
         private const val KEY_STRATEGY = "strategy"
         private const val KEY_CUSTOM_ARGS = "custom_args"
         private const val KEY_DNS = "dns"

@@ -269,7 +269,7 @@ object SiteProbe {
                     stalledAt = total
                     break
                 }
-                if (total > 0) throw EOFException("stalled after ${kb(total)}" + if (total in 14 * 1024..24 * 1024) " (the typical 16-20 KB DPI freeze)" else "")
+                if (total > 0) throw EOFException("stalled after ${kb(total)}" + if (total in 14 * 1024..32 * 1024) " (the typical DPI freeze after the first 16-20 KB of the server's data)" else "")
                 throw e
             }
             if (n < 0) {

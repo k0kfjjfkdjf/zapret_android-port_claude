@@ -190,6 +190,13 @@ class ZapretVpnService : VpnService() {
         return false
     }
 
+    /** DNS servers of the network in use before the VPN is up. */
+    private fun systemDnsServers(): List<String> = runCatching {
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val network = manager.activeNetwork ?: return emptyList()
+        manager.getLinkProperties(network)?.dnsServers.orEmpty().mapNotNull { it.hostAddress }
+    }.getOrDefault(emptyList())
+
     private fun buildTunnel(settings: Settings): Builder {
         val builder = Builder()
             .setSession(getString(R.string.app_name))
@@ -201,12 +208,24 @@ class ZapretVpnService : VpnService() {
             builder.addAddress("fd00:10:10::10", 128).addRoute("::", 0)
         }
 
-        val dns = settings.dns.trim().takeIf { isIpLiteral(it) } ?: Settings.DEFAULT_DNS
-        if (dns != settings.dns.trim()) AppLog.w("invalid DNS server '${settings.dns}', using $dns")
-        if (settings.ipv6 || !dns.contains(':')) {
-            builder.addDnsServer(dns)
+        val servers = if (settings.dns.trim() == Settings.SYSTEM_DNS) {
+            // The network's own DNS (usually the router): some providers spoof answers of public
+            // resolvers such as 8.8.8.8 (NXDOMAIN for YouTube) but not of their own.
+            systemDnsServers().ifEmpty {
+                AppLog.w("no system DNS servers, using ${Settings.DEFAULT_DNS}")
+                listOf(Settings.DEFAULT_DNS)
+            }
         } else {
-            AppLog.w("IPv6 DNS server $dns ignored because IPv6 is off")
+            listOf(settings.dns.trim().takeIf { isIpLiteral(it) } ?: Settings.DEFAULT_DNS)
+        }
+        if (servers.first() != settings.dns.trim()) AppLog.i("DNS '${settings.dns}': using ${servers.joinToString()}")
+        val dns = servers.joinToString()
+        servers.forEach { server ->
+            if (settings.ipv6 || !server.contains(':')) {
+                builder.addDnsServer(server)
+            } else {
+                AppLog.w("IPv6 DNS server $server ignored because IPv6 is off")
+            }
         }
 
         val collect = settings.collectApp.takeIf { it.isNotEmpty() && it != packageName && isInstalled(it) }

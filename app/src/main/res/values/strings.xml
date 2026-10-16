@@ -50,7 +50,7 @@
 
     <string name="section_network">Network</string>
     <string name="dns_server">DNS server</string>
-    <string name="dns_server_hint">IP address; DNS queries go through the bypass</string>
+    <string name="dns_server_hint">IP address or "system" (the network\'s own DNS, usually the router: some providers spoof answers of 8.8.8.8 for YouTube); DNS queries go through the bypass</string>
     <string name="dns_server_invalid">Enter an IPv4 or IPv6 address</string>
     <string name="ipv6">IPv6</string>
     <string name="ipv6_desc">Route IPv6 traffic too. Enable only if your network has IPv6.</string>
@@ -264,4 +264,5 @@
     <string name="collect_saved">Saved %1$d domains as host list %2$s</string>
     <string name="collect_blocked">block seen %1$d×</string>
     <string name="collect_ips">By IP address and UDP (cannot go into a host list)</string>
+    <string name="dns_system">System (router)</string>
 </resources>
