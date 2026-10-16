@@ -113,22 +113,26 @@ object SiteProbe {
     @Volatile
     var socketFactory: SSLSocketFactory? = null
 
-    fun probe(proxyPort: Int, host: String, address: InetAddress?, timeoutMs: Int, tls: TlsMode = TlsMode.ANY): ProbeResult {
+    /**
+     * [readLimit] caps how much of the body is read (0: the default for the target); a body that
+     * reaches it counts as complete. 32 KB is enough to get past the 16-20 KB DPI freeze.
+     */
+    fun probe(proxyPort: Int, host: String, address: InetAddress?, timeoutMs: Int, tls: TlsMode = TlsMode.ANY, readLimit: Int = 0): ProbeResult {
         var target = ProbeTarget.parse(host)
         val label = target.spec + if (tls == TlsMode.ANY) "" else " [${tls.label}]"
-        var result = probe(proxyPort, target, label, address, timeoutMs, tls)
+        var result = probe(proxyPort, target, label, address, timeoutMs, tls, readLimit)
         // A download link usually redirects to the file: follow it, like curl -L.
         var hops = 0
         while (target.big && result.ok && result.httpStatus in 301..308 && hops++ < 3) {
             val location = result.location?.takeIf { it.startsWith("https://") } ?: break
             target = ProbeTarget.parse("big:$location")
-            val next = probe(proxyPort, target, label, null, timeoutMs, tls)
+            val next = probe(proxyPort, target, label, null, timeoutMs, tls, readLimit)
             result = next.copy(detail = "${next.detail} (via ${target.host})", totalMs = result.totalMs + next.totalMs)
         }
         return result
     }
 
-    private fun probe(proxyPort: Int, target: ProbeTarget, label: String, address: InetAddress?, timeoutMs: Int, tls: TlsMode): ProbeResult {
+    private fun probe(proxyPort: Int, target: ProbeTarget, label: String, address: InetAddress?, timeoutMs: Int, tls: TlsMode, readLimit: Int): ProbeResult {
         val host = target.host
         val start = System.currentTimeMillis()
         var stage = ProbeStage.PROXY
@@ -172,7 +176,7 @@ object SiteProbe {
                         write("GET ${target.path} HTTP/1.1\r\nHost: $host\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*\r\nConnection: close\r\n\r\n".toByteArray())
                         flush()
                     }
-                    val response = readResponse(ssl.inputStream, start, timeoutMs, if (target.big) BIG_READ else MAX_READ) { first, total ->
+                    val response = readResponse(ssl.inputStream, start, timeoutMs, if (target.big) BIG_READ else if (readLimit > 0) readLimit else MAX_READ) { first, total ->
                         if (first) firstByteMs = elapsed()
                         bytes = total
                         if (first) stage = ProbeStage.BODY

@@ -86,6 +86,7 @@ object StrategyTester {
         report = null
         synchronized(reportLines) { reportLines.clear() }
         progress = 0 to candidates.size + 1
+        TestService.keepAlive(app)
         thread(name = "strategy-test") {
             try {
                 run(app, hosts, candidates, dns, attempts.coerceIn(1, 5), udp, tls.ifEmpty { listOf(TlsMode.ANY) })

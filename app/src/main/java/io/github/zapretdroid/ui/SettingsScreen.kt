@@ -64,6 +64,7 @@ fun SettingsScreen(
     onOpenLogs: () -> Unit,
     onOpenTest: () -> Unit,
     onOpenSelfCheck: () -> Unit,
+    onOpenDeep: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
 ) {
@@ -125,6 +126,13 @@ fun SettingsScreen(
                     headlineContent = { Text(stringResource(R.string.test_open)) },
                     supportingContent = { Text(stringResource(R.string.test_open_desc)) },
                     modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.deep_title)) },
+                    supportingContent = { Text(stringResource(R.string.deep_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
                 )
             }
             item {

@@ -208,4 +208,26 @@
     <string name="test_tls13">1.3</string>
     <string name="test_tls_both">both</string>
     <string name="test_reasons">failures: %1$s (r reset, t timeout, f freeze or short body, c no TCP, m certificate)</string>
+    <string name="deep_title">Deep check</string>
+    <string name="deep_desc">Every strategy against hundreds or thousands of domains from site groups and host lists; results saved as a matrix</string>
+    <string name="deep_intro">A long run without stages: every strategy of the chosen set opens every domain, as many times as set. A domain counts as opened only if every attempt succeeds. Results are saved as they come (matrix.csv: domain × strategy, a reason code per attempt) and can be shared; the multi-strategy is built from them. Runs in the background with a notification; it can take hours.</string>
+    <string name="deep_sources">Domains</string>
+    <string name="deep_no_lists">Host lists also appear here: download them in Settings → Host lists → Lists from repositories.</string>
+    <string name="deep_strategies">Strategies</string>
+    <string name="deep_limit">Max domains (0 all)</string>
+    <string name="deep_timeout">Timeout, s</string>
+    <string name="deep_attempts">Attempts</string>
+    <string name="deep_parallel">Parallel</string>
+    <string name="deep_delay">Pause, ms</string>
+    <string name="deep_estimate">%1$d domains (of %2$d) × %3$d strategies = %4$d requests; at worst about %5$d min, up to ~%6$d MB of traffic</string>
+    <string name="deep_start">Start the deep check</string>
+    <string name="deep_progress">strategy %1$d / %2$d, domain %3$d / %4$d, %5$d min
+%6$s</string>
+    <string name="deep_share">Share the results (zip: matrix, summary, strategies)</string>
+    <string name="deep_baseline">Without bypass: %1$d of %2$d domains open</string>
+    <string name="deep_notification">Strategy %1$d/%2$d, domain %3$d/%4$d</string>
+    <string name="test_notification">Strategy %1$d of %2$d</string>
+    <string name="test_notification_idle">Finishing…</string>
+    <string name="test_notification_title">Strategy test is running</string>
+    <string name="test_notification_channel">Strategy tests</string>
 </resources>
