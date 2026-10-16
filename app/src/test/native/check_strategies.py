@@ -31,14 +31,23 @@ strategies += ["--proto u " + c for c in [
     "--udp-fake 1 --ttl 4", "--udp-fake 3 --ttl 4", "--udp-fake 6 --ttl 4", "--udp-fake 6 --ttl 8", u,
     u.replace("--udp-desync 4", "--udp-desync 4:50"), u.replace("--ttl 4", "--ttl 2"),
     u.replace("--ttl 4", "--ttl 6"), u.replace("--udp-fake 6", "--udp-fake 10")]]
+qs = u.replace("{fake:quic_initial_www_google_com.bin}", "{fake:quic_sni}")
+strategies += ["--proto u " + qs, "--proto u " + qs.replace("--ttl 4", "--ttl 2")]
 
 # ByeByeDPI community strategies, with {sni} as the tester substitutes it.
 community = root + "/src/main/assets/strategies/byebyedpi.list"
 strategies += [l.strip().replace("{sni}", "google.com") for l in open(community)
                if l.strip() and not l.strip().startswith("#")]
 
+# {fake:quic_sni} is a directory of QUIC Initials the app generates; stand in with a copy.
+import os, shutil, tempfile
+quic_sni = tempfile.mkdtemp()
+for i in range(3):
+    shutil.copy(fake + "quic_initial_www_google_com.bin", os.path.join(quic_sni, "%02d.bin" % i))
+
 failed = 0
 for line in strategies:
+    line = line.replace("{fake:quic_sni}", quic_sni)
     args = re.sub(r"\{fake:([^}]+)\}", lambda m: fake + m.group(1), line).split()
     r = subprocess.run([binary, "--parse"] + args, capture_output=True, text=True)
     if r.returncode != 0:

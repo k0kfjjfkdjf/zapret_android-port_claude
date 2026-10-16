@@ -36,3 +36,7 @@ Changes in this fork:
   reply of every UDP flow (time and how many datagrams and fakes went out before it), Discord
   IP discovery repeated without a reply (`RETRY #n after N ms`, the cause of a long
   "Connecting…"), TCP connections that fail (with the error) or take over a second.
+- `--udp-proto-fake <proto>:<directory>` loads every file of the directory and sends them in
+  turn, a different one for every fake. The app fills `quic_sni/` with QUIC v1 Initials built
+  for random allowed SNIs (google, yandex, vk…) with random connection IDs, regenerated at
+  every engine start, as zapret-termux's `--udp-fake-quic-sni` does inside tpws.

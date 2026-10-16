@@ -4,6 +4,8 @@
 #include <getopt.h>
 #include <limits.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "params.h"
 #include "proxy.h"
@@ -323,6 +325,65 @@ char *ftob(const char *str, ssize_t *sl)
     }
     fclose(file);
     return buffer;
+}
+
+
+static int cmp_names(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+
+/*
+ * Loads one fake (file or ":string") or, for a directory, every regular file in it in name
+ * order (at most 64); the fakes are then used in turn. Returns 0 on success.
+ */
+static int load_fakes(const char *path, struct packet **out, int *count)
+{
+    struct stat st;
+    if (*path != ':' && !stat(path, &st) && S_ISDIR(st.st_mode)) {
+        DIR *d = opendir(path);
+        if (!d) {
+            return -1;
+        }
+        char *names[64];
+        int n = 0;
+        struct dirent *e;
+        while ((e = readdir(d)) && n < 64) {
+            if (e->d_name[0] == '.') continue;
+            names[n] = malloc(strlen(path) + strlen(e->d_name) + 2);
+            if (!names[n]) break;
+            sprintf(names[n], "%s/%s", path, e->d_name);
+            if (stat(names[n], &st) || !S_ISREG(st.st_mode)) {
+                free(names[n]);
+                continue;
+            }
+            n++;
+        }
+        closedir(d);
+        qsort(names, n, sizeof(names[0]), cmp_names);
+        *out = calloc(n ? n : 1, sizeof(struct packet));
+        int loaded = 0;
+        for (int i = 0; i < n; i++) {
+            if (*out) {
+                (*out)[loaded].data = ftob(names[i], &(*out)[loaded].size);
+                if ((*out)[loaded].data) loaded++;
+            }
+            free(names[i]);
+        }
+        *count = loaded;
+        return loaded ? 0 : -1;
+    }
+    *out = calloc(1, sizeof(struct packet));
+    if (!*out) {
+        return -1;
+    }
+    (*out)[0].data = ftob(path, &(*out)[0].size);
+    if (!(*out)[0].data) {
+        return -1;
+    }
+    *count = 1;
+    return 0;
 }
 
 
@@ -718,9 +779,12 @@ void clear_params(char *line, char **argv)
         free(dp->parts);
         free(dp->tlsrec);
         free(dp->fake_data.data);
-        free(dp->fake_quic.data);
-        free(dp->fake_discord.data);
-        free(dp->fake_stun.data);
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < dp->proto_fakes_n[i]; j++) {
+                free(dp->proto_fakes[i][j].data);
+            }
+            free(dp->proto_fakes[i]);
+        }
         free(dp->fake_sni_list);
         mem_destroy(dp->hosts);
         mem_destroy(dp->ipset);
@@ -865,21 +929,20 @@ int parse_args(int argc, char **argv)
             break;
             
         case 'G': {
-            // <quic|discord|stun>:<file or :string>
-            struct packet *pkt = 0;
+            // <quic|discord|stun>:<file, directory of files or :string>
+            int pi = -1;
             char *sep = strchr(optarg, ':');
             if (sep) {
                 size_t len = sep - optarg;
-                if (len == 4 && !strncmp(optarg, "quic", 4)) pkt = &dp->fake_quic;
-                else if (len == 7 && !strncmp(optarg, "discord", 7)) pkt = &dp->fake_discord;
-                else if (len == 4 && !strncmp(optarg, "stun", 4)) pkt = &dp->fake_stun;
+                if (len == 4 && !strncmp(optarg, "quic", 4)) pi = 0;
+                else if (len == 7 && !strncmp(optarg, "discord", 7)) pi = 1;
+                else if (len == 4 && !strncmp(optarg, "stun", 4)) pi = 2;
             }
-            if (!pkt || pkt->data) {
+            if (pi < 0 || dp->proto_fakes_n[pi]) {
                 invalid = 1;
                 break;
             }
-            pkt->data = ftob(sep + 1, &pkt->size);
-            if (!pkt->data) {
+            if (load_fakes(sep + 1, &dp->proto_fakes[pi], &dp->proto_fakes_n[pi])) {
                 uniperror("read/parse");
                 invalid = 1;
             }

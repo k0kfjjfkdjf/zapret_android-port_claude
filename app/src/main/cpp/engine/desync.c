@@ -722,35 +722,31 @@ ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst,
         LOG(LOG_S, "bytes: %s (%zd)\n", HEX_STR, n);
     }
     if (dp->udp_fake_count != 0) {
-        struct packet pkt;
-        // A fake of the flow's own protocol looks most like what DPI expects to see.
-        if (proto == UDP_PROTO_QUIC && dp->fake_quic.data) {
-            pkt = dp->fake_quic;
-        }
-        else if (proto == UDP_PROTO_DISCORD && dp->fake_discord.data) {
-            pkt = dp->fake_discord;
-        }
-        else if (proto == UDP_PROTO_STUN && dp->fake_stun.data) {
-            pkt = dp->fake_stun;
-        }
-        else if (dp->fake_data.data) {
-            pkt = dp->fake_data;
-        }
-        else {
-            pkt = fake_udp;
-        }
-        if (dp->fake_offset.m) {
-            if (pkt.size > dp->fake_offset.pos) { 
-                pkt.size -= dp->fake_offset.pos;
-                pkt.data += dp->fake_offset.pos;
-            }
-            else pkt.size = 0;
-        }
         int bttl = dp->ttl ? dp->ttl : DEFAULT_TTL;
         if (setttl(sfd, bttl) < 0) {
             return -1;
         }
+        int pi = proto - 1;
         for (int i = 0; i < dp->udp_fake_count; i++) {
+            struct packet pkt;
+            // A fake of the flow's own protocol looks most like what DPI expects to see; with
+            // several (a directory), every fake is the next one.
+            if (pi >= 0 && pi < 3 && dp->proto_fakes_n[pi] > 0) {
+                pkt = dp->proto_fakes[pi][dp->proto_fakes_next[pi]++ % dp->proto_fakes_n[pi]];
+            }
+            else if (dp->fake_data.data) {
+                pkt = dp->fake_data;
+            }
+            else {
+                pkt = fake_udp;
+            }
+            if (dp->fake_offset.m) {
+                if (pkt.size > dp->fake_offset.pos) { 
+                    pkt.size -= dp->fake_offset.pos;
+                    pkt.data += dp->fake_offset.pos;
+                }
+                else pkt.size = 0;
+            }
             ssize_t len = send(sfd, pkt.data, pkt.size, 0);
             if (len < 0) {
                 uniperror("send");

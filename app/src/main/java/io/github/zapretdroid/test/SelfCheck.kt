@@ -184,6 +184,10 @@ object SelfCheck {
             if (names.isEmpty() || bad.isNotEmpty()) CheckStatus.FAIL to "${names.size} files, empty: $bad"
             else CheckStatus.OK to "${names.size} files in ${fakeDir.path}"
         }
+        check(g, "QUIC fakes with random SNI") {
+            val files = File(fakeDir, FakePayloads.QUIC_SNI_DIR).listFiles().orEmpty().filter { it.length() >= 1200 }
+            if (files.isEmpty()) CheckStatus.FAIL to "none generated" else CheckStatus.OK to "${files.size} QUIC Initials of ${files.first().length()} B"
+        }
         check(g, "host lists") {
             val names = HostLists.names(context)
             CheckStatus.INFO to if (names.isEmpty()) "none" else names.joinToString { "$it (${HostLists.count(context, it)})" }

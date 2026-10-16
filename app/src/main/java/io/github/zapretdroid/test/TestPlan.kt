@@ -60,6 +60,9 @@ object TestPlan {
         Strategies.UDP_FAKES.replace("--ttl 4", "--ttl 2"),
         Strategies.UDP_FAKES.replace("--ttl 4", "--ttl 6"),
         Strategies.UDP_FAKES.replace("--udp-fake 6", "--udp-fake 10"),
+        // A fresh QUIC Initial with a random allowed SNI for every fake (zapret-termux udp-sni).
+        Strategies.UDP_FAKES.replace("{fake:quic_initial_www_google_com.bin}", "{fake:quic_sni}"),
+        Strategies.UDP_FAKES.replace("{fake:quic_initial_www_google_com.bin}", "{fake:quic_sni}").replace("--ttl 4", "--ttl 2"),
     ).map { "--proto u $it" }
 
     private fun readLines(context: Context, asset: String): List<String> =

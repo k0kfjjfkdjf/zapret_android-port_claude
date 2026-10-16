@@ -1,6 +1,7 @@
 package io.github.zapretdroid.core
 
 import android.content.Context
+import io.github.zapretdroid.test.QuicInitial
 import java.io.File
 
 /**
@@ -13,9 +14,28 @@ object FakePayloads {
     fun names(context: Context): List<String> =
         context.assets.list(ASSET_DIR).orEmpty().filter { it.endsWith(".bin") }.sorted()
 
-    /** Copies the payloads into app storage (once per app version) and returns the directory. */
+    /** Directory name of the generated QUIC Initials: {fake:quic_sni} in arguments. */
+    const val QUIC_SNI_DIR = "quic_sni"
+
+    /**
+     * SNIs for the generated QUIC Initial fakes: sites DPI lets through, so that a fake looks like
+     * an allowed connection (the list of zapret-termux's udp-sni).
+     */
+    val QUIC_SNIS = listOf(
+        "www.google.com", "yandex.ru", "ya.ru", "vk.com", "mail.ru", "ok.ru", "dzen.ru", "gosuslugi.ru",
+        "sberbank.ru", "ozon.ru", "wildberries.ru", "avito.ru", "rutube.ru", "kinopoisk.ru",
+    )
+    private const val QUIC_SNI_COUNT = 24
+
+    /**
+     * Copies the payloads into app storage (once per app version) and returns the directory.
+     * Every call also makes a fresh set of QUIC Initials with random SNIs and connection IDs in
+     * quic_sni/, which the engine sends in turn (--udp-proto-fake quic:{fake:quic_sni}).
+     */
     fun install(context: Context): File {
         val dir = File(context.filesDir, ASSET_DIR)
+        runCatching { generateQuic(File(dir, QUIC_SNI_DIR)) }
+            .onFailure { AppLog.w("QUIC fakes with random SNI not generated: ${it.message}") }
         val stamp = File(dir, ".version")
         val version = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime.toString()
         if (stamp.exists() && stamp.readText() == version) return dir
@@ -27,5 +47,13 @@ object FakePayloads {
         }
         stamp.writeText(version)
         return dir
+    }
+
+    fun generateQuic(out: File, count: Int = QUIC_SNI_COUNT) {
+        out.mkdirs()
+        out.listFiles()?.forEach { it.delete() }
+        repeat(count) { i ->
+            File(out, "%02d.bin".format(i)).writeBytes(QuicInitial.build(QUIC_SNIS.random()))
+        }
     }
 }
