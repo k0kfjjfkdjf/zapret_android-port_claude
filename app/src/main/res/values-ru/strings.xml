@@ -174,4 +174,11 @@
     <string name="test_udp">UDP: QUIC и звонки (%1$d)</string>
     <string name="test_udp_hint">Каждый сайт проверяется по QUIC (HTTP/3, UDP 443): отправляется QUIC Initial с именем сайта, любой ответ сервера засчитывается. Также проверяются STUN-серверы, которые используют звонки: %1$s. Без root обход для UDP — это фейковые датаграммы с малым TTL перед настоящими.</string>
     <string name="test_share_report">Поделиться отчётом подбора</string>
+    <string name="selfcheck_title">Проверка функций</string>
+    <string name="selfcheck_desc">Проверяет устройство, движок и сеть и собирает отчёт для отправки разработчику</string>
+    <string name="selfcheck_intro">Около 40 проверок за минуту-две: разрешения, частный DNS, оптимизация батареи, фейковые нагрузки; движок против локальных серверов на самом телефоне (SOCKS5, TCP с разрезом и disorder, UDP с фейками); запуск каждого пресета; затем DNS, HTTPS, QUIC и STUN без обхода и с текущей стратегией. В отчёт входит конец журнала. VPN можно не выключать.</string>
+    <string name="selfcheck_start">Запустить проверку</string>
+    <string name="selfcheck_running">Идёт проверка…</string>
+    <string name="selfcheck_summary">OK %1$d · предупреждений %2$d · ошибок %3$d</string>
+    <string name="selfcheck_share">Поделиться отчётом</string>
 </resources>

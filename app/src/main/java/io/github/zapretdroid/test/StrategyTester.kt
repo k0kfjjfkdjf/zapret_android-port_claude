@@ -5,16 +5,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.zapretdroid.core.AppLog
-import io.github.zapretdroid.core.ArgTemplates
-import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.NativeLog
-import io.github.zapretdroid.core.splitArgs
 import java.net.Inet4Address
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -191,49 +186,29 @@ object StrategyTester {
     ): StrategyResult {
         currentArgs = candidate
         log("--- ${candidate.ifEmpty { "without bypass" }} ---")
-        val args = listOf("ciadpi", "--ip", "127.0.0.1", "--port", PORT.toString(), "--conn-log") +
-            ArgTemplates.resolve(splitArgs(candidate), fakeDir, listDir)
-        val engine = ByeDpi()
-        var exitCode = Int.MIN_VALUE
-        val engineThread = thread(name = "test-engine") { exitCode = engine.startProxy(args.toTypedArray()) }
-        try {
-            if (!awaitListening(engineThread)) {
-                log("engine did not start for '$candidate' (code $exitCode)", warn = true)
-                val names = if (udpTargets.isEmpty()) hosts else udpTargets.map { it.label }
-                return StrategyResult(candidate, names.map {
-                    ProbeResult(it, null, false, "engine did not start (code $exitCode)", ProbeStage.PROXY, totalMs = 0)
-                })
-            }
-            val probes = mutableListOf<ProbeResult>()
-            repeat(attempts) { attempt ->
-                val tasks = if (udpTargets.isEmpty()) {
-                    hosts.map { host -> Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) } }
-                } else {
-                    udpTargets.map { target -> Callable { UdpProbe.probe(PORT, target, addresses[target.host], TIMEOUT_MS) } }
+        val names = if (udpTargets.isEmpty()) hosts else udpTargets.map { it.label }
+        return try {
+            TestEngine.with(candidate, PORT, fakeDir, listDir) {
+                val probes = mutableListOf<ProbeResult>()
+                repeat(attempts) { attempt ->
+                    val tasks = if (udpTargets.isEmpty()) {
+                        hosts.map { host -> Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) } }
+                    } else {
+                        udpTargets.map { target -> Callable { UdpProbe.probe(PORT, target, addresses[target.host], TIMEOUT_MS) } }
+                    }
+                    pool.invokeAll(tasks).map { it.get() }.forEach { probe ->
+                        val prefix = if (attempts > 1) "attempt ${attempt + 1}: " else ""
+                        log(prefix + probe.summary(), warn = !probe.ok)
+                        probes += probe
+                    }
                 }
-                pool.invokeAll(tasks).map { it.get() }.forEach { probe ->
-                    val prefix = if (attempts > 1) "attempt ${attempt + 1}: " else ""
-                    log(prefix + probe.summary(), warn = !probe.ok)
-                    probes += probe
-                }
+                StrategyResult(candidate, probes)
             }
-            return StrategyResult(candidate, probes)
-        } finally {
-            engine.stopProxy()
-            engineThread.join(3000)
+        } catch (e: TestEngine.Failed) {
+            log("engine did not start for '$candidate' (code ${e.exitCode})", warn = true)
+            StrategyResult(candidate, names.map {
+                ProbeResult(it, null, false, e.message!!, ProbeStage.PROXY, totalMs = 0)
+            })
         }
-    }
-
-    private fun awaitListening(engineThread: Thread): Boolean {
-        val deadline = System.currentTimeMillis() + 3000
-        while (System.currentTimeMillis() < deadline && engineThread.isAlive) {
-            try {
-                Socket().use { it.connect(InetSocketAddress("127.0.0.1", PORT), 200) }
-                return true
-            } catch (_: Exception) {
-                Thread.sleep(30)
-            }
-        }
-        return false
     }
 }

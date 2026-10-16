@@ -63,6 +63,7 @@ fun SettingsScreen(
     onOpenApps: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenTest: () -> Unit,
+    onOpenSelfCheck: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
 ) {
@@ -124,6 +125,13 @@ fun SettingsScreen(
                     headlineContent = { Text(stringResource(R.string.test_open)) },
                     supportingContent = { Text(stringResource(R.string.test_open_desc)) },
                     modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.selfcheck_title)) },
+                    supportingContent = { Text(stringResource(R.string.selfcheck_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenSelfCheck),
                 )
             }
             items(Strategies.presets, key = { it.id }) { preset ->

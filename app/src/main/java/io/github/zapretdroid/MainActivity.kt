@@ -39,6 +39,7 @@ import io.github.zapretdroid.ui.HomeScreen
 import io.github.zapretdroid.ui.HostListEditorScreen
 import io.github.zapretdroid.ui.HostListsScreen
 import io.github.zapretdroid.ui.LogsScreen
+import io.github.zapretdroid.ui.SelfCheckScreen
 import io.github.zapretdroid.ui.SettingsScreen
 import io.github.zapretdroid.ui.TestScreen
 import io.github.zapretdroid.ui.theme.ZapretTheme
@@ -80,7 +81,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -162,7 +163,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
-            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST -> Screen.SETTINGS
+            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK -> Screen.SETTINGS
             Screen.LIST_EDIT -> Screen.LISTS
             Screen.LOGS -> logsReturn
             else -> Screen.HOME
@@ -204,6 +205,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenTest = { screen = Screen.TEST },
             onOpenLists = { screen = Screen.LISTS },
             onOpenAutoHost = { screen = Screen.AUTOHOST },
+            onOpenSelfCheck = { screen = Screen.SELFCHECK },
         )
         Screen.APPS -> AppsScreen(
             settings = settings,
@@ -218,6 +220,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             },
         )
         Screen.LIST_EDIT -> HostListEditorScreen(initialName = editingList, onBack = { screen = Screen.LISTS })
+        Screen.SELFCHECK -> SelfCheckScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.AUTOHOST -> AutoHostScreen(enabled = settings.autohost, onBack = { screen = Screen.SETTINGS })
         Screen.TEST -> TestScreen(
             settings = settings,
