@@ -183,4 +183,23 @@
     <string name="selfcheck_running">Checking…</string>
     <string name="selfcheck_summary">OK %1$d · warnings %2$d · failures %3$d</string>
     <string name="selfcheck_share">Share the report</string>
+    <string name="src_flowseal_general">Discord, Cloudflare and other services from the most popular Windows zapret bundle (~60 domains)</string>
+    <string name="src_flowseal_google">YouTube domains from the same bundle (~20)</string>
+    <string name="src_flowseal_exclude">Sites that must not be touched (banks, government services…): for "all except the list"</string>
+    <string name="src_itdog_russia">Services blocked in Russia, curated, updated weekly (~1200)</string>
+    <string name="src_itdog_discord">Discord</string>
+    <string name="src_itdog_youtube">YouTube</string>
+    <string name="src_itdog_telegram">Telegram</string>
+    <string name="src_itdog_meta">Instagram, Facebook, WhatsApp</string>
+    <string name="src_itdog_twitter">X (Twitter)</string>
+    <string name="src_itdog_tiktok">TikTok</string>
+    <string name="src_refilter_community">Re-filter community list: popular blocked sites (~700)</string>
+    <string name="src_refilter_all">Re-filter: all blocked domains from the registry, updated daily (~80 000, for the deep check sample)</string>
+    <string name="src_cfgs_basic">zapret.cfgs basic list (large; not updated since January 2026)</string>
+    <string name="lists_catalog">Lists from repositories</string>
+    <string name="lists_catalog_intro">Lists maintained by the zapret community. A downloaded list remembers its source and can be updated later.</string>
+    <string name="lists_catalog_get">Download</string>
+    <string name="lists_catalog_update">Update</string>
+    <string name="lists_update_all">Update all downloaded lists</string>
+    <string name="lists_updated">Updated %1$d of %2$d lists</string>
 </resources>

@@ -54,7 +54,30 @@ object HostLists {
     fun add(context: Context, name: String, hosts: Collection<String>): Normalized =
         save(context, name, read(context, name) + "\n" + hosts.joinToString("\n"))
 
+    /** The URL a list was downloaded from, kept next to it so it can be updated later. */
+    fun source(context: Context, name: String): String? =
+        File(dir(context), "$name.src").takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }
+
+    /** Downloads a list (plain or gzip) from [url], saves it as [name] and remembers the URL. */
+    fun download(context: Context, name: String, url: String): Normalized {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        conn.instanceFollowRedirects = true
+        try {
+            if (conn.responseCode != 200) throw java.io.IOException("HTTP ${conn.responseCode}")
+            val bytes = conn.inputStream.use { it.readNBytesCompat(MAX_IMPORT) }
+            val result = import(context, name, bytes)
+            File(dir(context), "$name.src").writeText(url)
+            AppLog.i("host list '$name' downloaded from $url: ${result.hosts.size} hosts, ${result.invalid.size} rejected")
+            return result
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     fun delete(context: Context, name: String) {
+        File(dir(context), "$name.src").delete()
         file(context, name).delete()
     }
 
@@ -82,7 +105,8 @@ object HostLists {
         h = h.substringBefore('/').substringBefore('?')
         if (h.startsWith("[")) return null // IPv6 literal
         h = h.substringBefore(':')
-        h = h.removePrefix("*.").trimStart('.').trimEnd('.')
+        // "^domain" is an exact-match marker in some Windows zapret lists (Flowseal).
+        h = h.removePrefix("^").removePrefix("*.").trimStart('.').trimEnd('.')
         if (h.isEmpty()) return null
         val ascii = runCatching { IDN.toASCII(h, IDN.ALLOW_UNASSIGNED) }.getOrNull()?.lowercase() ?: return null
         return ascii.takeIf { it.length <= 253 && DOMAIN.matches(it) }

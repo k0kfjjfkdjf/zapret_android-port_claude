@@ -181,4 +181,23 @@
     <string name="selfcheck_running">Идёт проверка…</string>
     <string name="selfcheck_summary">OK %1$d · предупреждений %2$d · ошибок %3$d</string>
     <string name="selfcheck_share">Поделиться отчётом</string>
+    <string name="src_flowseal_general">Discord, Cloudflare и другие сервисы из самой популярной сборки zapret для Windows (~60 доменов)</string>
+    <string name="src_flowseal_google">Домены YouTube из той же сборки (~20)</string>
+    <string name="src_flowseal_exclude">Сайты, которые нельзя трогать (банки, госуслуги…): для режима «все, кроме списка»</string>
+    <string name="src_itdog_russia">Заблокированные в России сервисы, ручной отбор, обновляется еженедельно (~1200)</string>
+    <string name="src_itdog_discord">Discord</string>
+    <string name="src_itdog_youtube">YouTube</string>
+    <string name="src_itdog_telegram">Telegram</string>
+    <string name="src_itdog_meta">Instagram, Facebook, WhatsApp</string>
+    <string name="src_itdog_twitter">X (Twitter)</string>
+    <string name="src_itdog_tiktok">TikTok</string>
+    <string name="src_refilter_community">Список сообщества Re-filter: популярные заблокированные сайты (~700)</string>
+    <string name="src_refilter_all">Re-filter: все заблокированные домены из реестра, обновляется ежедневно (~80 000, для выборки в глубокой проверке)</string>
+    <string name="src_cfgs_basic">Базовый список zapret.cfgs (большой; не обновлялся с января 2026)</string>
+    <string name="lists_catalog">Списки из репозиториев</string>
+    <string name="lists_catalog_intro">Списки, которые ведёт сообщество zapret. Скачанный список запоминает источник, и его можно обновить позже.</string>
+    <string name="lists_catalog_get">Скачать</string>
+    <string name="lists_catalog_update">Обновить</string>
+    <string name="lists_update_all">Обновить все скачанные списки</string>
+    <string name="lists_updated">Обновлено %1$d из %2$d списков</string>
 </resources>

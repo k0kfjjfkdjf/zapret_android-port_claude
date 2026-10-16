@@ -1,6 +1,7 @@
 package io.github.zapretdroid.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostListsTest {
@@ -22,6 +23,14 @@ class HostListsTest {
             result.hosts,
         )
         assertEquals(listOf("bad_host!", "[::1]"), result.invalid)
+    }
+
+    @Test
+    fun acceptsWindowsZapretAndRouterListFormats() {
+        // Flowseal marks exact matches with "^"; itdoginfo lists whole zones as ".ua".
+        val result = HostLists.normalize("^dns.google\n^cloudflare-dns.com\n.ua\ndiscord.media\n")
+        assertEquals(listOf("dns.google", "cloudflare-dns.com", "ua", "discord.media"), result.hosts)
+        assertTrue(result.invalid.isEmpty())
     }
 
     @Test

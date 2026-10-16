@@ -56,8 +56,8 @@ import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.AutoHost
 import io.github.zapretdroid.core.HostLists
-import java.net.HttpURLConnection
-import java.net.URL
+import io.github.zapretdroid.core.ListSource
+import io.github.zapretdroid.core.ListSources
 import kotlin.concurrent.thread
 
 /** Lists larger than this are not loaded into the text editor. */
@@ -71,6 +71,9 @@ fun HostListsScreen(onBack: () -> Unit, onEdit: (String?) -> Unit) {
     val names = remember(version) { HostLists.names(context) }
     var deleting by remember { mutableStateOf<String?>(null) }
     var downloading by remember { mutableStateOf(false) }
+    var catalog by remember { mutableStateOf(false) }
+    var updating by remember { mutableStateOf(false) }
+    val withSource = remember(version) { names.filter { HostLists.source(context, it) != null } }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -110,8 +113,32 @@ fun HostListsScreen(onBack: () -> Unit, onEdit: (String?) -> Unit) {
                 }
             }
             item {
-                TextButton(onClick = { downloading = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    Text(stringResource(R.string.host_lists_download))
+                Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                    TextButton(onClick = { catalog = true }) { Text(stringResource(R.string.lists_catalog)) }
+                    TextButton(onClick = { downloading = true }) { Text(stringResource(R.string.host_lists_download)) }
+                }
+            }
+            if (withSource.isNotEmpty()) {
+                item {
+                    TextButton(
+                        enabled = !updating,
+                        onClick = {
+                            updating = true
+                            thread(name = "lists-update") {
+                                val ok = withSource.count { name ->
+                                    runCatching { HostLists.download(context, name, HostLists.source(context, name)!!) }
+                                        .onFailure { AppLog.e("host list '$name' update failed", it) }
+                                        .isSuccess
+                                }
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    Toast.makeText(context, context.getString(R.string.lists_updated, ok, withSource.size), Toast.LENGTH_LONG).show()
+                                    updating = false
+                                    version++
+                                }
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    ) { Text(stringResource(R.string.lists_update_all)) }
                 }
             }
             if (names.isEmpty()) {
@@ -158,6 +185,77 @@ fun HostListsScreen(onBack: () -> Unit, onEdit: (String?) -> Unit) {
     if (downloading) {
         DownloadDialog(onDismiss = { downloading = false }, onDone = { version++ })
     }
+    if (catalog) {
+        CatalogDialog(existing = names.toSet(), onDismiss = { catalog = false }, onDone = { version++ })
+    }
+}
+
+@Composable
+private fun CatalogDialog(existing: Set<String>, onDismiss: () -> Unit, onDone: () -> Unit) {
+    val context = LocalContext.current
+    var busy by remember { mutableStateOf<String?>(null) }
+    var have by remember { mutableStateOf(existing) }
+    AlertDialog(
+        onDismissRequest = { if (busy == null) onDismiss() },
+        title = { Text(stringResource(R.string.lists_catalog)) },
+        text = {
+            LazyColumn {
+                item {
+                    Text(
+                        stringResource(R.string.lists_catalog_intro),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                items(ListSources.all, key = { it.name }) { source ->
+                    CatalogRow(
+                        source = source,
+                        downloaded = source.name in have,
+                        busy = busy,
+                        onGet = {
+                            busy = source.name
+                            thread(name = "list-download") {
+                                val message = runCatching {
+                                    val r = HostLists.download(context, source.name, source.url)
+                                    context.getString(R.string.host_lists_saved, r.hosts.size, r.invalid.size)
+                                }.getOrElse {
+                                    AppLog.e("host list download from ${source.url} failed", it)
+                                    context.getString(R.string.host_lists_download_failed, it.message ?: it.toString())
+                                }
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    Toast.makeText(context, "${source.name}: $message", Toast.LENGTH_LONG).show()
+                                    busy = null
+                                    have = HostLists.names(context).toSet()
+                                    onDone()
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(enabled = busy == null, onClick = onDismiss) { Text(stringResource(android.R.string.ok)) } },
+    )
+}
+
+@Composable
+private fun CatalogRow(source: ListSource, downloaded: Boolean, busy: String?, onGet: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(source.name, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+            Text(stringResource(source.description), style = MaterialTheme.typography.bodySmall)
+            Text(source.repo, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(enabled = busy == null, onClick = onGet) {
+            Text(
+                when {
+                    busy == source.name -> "…"
+                    downloaded -> stringResource(R.string.lists_catalog_update)
+                    else -> stringResource(R.string.lists_catalog_get)
+                },
+            )
+        }
+    }
 }
 
 @Composable
@@ -197,13 +295,7 @@ private fun DownloadDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
                     val address = url.trim()
                     thread(name = "list-download") {
                         val message = runCatching {
-                            val conn = URL(address).openConnection() as HttpURLConnection
-                            conn.connectTimeout = 15_000
-                            conn.readTimeout = 30_000
-                            conn.instanceFollowRedirects = true
-                            val bytes = conn.inputStream.use { it.readBytes() }
-                            val result = HostLists.import(context, listName, bytes)
-                            AppLog.i("host list '$listName' downloaded from $address: ${result.hosts.size} hosts, ${result.invalid.size} rejected")
+                            val result = HostLists.download(context, listName, address)
                             context.getString(R.string.host_lists_saved, result.hosts.size, result.invalid.size)
                         }.getOrElse {
                             AppLog.e("host list download from $address failed", it)
