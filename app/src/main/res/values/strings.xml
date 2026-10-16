@@ -230,4 +230,8 @@
     <string name="test_notification_idle">Finishing…</string>
     <string name="test_notification_title">Strategy test is running</string>
     <string name="test_notification_channel">Strategy tests</string>
+    <string name="multi_build">Build a multi-strategy</string>
+    <string name="multi_result">%1$d strategies together should open %2$d of %3$d openable domains (%4$d tested)</string>
+    <string name="multi_lists">Domains of each extra strategy are saved as host lists: %1$s</string>
+    <string name="multi_verify">Re-check</string>
 </resources>

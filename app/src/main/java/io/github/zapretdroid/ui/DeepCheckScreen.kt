@@ -69,6 +69,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
     var delay by rememberSaveable { mutableStateOf("0") }
     var tls by rememberSaveable { mutableStateOf(TlsMode.ANY) }
     val running = DeepCheck.running
+    var multi by remember { mutableStateOf<DeepCheck.Multi?>(null) }
 
     val all = remember(sources) {
         sources.sorted().flatMap { s ->
@@ -223,6 +224,43 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.deep_share)) }
+                }
+                if (DeepCheck.results.size > 1) {
+                    item {
+                        Button(onClick = { multi = DeepCheck.buildMulti(context) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.multi_build))
+                        }
+                    }
+                }
+            }
+            multi?.let { m ->
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(stringResource(R.string.multi_result, m.parts, m.covered, m.openable, m.total), style = MaterialTheme.typography.titleSmall)
+                            Text(m.command, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                            if (m.lists.isNotEmpty()) {
+                                Text(stringResource(R.string.multi_lists, m.lists.joinToString()), style = MaterialTheme.typography.labelSmall)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = {
+                                    AppLog.i("deep check: applied multi-strategy '${m.command}'", source = "test")
+                                    settings.customArgs = m.command
+                                    settings.strategyId = Strategies.CUSTOM
+                                    onApplied()
+                                }) { Text(stringResource(R.string.test_apply)) }
+                                TextButton(
+                                    enabled = !running,
+                                    onClick = {
+                                        DeepCheck.lastConfig?.let { c ->
+                                            DeepCheck.start(context, c.copy(domains = DeepCheck.domains, strategies = listOf(m.command), sources = c.sources + ", multi-strategy re-check"))
+                                        }
+                                        multi = null
+                                    },
+                                ) { Text(stringResource(R.string.multi_verify)) }
+                            }
+                        }
+                    }
                 }
             }
             val total = DeepCheck.domains.size

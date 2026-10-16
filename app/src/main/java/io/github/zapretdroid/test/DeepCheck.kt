@@ -71,6 +71,10 @@ object DeepCheck {
     var runDir by mutableStateOf<File?>(null)
         private set
 
+    /** Settings of the last run, to re-check a multi-strategy under the same conditions. */
+    var lastConfig: DeepConfig? = null
+        private set
+
     @Volatile
     private var cancelled = false
 
@@ -86,6 +90,7 @@ object DeepCheck {
         if (running) return
         val app = context.applicationContext
         running = true
+        lastConfig = config
         cancelled = false
         message = null
         baseline = null
@@ -255,6 +260,33 @@ object DeepCheck {
             out.appendLine("not opened by any strategy (${never.size}), possibly dead or blocked by IP:")
             never.take(500).forEach { out.appendLine("  ${tested[it]}") }
         }
+    }
+
+    /** A built multi-strategy: the command, its host lists and how many domains it should open. */
+    class Multi(val command: String, val lists: List<String>, val covered: Int, val openable: Int, val total: Int, val parts: Int)
+
+    /**
+     * Builds the multi-strategy from the current results and saves the domains of every
+     * supplement as host lists multi_1, multi_2… Null if no strategy opened anything.
+     */
+    fun buildMulti(context: Context): Multi? {
+        val tested = domains
+        val plan = MultiStrategy.plan(results) ?: return null
+        val names = plan.supplements.indices.map { "multi_${it + 1}" }
+        HostLists.names(context).filter { it.startsWith("multi_") }.forEach { HostLists.delete(context, it) }
+        plan.supplements.forEachIndexed { i, sup ->
+            val hosts = mutableListOf<String>()
+            var bit = sup.domains.nextSetBit(0)
+            while (bit >= 0) {
+                hosts += ProbeTarget.parse(tested[bit]).host
+                bit = sup.domains.nextSetBit(bit + 1)
+            }
+            HostLists.save(context, names[i], hosts.distinct().joinToString("\n"))
+        }
+        val command = MultiStrategy.command(plan, names)
+        AppLog.i("deep check: multi-strategy covers ${plan.covered}/${plan.openable} openable of ${tested.size}: $command", source = "test")
+        runDir?.let { File(it, "multi.txt").writeText("$command\ncovers ${plan.covered} of ${plan.openable} openable, ${tested.size} tested\n") }
+        return Multi(command, names, plan.covered, plan.openable, tested.size, plan.supplements.size + 1)
     }
 
     /** Packs the run's files into one zip for sharing. */

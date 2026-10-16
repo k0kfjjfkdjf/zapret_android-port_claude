@@ -228,4 +228,8 @@
     <string name="test_notification_idle">Завершение…</string>
     <string name="test_notification_title">Идёт подбор стратегии</string>
     <string name="test_notification_channel">Подбор стратегий</string>
+    <string name="multi_build">Собрать мультистратегию</string>
+    <string name="multi_result">%1$d стратегий вместе должны открыть %2$d из %3$d открываемых доменов (проверено %4$d)</string>
+    <string name="multi_lists">Домены каждой дополнительной стратегии сохранены как списки хостов: %1$s</string>
+    <string name="multi_verify">Перепроверить</string>
 </resources>
