@@ -32,3 +32,7 @@ Changes in this fork:
   `--udp-desync N[:K]` sends fakes before the first N datagrams of a flow and then before
   every K-th; with `--conn-log`, every UDP flow reports datagrams and bytes both ways, fakes,
   the largest gaps, stalls (inbound gaps over 300 ms) and NO REPLY, every 10 s and on close.
+- Connection timing with `--conn-log`, after the tpws patch's timing diagnostics: the first
+  reply of every UDP flow (time and how many datagrams and fakes went out before it), Discord
+  IP discovery repeated without a reply (`RETRY #n after N ms`, the cause of a long
+  "Connecting…"), TCP connections that fail (with the error) or take over a second.

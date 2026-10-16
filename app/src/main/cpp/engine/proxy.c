@@ -966,6 +966,9 @@ int on_request(struct poolhd *pool, struct eval *val, int et)
 }
 
 
+/* Connections that take longer than this to establish are logged with --conn-log. */
+#define SLOW_CONNECT_MS 1000
+
 int on_connect(struct poolhd *pool, struct eval *val, int et)
 {
     int error = 0;
@@ -977,6 +980,11 @@ int on_connect(struct poolhd *pool, struct eval *val, int et)
             return -1;
         }
         if (!error) error = ECONNREFUSED;
+        if (params.conn_log) {
+            INIT_ADDR_STR((val->addr));
+            fprintf(ENGINE_LOG, "tcp %d: connect to %s FAILED after %lld ms: %s\n",
+                val->fd, ADDR_STR, mono_ms() - val->started_ms, strerror(error));
+        }
         
         switch (error) {
         case ECONNRESET:
@@ -989,6 +997,11 @@ int on_connect(struct poolhd *pool, struct eval *val, int et)
         }
     }
     else {
+        long long took = mono_ms() - val->started_ms;
+        if (params.conn_log && took >= SLOW_CONNECT_MS) {
+            INIT_ADDR_STR((val->addr));
+            fprintf(ENGINE_LOG, "tcp %d: slow connect to %s: %lld ms\n", val->fd, ADDR_STR, took);
+        }
         if (mod_etype(pool, val, POLLIN) ||
                 mod_etype(pool, val->pair, POLLIN)) {
             uniperror("mod_etype");

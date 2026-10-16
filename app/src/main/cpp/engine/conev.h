@@ -114,6 +114,8 @@ struct eval {
     long long udp_out_bytes, udp_in_bytes;
     long long udp_first_ms, udp_last_out, udp_last_in, udp_last_report;
     long long udp_max_out_gap, udp_max_in_gap;
+    long long udp_first_reply_ms; // valid once udp_in_pkts > 0
+    unsigned int udp_retries; // Discord IP discovery repeated without a reply
 };
 
 struct poolhd {

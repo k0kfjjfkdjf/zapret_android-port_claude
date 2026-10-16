@@ -857,11 +857,19 @@ void udp_flow_report(struct eval *remote, const char *state)
 {
     INIT_ADDR_STR((remote->addr));
     long long now = mono_ms();
-    fprintf(ENGINE_LOG, "udp %d %s: -> %s:%d %s, out %u pkts/%lld B, in %u pkts/%lld B, fakes %u, "
+    char reply[32] = "";
+    if (remote->udp_in_pkts) {
+        snprintf(reply, sizeof(reply), ", first reply %lld ms", remote->udp_first_reply_ms);
+    }
+    char retries[32] = "";
+    if (remote->udp_retries) {
+        snprintf(retries, sizeof(retries), ", retries %u", remote->udp_retries);
+    }
+    fprintf(ENGINE_LOG, "udp %d %s: -> %s:%d %s, out %u pkts/%lld B, in %u pkts/%lld B, fakes %u%s%s, "
         "max gap out %lld ms, in %lld ms, stalls %u, %lld s%s\n",
         remote->fd, state, ADDR_STR, ntohs(remote->addr.in.sin_port), udp_proto_name(remote->udp_proto),
         remote->udp_out_pkts, remote->udp_out_bytes, remote->udp_in_pkts, remote->udp_in_bytes,
-        remote->udp_fakes, remote->udp_max_out_gap, remote->udp_max_in_gap, remote->udp_stalls,
+        remote->udp_fakes, reply, retries, remote->udp_max_out_gap, remote->udp_max_in_gap, remote->udp_stalls,
         (now - remote->udp_first_ms) / 1000,
         remote->udp_out_pkts && !remote->udp_in_pkts ? "  <-- NO REPLY" : "");
     remote->udp_last_report = now;
@@ -885,6 +893,14 @@ void udp_stat_in(struct eval *remote, ssize_t n)
         if (gap > UDP_STALL_MS) remote->udp_stalls++;
     }
     remote->udp_last_in = now;
+    if (!remote->udp_in_pkts) {
+        // How long the flow waited for the server: long waits are what makes a call "connect" slowly.
+        remote->udp_first_reply_ms = now - remote->udp_first_ms;
+        if (params.conn_log) {
+            fprintf(ENGINE_LOG, "udp %d: first reply after %lld ms (%u datagrams and %u fakes sent before it)\n",
+                remote->fd, remote->udp_first_reply_ms, remote->udp_out_pkts, remote->udp_fakes);
+        }
+    }
     remote->udp_in_pkts++;
     remote->udp_in_bytes += n;
     udp_maybe_report(remote, now);
@@ -909,6 +925,15 @@ ssize_t udp_hook(struct eval *val,
     else {
         long long gap = now - val->udp_last_out;
         if (gap > val->udp_max_out_gap) val->udp_max_out_gap = gap;
+        // The client repeats IP discovery when it gets no answer: each retry costs the user seconds
+        // of "Connecting...".
+        if (proto == UDP_PROTO_DISCORD && !val->udp_in_pkts) {
+            val->udp_retries++;
+            if (params.conn_log) {
+                fprintf(ENGINE_LOG, "udp %d: discord IP discovery RETRY #%u after %lld ms without a reply\n",
+                    val->fd, val->udp_retries, now - val->udp_first_ms);
+            }
+        }
     }
     val->udp_last_out = now;
     val->udp_out_pkts++;
