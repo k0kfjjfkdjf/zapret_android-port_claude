@@ -234,4 +234,22 @@
     <string name="multi_result">%1$d strategies together should open %2$d of %3$d openable domains (%4$d tested)</string>
     <string name="multi_lists">Domains of each extra strategy are saved as host lists: %1$s</string>
     <string name="multi_verify">Re-check</string>
+    <string name="private_dns_warning">Android\'s Private DNS is on (%1$s): DNS goes over TLS past ZapretDroid. If sites do not open, turn it off in Settings → Network → Private DNS.</string>
+    <string name="private_dns_auto">automatic</string>
+    <string name="strategy_tap_to_change">Tap to change</string>
+    <string name="strategy_pick">Strategy</string>
+    <string name="strategy_pinned">Pinned</string>
+    <string name="strategy_presets">Presets</string>
+    <string name="strategy_history">History: applied from the tester, the deep check and the editor (☆ pins)</string>
+    <string name="notification_paused">Bypass is paused</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="section_backup">Backup</string>
+    <string name="backup_export">Export settings</string>
+    <string name="backup_export_desc">Settings, saved strategies and host lists in one JSON file</string>
+    <string name="backup_import">Import settings</string>
+    <string name="backup_import_desc">From a file made by Export settings; current values are replaced</string>
+    <string name="backup_exported">Settings exported</string>
+    <string name="backup_imported">Imported: %1$d settings, %2$d strategies, %3$d host lists</string>
+    <string name="backup_import_failed">Import failed: %1$s</string>
 </resources>

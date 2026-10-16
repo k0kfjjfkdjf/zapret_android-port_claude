@@ -59,6 +59,7 @@ class ZapretVpnService : VpnService() {
     private var engine: ByeDpi? = null
     private var engineThread: Thread? = null
     private var startedAt = 0L
+    private var paused = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -66,6 +67,13 @@ class ZapretVpnService : VpnService() {
             stop(null)
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_PAUSE) {
+            AppLog.i("pause requested from the notification")
+            paused = true
+            stop(null)
+            return START_NOT_STICKY
+        }
+        getSystemService(NotificationManager::class.java)?.cancel(PAUSED_NOTIFICATION_ID)
         // ACTION_START from the UI or "android.net.VpnService" from always-on VPN.
         startForegroundCompat()
         if (state == VpnState.STOPPED && !used) {
@@ -264,6 +272,7 @@ class ZapretVpnService : VpnService() {
                 state = VpnState.STOPPED
                 VpnStatus.send(this, VpnState.STOPPED, error)
                 stopForeground(STOP_FOREGROUND_REMOVE)
+                if (paused) showPausedNotification()
                 stopSelf()
                 // Native state is per process: exit so the next session starts clean.
                 handler.postDelayed({ Process.killProcess(Process.myPid()) }, EXIT_DELAY_MS)
@@ -335,11 +344,17 @@ class ZapretVpnService : VpnService() {
             Intent(this, ZapretVpnService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val pauseIntent = PendingIntent.getService(
+            this, 4,
+            Intent(this, ZapretVpnService::class.java).setAction(ACTION_PAUSE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.notification_running))
             .setContentIntent(mainActivityIntent())
+            .addAction(0, getString(R.string.action_pause), pauseIntent)
             .addAction(0, getString(R.string.action_stop), stopIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -350,6 +365,27 @@ class ZapretVpnService : VpnService() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+    }
+
+    /** After "Pause": a notification that starts the VPN again with one tap. */
+    private fun showPausedNotification() {
+        val start = Intent(this, ZapretVpnService::class.java).setAction(ACTION_START)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val resume = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PendingIntent.getForegroundService(this, 3, start, flags)
+        } else {
+            PendingIntent.getService(this, 3, start, flags)
+        }
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.notification_paused))
+            .setContentIntent(mainActivityIntent())
+            .addAction(0, getString(R.string.action_resume), resume)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        getSystemService(NotificationManager::class.java)?.notify(PAUSED_NOTIFICATION_ID, notification)
     }
 
     private fun mainActivityIntent(): PendingIntent = PendingIntent.getActivity(
@@ -404,6 +440,8 @@ class ZapretVpnService : VpnService() {
     companion object {
         const val ACTION_START = "io.github.zapretdroid.START"
         const val ACTION_STOP = "io.github.zapretdroid.STOP"
+        const val ACTION_PAUSE = "io.github.zapretdroid.PAUSE"
+        private const val PAUSED_NOTIFICATION_ID = 3
 
         private const val NATIVE_LOG_LIMIT = 8L * 1024 * 1024
         private const val CHANNEL_ID = "vpn"

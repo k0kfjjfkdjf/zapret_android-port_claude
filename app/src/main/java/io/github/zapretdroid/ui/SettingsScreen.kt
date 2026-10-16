@@ -43,6 +43,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.BuildConfig
 import io.github.zapretdroid.R
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import io.github.zapretdroid.core.Backup
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
@@ -51,6 +55,7 @@ import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.isIpLiteral
 
@@ -79,15 +84,18 @@ fun SettingsScreen(
     var hostList by remember { mutableStateOf(settings.hostList) }
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     DisposableEffect(Unit) {
         val argsBefore = settings.customArgs
         val dnsBefore = settings.dns
         onDispose {
-            if (settings.customArgs != argsBefore) AppLog.i("setting customArgs: '$argsBefore' -> '${settings.customArgs}'")
+            if (settings.customArgs != argsBefore) {
+                AppLog.i("setting customArgs: '$argsBefore' -> '${settings.customArgs}'")
+                if (settings.strategyId == Strategies.CUSTOM) SavedStrategies.remember(context, settings.customArgs)
+            }
             if (settings.dns != dnsBefore) AppLog.i("setting dns: '$dnsBefore' -> '${settings.dns}'")
         }
     }
-    val context = LocalContext.current
     val setCustomArgs = { args: String ->
         customArgs = args
         settings.customArgs = args
@@ -95,6 +103,32 @@ fun SettingsScreen(
         settings.strategyId = Strategies.CUSTOM
     }
     val selectedCount = remember { settings.selectedApps.size }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)!!.use { it.write(Backup.export(context).toByteArray()) }
+                AppLog.i("settings exported")
+                Toast.makeText(context, R.string.backup_exported, Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                AppLog.e("settings export failed", it)
+                Toast.makeText(context, it.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val text = context.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                val (n, strategies, lists) = Backup.import(context, text)
+                Toast.makeText(context, context.getString(R.string.backup_imported, n, strategies, lists), Toast.LENGTH_LONG).show()
+                // The screen holds the old values: go back so everything is read again.
+                onBack()
+            }.onFailure {
+                AppLog.e("settings import failed", it)
+                Toast.makeText(context, context.getString(R.string.backup_import_failed, it.message ?: it.toString()), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -337,6 +371,25 @@ fun SettingsScreen(
                     headlineContent = { Text(stringResource(R.string.title_logs)) },
                     supportingContent = { Text(stringResource(R.string.logs_open_desc)) },
                     modifier = Modifier.selectable(selected = false, onClick = onOpenLogs),
+                )
+            }
+
+            item { SectionHeader(R.string.section_backup) }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.backup_export)) },
+                    supportingContent = { Text(stringResource(R.string.backup_export_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = {
+                        val stamp = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+                        exportLauncher.launch("zapretdroid-settings-$stamp.json")
+                    }),
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.backup_import)) },
+                    supportingContent = { Text(stringResource(R.string.backup_import_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }),
                 )
             }
 

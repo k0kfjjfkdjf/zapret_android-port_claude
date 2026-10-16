@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.test.ProbeResult
 import io.github.zapretdroid.test.StrategyResult
@@ -282,6 +283,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                     onApply = {
                         AppLog.i("strategy test: applied '${result.args}' (${result.passed}/${result.probes.size})", source = "test")
                         settings.customArgs = result.args
+                        SavedStrategies.remember(context, result.args, "${result.passed}/${result.probes.size}")
                         settings.strategyId = Strategies.CUSTOM
                         onApplied()
                     },

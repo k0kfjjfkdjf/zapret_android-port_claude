@@ -232,4 +232,22 @@
     <string name="multi_result">%1$d стратегий вместе должны открыть %2$d из %3$d открываемых доменов (проверено %4$d)</string>
     <string name="multi_lists">Домены каждой дополнительной стратегии сохранены как списки хостов: %1$s</string>
     <string name="multi_verify">Перепроверить</string>
+    <string name="private_dns_warning">Включён частный DNS Android (%1$s): запросы DNS идут по TLS мимо ZapretDroid. Если сайты не открываются, выключите его в Настройки → Сеть → Частный DNS.</string>
+    <string name="private_dns_auto">автоматически</string>
+    <string name="strategy_tap_to_change">Нажмите, чтобы сменить</string>
+    <string name="strategy_pick">Стратегия</string>
+    <string name="strategy_pinned">Закреплённые</string>
+    <string name="strategy_presets">Пресеты</string>
+    <string name="strategy_history">История: применённые из подбора, глубокой проверки и редактора (☆ закрепляет)</string>
+    <string name="notification_paused">Обход на паузе</string>
+    <string name="action_pause">Пауза</string>
+    <string name="action_resume">Продолжить</string>
+    <string name="section_backup">Резервная копия</string>
+    <string name="backup_export">Экспорт настроек</string>
+    <string name="backup_export_desc">Настройки, сохранённые стратегии и списки хостов в одном JSON-файле</string>
+    <string name="backup_import">Импорт настроек</string>
+    <string name="backup_import_desc">Из файла, созданного экспортом; текущие значения заменяются</string>
+    <string name="backup_exported">Настройки экспортированы</string>
+    <string name="backup_imported">Импортировано: настроек %1$d, стратегий %2$d, списков хостов %3$d</string>
+    <string name="backup_import_failed">Импорт не удался: %1$s</string>
 </resources>

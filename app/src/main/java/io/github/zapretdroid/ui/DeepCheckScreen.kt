@@ -44,6 +44,7 @@ import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.test.DeepCheck
 import io.github.zapretdroid.test.DeepConfig
@@ -246,6 +247,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
                                 TextButton(onClick = {
                                     AppLog.i("deep check: applied multi-strategy '${m.command}'", source = "test")
                                     settings.customArgs = m.command
+                                    SavedStrategies.remember(context, m.command, "multi ${m.covered}/${m.total}")
                                     settings.strategyId = Strategies.CUSTOM
                                     onApplied()
                                 }) { Text(stringResource(R.string.test_apply)) }
@@ -271,6 +273,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
                 DeepRow(r, total) {
                     AppLog.i("deep check: applied '${r.args}' (${r.count}/$total)", source = "test")
                     settings.customArgs = r.args
+                    SavedStrategies.remember(context, r.args, "deep ${r.count}/$total")
                     settings.strategyId = Strategies.CUSTOM
                     onApplied()
                 }

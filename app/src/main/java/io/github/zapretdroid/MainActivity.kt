@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import io.github.zapretdroid.core.AppLog
+import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.service.VpnState
@@ -161,6 +162,28 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     }
 
     val strategyName = remember(settingsVersion) { strategyTitle(context, settings) }
+    val strategyArgs = remember(settingsVersion) { settings.strategyArgs }
+    val privateDns = remember(settingsVersion, state) { privateDnsServer(context) }
+
+    // A strategy picked on the home screen while connected takes effect after a reconnect.
+    var reconnect by remember { mutableStateOf(false) }
+    LaunchedEffect(state, reconnect) {
+        if (reconnect && state == VpnState.STOPPED) {
+            // The engine process exits after a session; give it time before the next one.
+            kotlinx.coroutines.delay(1000)
+            reconnect = false
+            requestConnect()
+        }
+    }
+    val applyStrategy = { change: () -> Unit ->
+        change()
+        settingsVersion++
+        if (state == VpnState.RUNNING || state == VpnState.STARTING) {
+            AppLog.i("strategy changed while connected: reconnecting")
+            reconnect = true
+            VpnStatus.stop(context)
+        }
+    }
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
@@ -182,6 +205,20 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             txBytes = tx,
             rxBytes = rx,
             strategyName = strategyName,
+            strategyArgs = strategyArgs,
+            privateDns = privateDns,
+            onPickPreset = { id ->
+                AppLog.i("home: picked preset $id")
+                applyStrategy { settings.strategyId = id }
+            },
+            onPickCustom = { args ->
+                AppLog.i("home: picked saved strategy '$args'")
+                applyStrategy {
+                    settings.customArgs = args
+                    settings.strategyId = Strategies.CUSTOM
+                    SavedStrategies.remember(context, args)
+                }
+            },
             onToggle = {
                 AppLog.i("power button: ${if (state == VpnState.STOPPED) "connect" else "disconnect"} (state $state)")
                 when (state) {
@@ -242,6 +279,15 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         )
     }
 }
+
+/** The Private DNS server if Android's Private DNS is active on any network, else null. */
+@Suppress("DEPRECATION")
+private fun privateDnsServer(context: Context): String? = runCatching {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+    val manager = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return null
+    manager.allNetworks.mapNotNull { manager.getLinkProperties(it) }.firstOrNull { it.isPrivateDnsActive }
+        ?.let { it.privateDnsServerName ?: context.getString(R.string.private_dns_auto) }
+}.getOrNull()
 
 private fun strategyTitle(context: Context, settings: Settings): String =
     Strategies.byId(settings.strategyId)?.let { context.getString(it.title) }

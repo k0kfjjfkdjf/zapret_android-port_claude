@@ -41,6 +41,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.R
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import io.github.zapretdroid.core.SavedStrategies
+import io.github.zapretdroid.core.SavedStrategy
+import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.service.VpnState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,11 +64,16 @@ fun HomeScreen(
     txBytes: Long,
     rxBytes: Long,
     strategyName: String,
+    strategyArgs: String,
+    privateDns: String?,
+    onPickPreset: (String) -> Unit,
+    onPickCustom: (String) -> Unit,
     onToggle: () -> Unit,
     onDismissError: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogs: () -> Unit,
 ) {
+    var picking by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -110,8 +128,21 @@ fun HomeScreen(
                 ErrorCard(error, onDismissError, onOpenLogs)
                 Spacer(Modifier.height(12.dp))
             }
+            if (privateDns != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                ) {
+                    Text(
+                        stringResource(R.string.private_dns_warning, privateDns),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             Card(
-                onClick = onOpenSettings,
+                onClick = { picking = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp)) {
@@ -121,8 +152,105 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(strategyName, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        strategyArgs,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        stringResource(R.string.strategy_tap_to_change),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
+        }
+    }
+    if (picking) {
+        StrategyPicker(
+            onDismiss = { picking = false },
+            onPickPreset = { picking = false; onPickPreset(it) },
+            onPickCustom = { picking = false; onPickCustom(it) },
+            onOpenSettings = { picking = false; onOpenSettings() },
+        )
+    }
+}
+
+@Composable
+private fun StrategyPicker(onDismiss: () -> Unit, onPickPreset: (String) -> Unit, onPickCustom: (String) -> Unit, onOpenSettings: () -> Unit) {
+    val context = LocalContext.current
+    var saved by remember { mutableStateOf(SavedStrategies.all(context)) }
+    val refresh = { saved = SavedStrategies.all(context) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.strategy_pick)) },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val pinned = saved.filter { it.pinned }
+                val history = saved.filter { !it.pinned }
+                if (pinned.isNotEmpty()) {
+                    item { PickerHeader(R.string.strategy_pinned) }
+                    items(pinned, key = { "p:" + it.args }) { s ->
+                        SavedRow(s, onPick = { onPickCustom(s.args) }, onPin = {
+                            SavedStrategies.update(context, s.args) { it.copy(pinned = false) }
+                            refresh()
+                        }, onDelete = null)
+                    }
+                }
+                item { PickerHeader(R.string.strategy_presets) }
+                items(Strategies.presets, key = { "s:" + it.id }) { preset ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onPickPreset(preset.id) }
+                            .padding(vertical = 6.dp),
+                    ) {
+                        Text(stringResource(preset.title), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(preset.description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (history.isNotEmpty()) {
+                    item { PickerHeader(R.string.strategy_history) }
+                    items(history, key = { "h:" + it.args }) { s ->
+                        SavedRow(s, onPick = { onPickCustom(s.args) }, onPin = {
+                            SavedStrategies.update(context, s.args) { it.copy(pinned = true) }
+                            refresh()
+                        }, onDelete = {
+                            SavedStrategies.update(context, s.args) { null }
+                            refresh()
+                        })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.title_settings)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+    )
+}
+
+@Composable
+private fun PickerHeader(title: Int) {
+    Text(stringResource(title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+}
+
+@Composable
+private fun SavedRow(s: SavedStrategy, onPick: () -> Unit, onPin: () -> Unit, onDelete: (() -> Unit)?) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            Modifier
+                .weight(1f)
+                .clickable(onClick = onPick)
+                .padding(vertical = 6.dp),
+        ) {
+            if (s.name.isNotEmpty()) Text(s.name, style = MaterialTheme.typography.bodyMedium)
+            Text(s.args, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        }
+        TextButton(onClick = onPin) { Text(if (s.pinned) "★" else "☆") }
+        if (onDelete != null) {
+            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.host_lists_delete)) }
         }
     }
 }
