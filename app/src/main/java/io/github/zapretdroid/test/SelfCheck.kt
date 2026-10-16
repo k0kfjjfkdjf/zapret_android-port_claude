@@ -425,7 +425,10 @@ object SelfCheck {
             TestEngine.with(strategy, PORT, fakeDir, listDir) {
                 listOf("cdn.discordapp.com/embed/avatars/0.png", "big:discord.com/api/download?platform=linux&format=tar.gz").forEach { spec ->
                     check(g, "HTTPS $spec, current strategy") {
-                        val r = SiteProbe.probe(PORT, spec, null, TIMEOUT_MS)
+                        // Resolve here: a name left to the engine is resolved inside its event loop.
+                        val host = ProbeTarget.parse(spec).host
+                        val addr = runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
+                        val r = SiteProbe.probe(PORT, spec, addr, TIMEOUT_MS)
                         (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
                     }
                 }
