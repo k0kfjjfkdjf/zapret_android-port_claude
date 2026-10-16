@@ -16,6 +16,7 @@ object TestPlan {
         "youtube" to R.string.sites_youtube,
         "googlevideo" to R.string.sites_googlevideo,
         "discord" to R.string.sites_discord,
+        "discord-full" to R.string.sites_discord_full,
         "social" to R.string.sites_social,
         "telegram" to R.string.sites_telegram,
         "cloudflare" to R.string.sites_cloudflare,
@@ -46,7 +47,7 @@ object TestPlan {
 
     /** UDP targets for a site list: QUIC (HTTP/3) on port 443 of every site, plus STUN servers. */
     fun udpTargets(hosts: List<String>): List<UdpTarget> =
-        hosts.map { UdpTarget(UdpTarget.Kind.QUIC, it, 443) } + stunServers
+        hosts.map { ProbeTarget.parse(it).host }.distinct().map { UdpTarget(UdpTarget.Kind.QUIC, it, 443) } + stunServers
 
     /** UDP strategies: fake datagrams with a low TTL before the real ones, then more of them. */
     val udp = listOf(

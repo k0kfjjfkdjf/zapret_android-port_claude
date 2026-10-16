@@ -24,6 +24,7 @@ class SiteProbeTest {
         lateinit var tls: SSLServerSocket
         lateinit var socks: ServerSocket
         var mode = "ok"
+        @Volatile var lastRequestLine = ""
         @Volatile var serverError: Throwable? = null
 
         @JvmStatic @BeforeClass fun setUp() {
@@ -71,13 +72,22 @@ class SiteProbeTest {
             val i = s.getInputStream(); val o = s.getOutputStream()
             val req = StringBuilder()
             while (!req.endsWith("\r\n\r\n")) { val b = i.read(); if (b < 0) return@runCatching; req.append(b.toChar()) }
+            lastRequestLine = req.lineSequence().first()
             val body = ByteArray(50_000) { 'a'.code.toByte() }
+            val big = ByteArray(300_000) { 'b'.code.toByte() }
             when (mode) {
                 "ok" -> { o.write("HTTP/1.1 200 OK\r\nContent-Length: 50000\r\n\r\n".toByteArray()); o.write(body) }
                 "404" -> { o.write("HTTP/1.1 404 Not Found\r\nContent-Length: 5\r\n\r\nnope!".toByteArray()) }
                 "truncated" -> { o.write("HTTP/1.1 200 OK\r\nContent-Length: 50000\r\n\r\n".toByteArray()); o.write(body, 0, 10_000) }
                 "stall" -> { o.write("HTTP/1.1 200 OK\r\nContent-Length: 50000\r\n\r\n".toByteArray()); o.write(body, 0, 16_000); o.flush(); Thread.sleep(4000) }
                 "blockpage" -> { o.write("HTTP/1.1 302 Found\r\nLocation: http://warning.rt.ru/?id=1\r\nContent-Length: 0\r\n\r\n".toByteArray()) }
+                // 80 KB of a 300 KB body, then silence: past the 64 KB mark.
+                "slow" -> { o.write("HTTP/1.1 200 OK\r\nContent-Length: 300000\r\n\r\n".toByteArray()); o.write(big, 0, 80_000); o.flush(); Thread.sleep(4000) }
+                "bigredirect" -> {
+                    if (lastRequestLine.startsWith("GET /download")) { o.write("HTTP/1.1 302 Found\r\nLocation: https://localhost/file.tar.gz\r\nContent-Length: 0\r\n\r\n".toByteArray()) }
+                    else { o.write("HTTP/1.1 200 OK\r\nContent-Length: 300000\r\n\r\n".toByteArray()); o.write(big) }
+                }
+                "big" -> { o.write("HTTP/1.1 200 OK\r\nContent-Length: 300000\r\n\r\n".toByteArray()); o.write(big) }
                 "redirect" -> { o.write("HTTP/1.1 301 Moved\r\nLocation: https://www.localhost/\r\nContent-Length: 0\r\n\r\n".toByteArray()) }
             }
             o.flush(); s.close()
@@ -91,10 +101,10 @@ class SiteProbeTest {
         }
     }
 
-    private fun run(m: String, host: String = "localhost") = run {
+    private fun run(m: String, host: String = "localhost", tls: TlsMode = TlsMode.ANY) = run {
         mode = m
         serverError = null
-        SiteProbe.probe(socks.localPort, host, InetAddress.getLoopbackAddress(), 1500)
+        SiteProbe.probe(socks.localPort, host, InetAddress.getLoopbackAddress(), 1500, tls)
     }.let { result ->
         // Failure messages carry the server side's exception, if any.
         val server = serverError?.let { " | server: ${it.javaClass.simpleName}: ${it.message}" }.orEmpty()
@@ -109,5 +119,33 @@ class SiteProbeTest {
     @Test fun blockPage() { val r = run("blockpage"); assertTrue(r.summary(), !r.ok); assertTrue(r.detail, r.detail.contains("block page")) }
     @Test fun sameSiteRedirectIsFine() { val r = run("redirect"); assertTrue(r.summary(), r.ok); assertEquals(r.summary(), 301, r.httpStatus) }
     @Test fun wrongCertificate() { val r = run("ok", host = "example.com"); assertTrue(r.summary(), !r.ok); assertTrue(r.detail, r.stage == ProbeStage.TLS || r.stage == ProbeStage.CERTIFICATE) }
+    @Test fun slowButPastTheFreezeMarkIsOpened() {
+        val r = run("slow")
+        assertTrue(r.summary(), r.ok)
+        assertTrue(r.detail, r.detail.contains("stalled after"))
+        assertEquals('+', r.reason)
+    }
+    @Test fun bigDownloadNeedsEnoughData() {
+        val r = run("slow", host = "big:localhost/api/download")
+        assertTrue(r.summary(), !r.ok)
+        assertEquals(r.summary(), 'f', r.reason)
+        assertEquals("GET /api/download HTTP/1.1", lastRequestLine)
+        assertEquals("big:localhost/api/download", r.host)
+    }
+    @Test fun bigDownloadOk() { val r = run("big", host = "big:localhost/file"); assertTrue(r.summary(), r.ok); assertTrue(r.summary(), r.bytes >= SiteProbe.BIG_MIN) }
+    @Test fun bigDownloadFollowsRedirect() {
+        val r = run("bigredirect", host = "big:localhost/download?platform=linux")
+        assertTrue(r.summary(), r.ok)
+        assertEquals("GET /file.tar.gz HTTP/1.1", lastRequestLine)
+        assertTrue(r.summary(), r.bytes >= SiteProbe.BIG_MIN)
+    }
+    @Test fun freezeAt16KbIsNamed() { val r = run("stall"); assertEquals('f', r.reason); assertTrue(r.detail, r.detail.contains("16-20 KB")) }
+    @Test fun forcedTls12() { val r = run("ok", tls = TlsMode.TLS12); assertTrue(r.summary(), r.ok); assertEquals("TLSv1.2", r.tlsVersion); assertEquals("localhost [tls1.2]", r.host) }
+    @Test fun targetParsing() {
+        assertEquals(ProbeTarget("discord.com", "/api/v9/gateway"), ProbeTarget.parse("https://Discord.com/api/v9/gateway"))
+        assertEquals(ProbeTarget("x.org", "/", big = true), ProbeTarget.parse("big:x.org"))
+        assertEquals("big:x.org/a", ProbeTarget.parse("big:x.org/a").spec)
+    }
+    @Test fun refusedReason() { assertEquals('c', run("refused").reason) }
     @Test fun connectRefused() { val r = run("refused"); assertTrue(r.summary(), !r.ok); assertEquals(r.summary(), ProbeStage.CONNECT, r.stage) }
 }

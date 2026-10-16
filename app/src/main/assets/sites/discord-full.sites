@@ -1,0 +1,13 @@
+# What the Discord client opens, as in zapret-termux's blockcheck discord-full:
+# site, web app, API, gateway, avatar CDN, media proxy, updates and a large download.
+discord.com
+discord.com/app
+discord.com/api/v9/gateway
+gateway.discord.gg
+cdn.discordapp.com/embed/avatars/0.png
+media.discordapp.net
+discordapp.com
+discord.gg
+updates.discord.com
+dl.discordapp.net
+big:discord.com/api/download?platform=linux&format=tar.gz

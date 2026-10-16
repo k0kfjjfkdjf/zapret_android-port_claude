@@ -24,6 +24,11 @@ data class StrategyResult(val args: String, val probes: List<ProbeResult>) {
 
     /** Per site: its attempts, in the order the sites were given. */
     val bySite: Map<String, List<ProbeResult>> get() = probes.groupBy { it.host }
+
+    /** Failure reasons and how often they happened, e.g. "r×3 f×1". */
+    val reasons: String
+        get() = probes.filter { !it.ok }.groupingBy { it.reason }.eachCount().entries
+            .sortedByDescending { it.value }.joinToString(" ") { "${it.key}×${it.value}" }
 }
 
 /**
@@ -62,7 +67,15 @@ object StrategyTester {
     private const val PARALLEL = 8
     private const val TEST_LOG_LIMIT = 8L * 1024 * 1024
 
-    fun start(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int = 1, udp: Boolean = false) {
+    fun start(
+        context: Context,
+        hosts: List<String>,
+        candidates: List<String>,
+        dns: String,
+        attempts: Int = 1,
+        udp: Boolean = false,
+        tls: List<TlsMode> = listOf(TlsMode.ANY),
+    ) {
         if (running) return
         val app = context.applicationContext
         running = true
@@ -75,7 +88,7 @@ object StrategyTester {
         progress = 0 to candidates.size + 1
         thread(name = "strategy-test") {
             try {
-                run(app, hosts, candidates, dns, attempts.coerceIn(1, 5), udp)
+                run(app, hosts, candidates, dns, attempts.coerceIn(1, 5), udp, tls.ifEmpty { listOf(TlsMode.ANY) })
             } catch (e: Throwable) {
                 AppLog.e("strategy test failed", e, source = "test")
                 note("ERROR: $e")
@@ -104,29 +117,30 @@ object StrategyTester {
         synchronized(reportLines) { reportLines += "$stamp $line" }
     }
 
-    private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int, udp: Boolean) {
+    private fun run(context: Context, hosts: List<String>, candidates: List<String>, dns: String, attempts: Int, udp: Boolean, tls: List<TlsMode>) {
         val udpTargets = if (udp) TestPlan.udpTargets(hosts) else emptyList()
         log(
             "${if (udp) "UDP" else "TCP"} mode, ${candidates.size} strategies, $attempts attempt(s) per target, " +
                 "timeout ${TIMEOUT_MS} ms, DNS $dns, " +
-                if (udp) "targets: ${udpTargets.joinToString { it.label }}" else "sites: ${hosts.joinToString()}",
+                if (udp) "targets: ${udpTargets.joinToString { it.label }}" else "TLS: ${tls.joinToString { it.name }}, sites: ${hosts.joinToString()}",
         )
+        log("reason codes: + opened, r reset, t timeout, f freeze or short body, c no TCP, m wrong certificate, p test proxy, x other")
         // Engine output of the test proxy (connections, groups, detected blocks) goes to the journal too.
         if (NativeLog.start(AppLog.file.absolutePath, TEST_LOG_LIMIT) == null) {
             AppLog.w("strategy test: engine output is not captured", source = "test")
         }
-        val addresses = resolveAll((hosts + udpTargets.map { it.host }).distinct(), dns)
+        val addresses = resolveAll((hosts.map { ProbeTarget.parse(it).host } + udpTargets.map { it.host }).distinct(), dns)
         val fakeDir = FakePayloads.install(context)
         val listDir = HostLists.dir(context)
         val pool = Executors.newFixedThreadPool(PARALLEL)
         try {
-            val base = test("", hosts, udpTargets, addresses, attempts, pool, fakeDir, listDir)
+            val base = test("", hosts, tls, udpTargets, addresses, attempts, pool, fakeDir, listDir)
             baseline = base
             log("result without bypass ${base.passed}/${base.probes.size}")
             progress = 1 to candidates.size + 1
             for ((index, candidate) in candidates.withIndex()) {
                 if (cancelled) break
-                val result = test(candidate, hosts, udpTargets, addresses, attempts, pool, fakeDir, listDir)
+                val result = test(candidate, hosts, tls, udpTargets, addresses, attempts, pool, fakeDir, listDir)
                 results = (results + result).sortedWith(compareByDescending<StrategyResult> { it.passed }.thenBy { it.averageMillis })
                 log("result ${result.passed}/${result.probes.size} for $candidate")
                 progress = index + 2 to candidates.size + 1
@@ -145,12 +159,15 @@ object StrategyTester {
                 out.appendLine("ZapretDroid strategy test, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
                 out.appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                 out.appendLine()
+                out.appendLine("Codes per target, one per attempt: + opened, r reset, t timeout, f freeze or short body,")
+                out.appendLine("c no TCP connection, m wrong certificate, p test proxy, x other")
+                out.appendLine()
                 out.appendLine("== Ranking ==")
-                baseline?.let { out.appendLine("without bypass: ${it.passed}/${it.probes.size}") }
-                results.forEach { r ->
-                    out.appendLine("${r.passed}/${r.probes.size}, avg ${r.averageMillis} ms: ${r.args}")
+                (listOfNotNull(baseline) + results).forEach { r ->
+                    out.appendLine("${r.passed}/${r.probes.size}, avg ${r.averageMillis} ms" +
+                        (if (r.reasons.isEmpty()) "" else ", ${r.reasons}") + ": ${r.args.ifEmpty { "(without bypass)" }}")
                     r.bySite.forEach { (target, probes) ->
-                        out.appendLine("    $target: " + probes.joinToString(" ") { if (it.ok) "ok" else it.stage.name.lowercase() })
+                        out.appendLine("    ${probes.joinToString("") { it.reason.toString() }}  $target")
                     }
                 }
                 out.appendLine()
@@ -177,6 +194,7 @@ object StrategyTester {
     private fun test(
         candidate: String,
         hosts: List<String>,
+        tls: List<TlsMode>,
         udpTargets: List<UdpTarget>,
         addresses: Map<String, InetAddress?>,
         attempts: Int,
@@ -186,13 +204,16 @@ object StrategyTester {
     ): StrategyResult {
         currentArgs = candidate
         log("--- ${candidate.ifEmpty { "without bypass" }} ---")
-        val names = if (udpTargets.isEmpty()) hosts else udpTargets.map { it.label }
+        val names = if (udpTargets.isEmpty()) hosts.flatMap { h -> tls.map { h + if (it == TlsMode.ANY) "" else " [${it.label}]" } } else udpTargets.map { it.label }
         return try {
             TestEngine.with(candidate, PORT, fakeDir, listDir) {
                 val probes = mutableListOf<ProbeResult>()
                 repeat(attempts) { attempt ->
                     val tasks = if (udpTargets.isEmpty()) {
-                        hosts.map { host -> Callable { SiteProbe.probe(PORT, host, addresses[host], TIMEOUT_MS) } }
+                        hosts.flatMap { spec ->
+                            val address = addresses[ProbeTarget.parse(spec).host]
+                            tls.map { mode -> Callable { SiteProbe.probe(PORT, spec, address, TIMEOUT_MS, mode) } }
+                        }
                     } else {
                         udpTargets.map { target -> Callable { UdpProbe.probe(PORT, target, addresses[target.host], TIMEOUT_MS) } }
                     }

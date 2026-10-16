@@ -51,6 +51,7 @@ import io.github.zapretdroid.test.StrategyResult
 import io.github.zapretdroid.test.StrategySet
 import io.github.zapretdroid.test.StrategyTester
 import io.github.zapretdroid.test.TestPlan
+import io.github.zapretdroid.test.TlsMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,11 +65,12 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
     var set by rememberSaveable { mutableStateOf(StrategySet.QUICK) }
     var sni by rememberSaveable { mutableStateOf(TestPlan.DEFAULT_SNI) }
     var attempts by rememberSaveable { mutableIntStateOf(1) }
+    var tlsChoice by rememberSaveable { mutableIntStateOf(0) } // 0 auto, 1 TLS 1.2, 2 TLS 1.3, 3 both
     val siteGroups = remember { TestPlan.siteGroups(context) }
     val candidates = remember(set, sni) { TestPlan.strategies(context, set, sni) }
     val hosts = remember(groups, custom) {
         (siteGroups.filter { it.id in groups }.flatMap { it.hosts } +
-            custom.split(Regex("[\\s,]+")).map { it.trim().removePrefix("https://").substringBefore('/') }.filter { it.contains('.') })
+            custom.split(Regex("[\\s,]+")).map { it.trim().removePrefix("https://") }.filter { it.contains('.') })
             .distinct()
     }
     val running = StrategyTester.running
@@ -180,6 +182,23 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                     }
                 }
             }
+            if (set != StrategySet.UDP) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("TLS", style = MaterialTheme.typography.bodyMedium)
+                        listOf(R.string.test_tls_auto, R.string.test_tls12, R.string.test_tls13, R.string.test_tls_both).forEachIndexed { i, label ->
+                            // TLS 1.3 can be forced only on Android 10+.
+                            val available = i == 0 || i == 1 || android.os.Build.VERSION.SDK_INT >= 29
+                            FilterChip(
+                                selected = tlsChoice == i,
+                                enabled = !running && available,
+                                onClick = { tlsChoice = i },
+                                label = { Text(stringResource(label)) },
+                            )
+                        }
+                    }
+                }
+            }
             item {
                 if (running) {
                     OutlinedButton(onClick = { StrategyTester.cancel() }, modifier = Modifier.fillMaxWidth()) {
@@ -187,11 +206,19 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                     }
                 } else {
                     Button(
-                        onClick = { StrategyTester.start(context, hosts, candidates, settings.dns, attempts, udp = set == StrategySet.UDP) },
+                        onClick = {
+                            val tls = when (tlsChoice) {
+                                1 -> listOf(TlsMode.TLS12)
+                                2 -> listOf(TlsMode.TLS13)
+                                3 -> listOf(TlsMode.TLS12, TlsMode.TLS13)
+                                else -> listOf(TlsMode.ANY)
+                            }
+                            StrategyTester.start(context, hosts, candidates, settings.dns, attempts, udp = set == StrategySet.UDP, tls = tls)
+                        },
                         enabled = hosts.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        val targets = if (set == StrategySet.UDP) TestPlan.udpTargets(hosts).size else hosts.size
+                        val targets = if (set == StrategySet.UDP) TestPlan.udpTargets(hosts).size else hosts.size * (if (tlsChoice == 3) 2 else 1)
                         Text(stringResource(R.string.test_start, targets, candidates.size))
                     }
                 }
@@ -305,6 +332,13 @@ private fun ResultCard(result: StrategyResult, onApply: () -> Unit) {
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(result.args, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                    if (result.reasons.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.test_reasons, result.reasons),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 if (result.passed > 0) {
                     TextButton(onClick = onApply) { Text(stringResource(R.string.test_apply)) }
