@@ -301,6 +301,9 @@ private fun DeepRow(r: DeepResult, total: Int, onApply: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(12.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("${r.count} / $total · s${r.index}", style = MaterialTheme.typography.titleSmall)
+                if (r.respondedCount != r.count) {
+                    Text(stringResource(R.string.test_responded, r.respondedCount, total), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Text(r.args, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                 val reasons = r.reasons.entries.sortedByDescending { it.value }.joinToString(" ") { "${it.key}×${it.value}" }
                 if (reasons.isNotEmpty()) Text(reasons, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

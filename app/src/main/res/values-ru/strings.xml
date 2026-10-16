@@ -266,4 +266,6 @@
     <string name="test_tls_chrome">как Chrome</string>
     <string name="test_tls_android_chrome">Android + Chrome</string>
     <string name="test_ours">Функции ZapretDroid (%1$d)</string>
+    <string name="test_responded">сервер ответил на %1$d из %2$d (так считает ByeByeDPI); остальные замерли или оборвались</string>
+    <string name="test_probe_responded">◐ %1$s: ответил, но не загрузился: %2$s · %3$s</string>
 </resources>

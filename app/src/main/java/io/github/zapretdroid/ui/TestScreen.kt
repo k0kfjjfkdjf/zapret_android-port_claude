@@ -301,15 +301,19 @@ private fun ProbeLine(probe: ProbeResult) {
         probe.tlsMs?.let { stringResource(R.string.test_tls_ms, it) },
         stringResource(R.string.test_total_ms, probe.totalMs),
     ).joinToString(" · ")
-    val text = if (probe.ok) {
-        stringResource(R.string.test_probe_ok, probe.host, probe.detail, timings)
-    } else {
-        stringResource(R.string.test_probe_fail, probe.host, probe.detail, timings)
+    val text = when {
+        probe.ok -> stringResource(R.string.test_probe_ok, probe.host, probe.detail, timings)
+        probe.responded -> stringResource(R.string.test_probe_responded, probe.host, probe.detail, timings)
+        else -> stringResource(R.string.test_probe_fail, probe.host, probe.detail, timings)
     }
     Text(
         text + (probe.address?.let { " · $it" } ?: ""),
         style = MaterialTheme.typography.bodySmall,
-        color = if (probe.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+        color = when {
+            probe.ok -> MaterialTheme.colorScheme.onSurface
+            probe.responded -> MaterialTheme.colorScheme.tertiary
+            else -> MaterialTheme.colorScheme.error
+        },
     )
 }
 
@@ -336,6 +340,13 @@ private fun ResultCard(result: StrategyResult, onApply: () -> Unit) {
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(result.args, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                    if (result.responded != result.passed) {
+                        Text(
+                            stringResource(R.string.test_responded, result.responded, total),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (result.reasons.isNotEmpty()) {
                         Text(
                             stringResource(R.string.test_reasons, result.reasons),

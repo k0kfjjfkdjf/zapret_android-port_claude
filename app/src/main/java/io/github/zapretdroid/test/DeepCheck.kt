@@ -36,8 +36,11 @@ data class DeepConfig(
 )
 
 /** One strategy's outcome: which domains it opened on every attempt, and why the others failed. */
-class DeepResult(val index: Int, val args: String, val opened: BitSet, val reasons: Map<Char, Int>) {
+class DeepResult(val index: Int, val args: String, val opened: BitSet, val reasons: Map<Char, Int>, val responded: BitSet = BitSet()) {
     val count get() = opened.cardinality()
+
+    /** Domains whose server answered on every attempt, loaded or not (ByeByeDPI's count). */
+    val respondedCount get() = responded.cardinality()
 }
 
 /**
@@ -152,7 +155,7 @@ object DeepCheck {
                     val result = test(index, args, tested, addresses, config, pool, fakeDir, listDir, out)
                     if (index == 0) baseline = result
                     else results = (results + result).sortedByDescending { it.count }
-                    AppLog.i("deep check: ${result.count}/${tested.size} opened by ${args.ifEmpty { "(without bypass)" }}" +
+                    AppLog.i("deep check: ${result.count}/${tested.size} loaded, ${result.respondedCount} answered, by ${args.ifEmpty { "(without bypass)" }}" +
                         if (result.reasons.isEmpty()) "" else ", failures ${result.reasons}", source = "test")
                     strategyProgress = index + 1 to all.size
                 }
@@ -167,18 +170,21 @@ object DeepCheck {
 
     private fun resolve(config: DeepConfig, pool: java.util.concurrent.ExecutorService): Map<String, InetAddress?> {
         currentArgs = "DNS"
-        val server = runCatching { InetAddress.getByName(config.dns) }.getOrNull()
         val done = AtomicInteger()
+        val spoofed = AtomicInteger()
         val tasks = config.domains.map { spec ->
             Callable {
-                val host = ProbeTarget.parse(spec).host
-                val a = server?.let { s -> runCatching { DnsClient.resolve(host, s).firstOrNull() }.getOrNull() }
-                    ?: runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
+                val answer = TestDns.resolve(ProbeTarget.parse(spec).host, config.dns)
+                if (answer.note?.contains("spoofed") == true && spoofed.incrementAndGet() <= 5) {
+                    AppLog.w("deep check: ${answer.note}", source = "test")
+                }
                 domainProgress = done.incrementAndGet() to config.domains.size
-                spec to a
+                spec to answer.address
             }
         }
-        return pool.invokeAll(tasks).associate { it.get() }
+        return pool.invokeAll(tasks).associate { it.get() }.also {
+            if (spoofed.get() > 0) AppLog.w("deep check: DNS ${config.dns} spoofed ${spoofed.get()} names; system answers used", source = "test")
+        }
     }
 
     private fun test(
@@ -197,18 +203,22 @@ object DeepCheck {
         val opened = BitSet(tested.size)
         val reasons = HashMap<Char, Int>()
         val codes = arrayOfNulls<String>(tested.size)
+        val answered = BooleanArray(tested.size)
         try {
             TestEngine.with(args, PORT, fakeDir, listDir, connLog = false) {
                 val done = AtomicInteger()
                 val tasks = tested.withIndex().map { (i, spec) ->
                     Callable {
                         val code = StringBuilder()
+                        var allAnswered = true
                         repeat(config.attempts) {
                             if (cancelled) return@repeat
                             val r = SiteProbe.probe(PORT, spec, addresses[spec], config.timeoutMs, config.tls, READ_LIMIT)
                             code.append(r.reason)
+                            if (!r.responded) allAnswered = false
                         }
                         codes[i] = code.toString()
+                        answered[i] = allAnswered && code.length == config.attempts
                         domainProgress = done.incrementAndGet() to tested.size
                     }
                 }
@@ -218,14 +228,16 @@ object DeepCheck {
             AppLog.w("deep check: engine did not start for '$args' (code ${e.exitCode})", source = "test")
             codes.fill("p".repeat(config.attempts))
         }
+        val responded = BitSet(tested.size)
         tested.indices.forEach { i ->
+            if (answered[i]) responded.set(i)
             val code = codes[i].orEmpty()
             if (code.length == config.attempts && code.all { it == '+' }) opened.set(i)
             code.filter { it != '+' }.forEach { c -> reasons[c] = (reasons[c] ?: 0) + 1 }
             out.write("$index\t${tested[i]}\t$code\n")
         }
         out.flush()
-        return DeepResult(index, args, opened, reasons)
+        return DeepResult(index, args, opened, reasons, responded)
     }
 
     /** Domain rows, strategy columns (s0 is without bypass), cells are reason codes per attempt. */
@@ -250,9 +262,10 @@ object DeepCheck {
         File(dir, "summary.txt").bufferedWriter().use { out ->
             out.appendLine("ZapretDroid deep check, ${tested.size} domains" + if (cancelled) " (stopped early)" else "")
             out.appendLine("codes: + opened, r reset, t timeout, f freeze or short body, c no TCP, m wrong certificate, p test proxy, x other")
-            base?.let { out.appendLine("without bypass: ${it.count}/${tested.size}, failures ${it.reasons}") }
+            out.appendLine("loaded: data arrived on every attempt without a freeze; answered: the server replied on every attempt (as ByeByeDPI counts)")
+            base?.let { out.appendLine("without bypass: loaded ${it.count}/${tested.size}, answered ${it.respondedCount}, failures ${it.reasons}") }
             out.appendLine()
-            ranked.forEach { r -> out.appendLine("s${r.index}: ${r.count}/${tested.size}, failures ${r.reasons}: ${r.args}") }
+            ranked.forEach { r -> out.appendLine("s${r.index}: loaded ${r.count}/${tested.size}, answered ${r.respondedCount}, failures ${r.reasons}: ${r.args}") }
             val union = BitSet().apply { ranked.forEach { or(it.opened) } }
             val never = tested.indices.filter { !union.get(it) && base?.opened?.get(it) != true }
             out.appendLine()

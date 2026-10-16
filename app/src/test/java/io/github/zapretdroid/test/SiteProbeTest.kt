@@ -153,6 +153,16 @@ class SiteProbeTest {
         assertTrue(r.summary(), r.ok)
         assertEquals("localhost [chrome]", r.host)
     }
+    @Test fun respondedButNotLoaded() {
+        val frozen = run("stall")
+        assertTrue(frozen.summary(), frozen.responded && !frozen.ok)
+        assertTrue(frozen.summary(), frozen.summary().contains("RESPONDED"))
+        val refused = run("refused")
+        assertTrue(refused.summary(), !refused.responded)
+        val blocked = run("blockpage")
+        assertTrue(blocked.summary(), !blocked.responded)
+        assertTrue(run("ok").responded)
+    }
     @Test fun refusedReason() { assertEquals('c', run("refused").reason) }
     @Test fun connectRefused() { val r = run("refused"); assertTrue(r.summary(), !r.ok); assertEquals(r.summary(), ProbeStage.CONNECT, r.stage) }
 }

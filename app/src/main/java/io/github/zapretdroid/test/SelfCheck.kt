@@ -373,6 +373,10 @@ object SelfCheck {
                 (if (bad) CheckStatus.WARN else CheckStatus.OK) to parts.joinToString("; ")
             }
         }
+        check(g, "DNS as the tester resolves (${settings.dns})") {
+            val notes = names.mapNotNull { TestDns.resolve(it, settings.dns).note }
+            if (notes.isEmpty()) CheckStatus.OK to "no spoofing seen" else CheckStatus.WARN to notes.joinToString("; ")
+        }
         check(g, "DNS recommendation") {
             val current = settings.dns.trim()
             when {
@@ -389,16 +393,21 @@ object SelfCheck {
             runCatching {
                 TestEngine.with(args, PORT, fakeDir, listDir) {
                     names.forEach { host ->
+                        var https: ProbeResult? = null
+                        var chrome: ProbeResult? = null
                         check(g, "HTTPS $host, $label") {
                             val r = SiteProbe.probe(PORT, host, resolved[host] ?: system[host], TIMEOUT_MS)
+                            https = r
                             (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
                         }
                         // The same handshake with Chrome's ~1.8 KB ClientHello: browsers and apps
                         // built on Chromium can pass where Android's 517-byte one does not.
                         check(g, "TLS as Chrome $host, $label") {
                             val r = SiteProbe.probe(PORT, host, resolved[host] ?: system[host], TIMEOUT_MS, TlsMode.CHROME)
+                            chrome = r
                             (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
                         }
+                        check(g, "verdict $host, $label") { verdict(https, chrome) }
                     }
                     check(g, "QUIC www.youtube.com, $label") {
                         val r = UdpProbe.probe(PORT, UdpTarget(UdpTarget.Kind.QUIC, "www.youtube.com", 443), resolved["www.youtube.com"] ?: system["www.youtube.com"], TIMEOUT_MS)
@@ -441,6 +450,27 @@ object SelfCheck {
             }
         }
     }
+
+    /**
+     * What the three signs together mean: answered (ByeByeDPI's "available"), loaded
+     * (zapret-termux's), and the handshake with a Chrome-sized ClientHello.
+     */
+    private fun verdict(https: ProbeResult?, chrome: ProbeResult?): Pair<CheckStatus, String> {
+        val answered = https?.responded == true
+        val loaded = https?.ok == true
+        val asChrome = chrome?.ok == true
+        val signs = "answered ${mark(answered)}, loaded ${mark(loaded)}, as Chrome ${mark(asChrome)}"
+        return when {
+            loaded -> CheckStatus.OK to "$signs: works"
+            answered -> CheckStatus.WARN to "$signs: the server answers but the data freezes (${https?.bytes?.div(1024)} KB): " +
+                "the IP-based freeze after 16-20 KB; splitting does not help, try fakes with an allowed SNI (ZapretDroid features set)"
+            asChrome -> CheckStatus.WARN to "$signs: blocked by SNI only for small ClientHellos: browsers and Chromium apps pass, " +
+                "Android apps (OkHttp) do not; look for a strategy in the tester with TLS \"Android + Chrome\""
+            else -> CheckStatus.WARN to "$signs: the TLS handshake does not get through: another strategy is needed"
+        }
+    }
+
+    private fun mark(b: Boolean) = if (b) "✓" else "✗"
 
     // --- report -----------------------------------------------------------------------------
 

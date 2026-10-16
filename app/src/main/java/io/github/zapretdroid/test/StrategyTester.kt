@@ -20,6 +20,9 @@ import kotlin.concurrent.thread
 data class StrategyResult(val args: String, val probes: List<ProbeResult>) {
     /** Successful requests out of all (sites x attempts). */
     val passed get() = probes.count { it.ok }
+
+    /** Requests the server answered, loaded or not (ByeByeDPI counts these as successes). */
+    val responded get() = probes.count { it.responded }
     val averageMillis get() = probes.filter { it.ok }.map { it.totalMs }.average().takeIf { !it.isNaN() }?.toLong() ?: 0L
 
     /** Per site: its attempts, in the order the sites were given. */
@@ -137,13 +140,13 @@ object StrategyTester {
         try {
             val base = test("", hosts, tls, udpTargets, addresses, attempts, pool, fakeDir, listDir)
             baseline = base
-            log("result without bypass ${base.passed}/${base.probes.size}")
+            log("result without bypass: loaded ${base.passed}/${base.probes.size}, responded ${base.responded}/${base.probes.size}")
             progress = 1 to candidates.size + 1
             for ((index, candidate) in candidates.withIndex()) {
                 if (cancelled) break
                 val result = test(candidate, hosts, tls, udpTargets, addresses, attempts, pool, fakeDir, listDir)
-                results = (results + result).sortedWith(compareByDescending<StrategyResult> { it.passed }.thenBy { it.averageMillis })
-                log("result ${result.passed}/${result.probes.size} for $candidate")
+                results = (results + result).sortedWith(compareByDescending<StrategyResult> { it.passed }.thenByDescending { it.responded }.thenBy { it.averageMillis })
+                log("result: loaded ${result.passed}/${result.probes.size}, responded ${result.responded}/${result.probes.size} for $candidate")
                 progress = index + 2 to candidates.size + 1
             }
         } finally {
@@ -160,12 +163,13 @@ object StrategyTester {
                 out.appendLine("ZapretDroid strategy test, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
                 out.appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                 out.appendLine()
+                out.appendLine("loaded: the data arrived without a freeze; responded: the server answered at all (as ByeByeDPI counts).")
                 out.appendLine("Codes per target, one per attempt: + opened, r reset, t timeout, f freeze or short body,")
                 out.appendLine("c no TCP connection, m wrong certificate, p test proxy, x other")
                 out.appendLine()
                 out.appendLine("== Ranking ==")
                 (listOfNotNull(baseline) + results).forEach { r ->
-                    out.appendLine("${r.passed}/${r.probes.size}, avg ${r.averageMillis} ms" +
+                    out.appendLine("loaded ${r.passed}/${r.probes.size}, responded ${r.responded}/${r.probes.size}, avg ${r.averageMillis} ms" +
                         (if (r.reasons.isEmpty()) "" else ", ${r.reasons}") + ": ${r.args.ifEmpty { "(without bypass)" }}")
                     r.bySite.forEach { (target, probes) ->
                         out.appendLine("    ${probes.joinToString("") { it.reason.toString() }}  $target")
@@ -181,14 +185,10 @@ object StrategyTester {
 
     /** Resolves names through the configured DNS server; falls back to the system resolver. */
     private fun resolveAll(hosts: List<String>, dns: String): Map<String, InetAddress?> {
-        val server = runCatching { InetAddress.getByName(dns) }.getOrNull()
         return hosts.associateWith { host ->
-            val viaServer = server?.let { s ->
-                runCatching { DnsClient.resolve(host, s).firstOrNull() }
-                    .onFailure { log("DNS $dns failed for $host: ${it.message}", warn = true) }
-                    .getOrNull()
-            }
-            viaServer ?: runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
+            val answer = TestDns.resolve(host, dns)
+            answer.note?.let { log(it, warn = true) }
+            answer.address
         }.also { map -> log("resolved " + map.entries.joinToString { "${it.key}=${it.value?.hostAddress}" }) }
     }
 

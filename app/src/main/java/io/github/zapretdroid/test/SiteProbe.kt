@@ -63,6 +63,13 @@ data class ProbeResult(
     val tlsVersion: String? = null,
 ) {
     /**
+     * The server answered (ByeByeDPI's notion of "available"): an HTTP response started, or a
+     * ServerHello came back. [ok] is stricter (zapret-termux's notion): the data arrived without a
+     * freeze. "Responded but not loaded" is the IP-based freeze after the first 16-20 KB.
+     */
+    val responded: Boolean get() = ok || stage == ProbeStage.BODY
+
+    /**
      * Short reason code, as in zapret-termux's blockcheck: + opened, r reset, t timeout,
      * f freeze or truncated body, c no TCP connection, m wrong certificate, p test proxy, x other.
      */
@@ -82,7 +89,13 @@ data class ProbeResult(
     fun summary(): String = buildString {
         append(host)
         if (address != null) append(" (").append(address).append(')')
-        append(if (ok) ": OK, " else ": FAIL at ${stage.name.lowercase()}, ").append(detail)
+        append(
+            when {
+                ok -> ": OK, "
+                responded -> ": RESPONDED, not loaded, "
+                else -> ": FAIL at ${stage.name.lowercase()}, "
+            },
+        ).append(detail)
         location?.let { append(" -> ").append(it) }
         val timings = listOfNotNull(
             connectMs?.let { "connect $it ms" },

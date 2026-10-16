@@ -268,4 +268,6 @@
     <string name="test_tls_chrome">as Chrome</string>
     <string name="test_tls_android_chrome">Android + Chrome</string>
     <string name="test_ours">ZapretDroid features (%1$d)</string>
+    <string name="test_responded">server answered %1$d of %2$d (ByeByeDPI would count these); the rest froze or was cut</string>
+    <string name="test_probe_responded">◐ %1$s: answered but did not load: %2$s · %3$s</string>
 </resources>
