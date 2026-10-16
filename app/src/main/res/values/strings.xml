@@ -252,4 +252,16 @@
     <string name="backup_exported">Settings exported</string>
     <string name="backup_imported">Imported: %1$d settings, %2$d strategies, %3$d host lists</string>
     <string name="backup_import_failed">Import failed: %1$s</string>
+    <string name="collect_title">Collect an app\'s domains</string>
+    <string name="collect_desc">Route only one app through the VPN while you use it and save every domain it opens as a host list</string>
+    <string name="collect_intro">Pick an app: the VPN restarts and routes only that app, with the current strategy. Open the app and use the parts that do not work (calls, avatars, videos), then come back and tap Stop. Every host it connected to is listed, hosts where the engine saw a block are marked, and the domains can be saved as a host list for a strategy of their own (deep check, multi-strategy, host scope).</string>
+    <string name="collect_pick">Find an app</string>
+    <string name="collect_starting">Starting the collection for %1$s…</string>
+    <string name="collect_running">Collecting the domains of %1$s: use the app, then come back</string>
+    <string name="collect_stop">Stop and show the domains</string>
+    <string name="collect_result">%1$d domains, %2$d connections by IP, %3$d UDP flows</string>
+    <string name="collect_save">Save the domains as a host list</string>
+    <string name="collect_saved">Saved %1$d domains as host list %2$s</string>
+    <string name="collect_blocked">block seen %1$d×</string>
+    <string name="collect_ips">By IP address and UDP (cannot go into a host list)</string>
 </resources>

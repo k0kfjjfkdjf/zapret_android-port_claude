@@ -45,7 +45,7 @@ import io.github.zapretdroid.core.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private data class AppEntry(val packageName: String, val label: String)
+internal data class AppEntry(val packageName: String, val label: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,7 +126,7 @@ private fun AppIcon(packageManager: PackageManager, packageName: String) {
 }
 
 /** Apps with a launcher entry; visible to us through the <queries> element in the manifest. */
-private fun loadApps(packageManager: PackageManager, ownPackage: String): List<AppEntry> {
+internal fun loadApps(packageManager: PackageManager, ownPackage: String): List<AppEntry> {
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     @Suppress("DEPRECATION")
     return packageManager.queryIntentActivities(intent, 0)

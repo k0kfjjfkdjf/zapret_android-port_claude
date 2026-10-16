@@ -36,6 +36,7 @@ import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppsScreen
 import io.github.zapretdroid.ui.AutoHostScreen
+import io.github.zapretdroid.ui.CollectScreen
 import io.github.zapretdroid.ui.DeepCheckScreen
 import io.github.zapretdroid.ui.HomeScreen
 import io.github.zapretdroid.ui.HostListEditorScreen
@@ -83,7 +84,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -187,7 +188,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
-            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP -> Screen.SETTINGS
+            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP, Screen.COLLECT -> Screen.SETTINGS
             Screen.LIST_EDIT -> Screen.LISTS
             Screen.LOGS -> logsReturn
             else -> Screen.HOME
@@ -245,6 +246,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenAutoHost = { screen = Screen.AUTOHOST },
             onOpenSelfCheck = { screen = Screen.SELFCHECK },
             onOpenDeep = { screen = Screen.DEEP },
+            onOpenCollect = { screen = Screen.COLLECT },
         )
         Screen.APPS -> AppsScreen(
             settings = settings,
@@ -261,6 +263,20 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         Screen.LIST_EDIT -> HostListEditorScreen(initialName = editingList, onBack = { screen = Screen.LISTS })
         Screen.SELFCHECK -> SelfCheckScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.AUTOHOST -> AutoHostScreen(enabled = settings.autohost, onBack = { screen = Screen.SETTINGS })
+        Screen.COLLECT -> CollectScreen(
+            settings = settings,
+            state = state,
+            onStart = {
+                if (state == VpnState.STOPPED) {
+                    requestConnect()
+                } else {
+                    reconnect = true
+                    VpnStatus.stop(context)
+                }
+            },
+            onStop = { VpnStatus.stop(context) },
+            onBack = { screen = Screen.SETTINGS },
+        )
         Screen.DEEP -> DeepCheckScreen(
             settings = settings,
             onBack = { screen = Screen.SETTINGS },

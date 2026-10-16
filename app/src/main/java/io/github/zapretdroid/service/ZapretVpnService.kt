@@ -19,6 +19,7 @@ import android.os.Process
 import androidx.core.app.NotificationCompat
 import io.github.zapretdroid.MainActivity
 import io.github.zapretdroid.R
+import io.github.zapretdroid.core.AppCollect
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
@@ -208,6 +209,14 @@ class ZapretVpnService : VpnService() {
             AppLog.w("IPv6 DNS server $dns ignored because IPv6 is off")
         }
 
+        val collect = settings.collectApp.takeIf { it.isNotEmpty() && it != packageName && isInstalled(it) }
+        if (collect != null) {
+            // Collecting an app's domains: route only that app, every connection in the log is its.
+            AppLog.i("${AppCollect.MARKER}$collect")
+            builder.addAllowedApplication(collect)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
+            return builder
+        }
         val selected = settings.selectedApps.filter { it != packageName && isInstalled(it) }
         val mode = settings.appFilterMode
         if (mode != AppFilterMode.ALL) {

@@ -94,6 +94,14 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putBoolean(KEY_AUTOHOST, value) }
         }
 
+    /** Package whose domains are being collected: while set, the VPN routes only that app. */
+    var collectApp: String
+        get() = prefs.getString(KEY_COLLECT_APP, "")!!
+        set(value) {
+            logChange("collectApp", collectApp, value)
+            prefs.edit(commit = true) { putString(KEY_COLLECT_APP, value) }
+        }
+
     /** Every settings change goes to the journal, whichever screen made it. */
     private fun logChange(name: String, old: Any, new: Any) {
         if (old == new) return
@@ -121,5 +129,6 @@ class Settings(context: Context) {
         private const val KEY_HOST_SCOPE = "host_scope"
         private const val KEY_HOST_LIST = "host_list"
         private const val KEY_AUTOHOST = "autohost"
+        private const val KEY_COLLECT_APP = "collect_app"
     }
 }

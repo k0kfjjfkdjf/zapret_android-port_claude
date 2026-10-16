@@ -70,6 +70,7 @@ fun SettingsScreen(
     onOpenTest: () -> Unit,
     onOpenSelfCheck: () -> Unit,
     onOpenDeep: () -> Unit,
+    onOpenCollect: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
 ) {
@@ -221,6 +222,13 @@ fun SettingsScreen(
             }
 
             item { SectionHeader(R.string.section_hosts) }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.collect_title)) },
+                    supportingContent = { Text(stringResource(R.string.collect_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenCollect),
+                )
+            }
             items(HostScope.entries.toList(), key = { "scope_" + it.name }) { scope ->
                 RadioRow(
                     title = stringResource(

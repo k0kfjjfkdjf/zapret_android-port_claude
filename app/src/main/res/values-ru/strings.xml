@@ -250,4 +250,16 @@
     <string name="backup_exported">Настройки экспортированы</string>
     <string name="backup_imported">Импортировано: настроек %1$d, стратегий %2$d, списков хостов %3$d</string>
     <string name="backup_import_failed">Импорт не удался: %1$s</string>
+    <string name="collect_title">Сбор доменов приложения</string>
+    <string name="collect_desc">Пропустить через VPN только одно приложение, пока вы им пользуетесь, и сохранить все его домены в список хостов</string>
+    <string name="collect_intro">Выберите приложение: VPN перезапустится и будет пропускать только его, с текущей стратегией. Откройте приложение и используйте то, что не работает (звонки, аватарки, видео), потом вернитесь и нажмите «Остановить». Появятся все хосты, к которым оно подключалось; хосты, где движок увидел блокировку, отмечены; домены можно сохранить списком для отдельной стратегии (глубокая проверка, мультистратегия, область применения).</string>
+    <string name="collect_pick">Найти приложение</string>
+    <string name="collect_starting">Запуск сбора для %1$s…</string>
+    <string name="collect_running">Идёт сбор доменов %1$s: пользуйтесь приложением, потом вернитесь</string>
+    <string name="collect_stop">Остановить и показать домены</string>
+    <string name="collect_result">%1$d доменов, %2$d соединений по IP, %3$d UDP-потоков</string>
+    <string name="collect_save">Сохранить домены списком хостов</string>
+    <string name="collect_saved">Сохранено %1$d доменов в список %2$s</string>
+    <string name="collect_blocked">блокировка %1$d×</string>
+    <string name="collect_ips">По IP-адресу и UDP (в список хостов не попадают)</string>
 </resources>
