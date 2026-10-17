@@ -13,6 +13,7 @@
     #include <sys/time.h>
 #endif
 
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -24,6 +25,7 @@
 
 #include "desync.h"
 #include "packets.h"
+#include "udphost.h"
 
 
 static int set_timeout(int fd, unsigned int s)
@@ -223,8 +225,15 @@ static int reconnect(struct poolhd *pool, struct eval *val)
 }
 
 
+static bool host_in(struct mphdr *hosts, const char *host, int len)
+{
+    struct elem *v = mem_get(hosts, host, len);
+    return v && v->len <= len;
+}
+
+
 static bool check_host(
-        struct mphdr *hosts, const char *buffer, ssize_t n)
+        struct mphdr *hosts, const char *buffer, ssize_t n, const union sockaddr_u *dst)
 {
     char *host = 0;
     int len;
@@ -233,10 +242,11 @@ static bool check_host(
     }
     assert(len == 0 || host != 0);
     if (len <= 0) {
-        return 0;
+        // ZapretDroid: no SNI or Host (another protocol, ECH): the name the address came from.
+        const char *name = dst ? dns_cache_get(dst) : 0;
+        return name && host_in(hosts, name, strlen(name));
     }
-    struct elem *v = mem_get(hosts, host, len);
-    return v && v->len <= len;
+    return host_in(hosts, host, len);
 }
 
 
@@ -617,7 +627,7 @@ static struct desync_params *find_dp(struct eval *client,
                 && (dp == init_dp || !dp->detect || (client->detect & dp->detect))
                 && (check_l34(dp, SOCK_STREAM, dst))
                 && (!dp->proto || !buff || check_proto_tcp(dp->proto, buff, n))
-                && (!dp->hosts || !buff || check_host(dp->hosts, buff, n))) {
+                && (!dp->hosts || !buff || check_host(dp->hosts, buff, n, dst))) {
             return dp;
         }
         client->dp_mask |= dp->bit;
@@ -696,7 +706,9 @@ static int setup_conn(struct eval *client, const char *buffer, ssize_t n)
             snprintf(client->log_host, sizeof(client->log_host), "%.*s", client->host_len, client->host);
         }
         else if (!client->log_host[0]) {
-            snprintf(client->log_host, sizeof(client->log_host), "%s", ADDR_STR);
+            // ZapretDroid: without SNI or Host, the name the address was resolved from.
+            const char *name = dns_cache_get(dst);
+            snprintf(client->log_host, sizeof(client->log_host), "%s", name ? name : ADDR_STR);
         }
         fprintf(ENGINE_LOG, "conn %d: %s -> %s:%d, %s, group %d\n", client->fd,
             client->log_host, ADDR_STR, ntohs(dst->in.sin_port),
@@ -907,6 +919,66 @@ void udp_stat_in(struct eval *remote, ssize_t n)
 }
 
 
+/*
+ * ZapretDroid: the host of a UDP flow from its first datagram, so that groups with host lists
+ * (-H) apply to UDP too: the SNI of a QUIC Initial, else the name the address was resolved
+ * from, else for Discord's IP discovery discord.media (its voice servers' domain). Returns
+ * where the name came from, or null. A QUIC flow whose Initial ends before the SNI keeps its
+ * CRYPTO data for the next Initial (Chrome splits large ClientHellos).
+ */
+static const char *udp_flow_host(struct eval *val, const char *buffer, ssize_t n,
+        const union sockaddr_u *dst, int proto, char *host, size_t size)
+{
+    if (proto == UDP_PROTO_QUIC) {
+        struct quic_crypto *qc = calloc(1, sizeof(*qc));
+        if (qc && quic_add_initial(qc, (const uint8_t *) buffer, n)) {
+            if (quic_crypto_sni(qc, host, size)) {
+                free(qc);
+                return "sni";
+            }
+            val->udp_quic = qc;
+            qc = 0;
+        }
+        free(qc);
+    }
+    const char *name = dns_cache_get(dst);
+    if (name && strlen(name) < size) {
+        strcpy(host, name);
+        return "dns";
+    }
+    if (proto == UDP_PROTO_DISCORD) {
+        snprintf(host, size, "discord.media");
+        return "discord ip discovery";
+    }
+    return 0;
+}
+
+
+/* The first group for a UDP flow: groups with host lists only when the host is known and listed. */
+static struct desync_params *udp_find_dp(const union sockaddr_u *dst, const char *host)
+{
+    for (struct desync_params *dp = params.dp; dp; dp = dp->next) {
+        if (dp->detect || !check_l34(dp, SOCK_DGRAM, dst)) {
+            continue;
+        }
+        if (dp->hosts && !(host && host_in(dp->hosts, host, strlen(host)))) {
+            continue;
+        }
+        return dp;
+    }
+    return 0;
+}
+
+
+/* ZapretDroid: DNS answers relayed to the client name the addresses for udp_flow_host and TCP. */
+void udp_reply_hook(const char *buffer, ssize_t n, const union sockaddr_u *src)
+{
+    if (n > 0 && ntohs(src->in.sin_port) == 53) {
+        dns_cache_feed((const uint8_t *) buffer, n);
+    }
+}
+
+
 ssize_t udp_hook(struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst)
 {
@@ -941,20 +1013,36 @@ ssize_t udp_hook(struct eval *val,
     
     struct desync_params *dp = pair->dp;
     if (!dp) {
-        for (dp = params.dp; ; dp = dp->next) {
-            if (!dp) {
-                return -1;
-            }
-            if (!dp->detect 
-                    && check_l34(dp, SOCK_DGRAM, dst)) {
-                break;
-            }
+        char host[256];
+        const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host));
+        if (!(dp = udp_find_dp(dst, source ? host : 0))) {
+            return -1;
         }
         pair->dp = dp;
         if (params.conn_log) {
             INIT_ADDR_STR((*dst));
-            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, %s, group %d\n", val->fd,
-                ADDR_STR, ntohs(dst->in.sin_port), udp_proto_name(proto), dp->id);
+            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, %s, host %s (%s), group %d\n", val->fd,
+                ADDR_STR, ntohs(dst->in.sin_port), udp_proto_name(proto),
+                source ? host : "unknown",
+                source ? source : val->udp_quic ? "SNI in a later Initial" : "no SNI, not in DNS answers", dp->id);
+        }
+    }
+    else if (val->udp_quic && proto == UDP_PROTO_QUIC) {
+        // The rest of the ClientHello: the SNI now decides the group for the following datagrams.
+        char host[256];
+        quic_add_initial(val->udp_quic, (const uint8_t *) buffer, n);
+        int len = quic_crypto_sni(val->udp_quic, host, sizeof(host));
+        if (len || index >= 3) {
+            free(val->udp_quic);
+            val->udp_quic = 0;
+        }
+        struct desync_params *found = len ? udp_find_dp(dst, host) : 0;
+        if (found && found != dp) {
+            if (params.conn_log) {
+                fprintf(ENGINE_LOG, "udp %d: host %s (sni in Initial %u), group %d -> %d\n",
+                    val->fd, host, index + 1, dp->id, found->id);
+            }
+            pair->dp = dp = found;
         }
     }
     // --udp-desync N[:K] counts datagrams of the flow; otherwise rounds (request/response) apply.

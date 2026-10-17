@@ -40,6 +40,10 @@ zapret на Android без root не воспроизвести.
   работают и параметры ZapretDroid (`{fake:...}`, `{list:...}`, маркеры tpws, `--mss`,
   `--udp-proto-fake`…). Стратегия, DNS, IPv6 и список приложений общие для обоих интерфейсов;
   вернуться — пункт «Интерфейс ZapretDroid» в меню.
+- **Списки доменов (`-H`) и для UDP:** движок определяет хост UDP-потока по SNI в QUIC Initial
+  (включая Chrome с Kyber, где ClientHello в двух пакетах), по ответам DNS, прошедшим через
+  него, и по Discord IP discovery. Группы стратегий по сервисам (YouTube, Discord…) теперь
+  действуют и на QUIC и голос, а не только на TCP. TCP без SNI тоже узнаётся по DNS.
 - **Из zapret:**
   - фейковые нагрузки из zapret2 (QUIC Initial, TLS ClientHello, Discord, STUN…) —
     `--fake-data {fake:имя}`, кнопка «Вставить фейковую нагрузку», пресеты «TCP + QUIC/UDP»

@@ -12,7 +12,7 @@ object AppCollect {
     data class Result(val domains: Map<String, Int>, val ips: Map<String, Int>, val udp: Map<String, Int>, val blocks: Map<String, Int>)
 
     private val CONN = Regex("""\bconn \d+: (\S+) -> ([0-9a-fA-F:.\[\]]+):(\d+), """)
-    private val UDP = Regex("""\budp \d+: -> ([0-9a-fA-F:.\[\]]+):(\d+), (\w+), group""")
+    private val UDP = Regex("""\budp \d+: -> ([0-9a-fA-F:.\[\]]+):(\d+), (\w+), (?:host (\S+) \(|group)""")
     private val BLOCK = Regex("""\bconn \d+: block detected \(\w+\) on (\S+) """)
     private val IP = Regex("""^[0-9.]+$|:""")
 
@@ -33,6 +33,9 @@ object AppCollect {
             UDP.find(line)?.let { m ->
                 val key = "${m.groupValues[1]}:${m.groupValues[2]} ${m.groupValues[3]}"
                 udp[key] = (udp[key] ?: 0) + 1
+                // The engine names UDP flows from QUIC's SNI and DNS answers: such names go to the list too.
+                val name = m.groupValues[4].lowercase()
+                if (name.isNotEmpty() && name != "unknown" && !IP.containsMatchIn(name)) domains[name] = (domains[name] ?: 0) + 1
             }
             BLOCK.find(line)?.let { m ->
                 val host = m.groupValues[1].lowercase()

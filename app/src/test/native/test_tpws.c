@@ -10,6 +10,7 @@
 #include "params.h"
 #include "packets.h"
 #include "tpws.h"
+#include "udphost.h"
 
 int parse_offset(struct part *part, const char *str);
 int parse_args(int argc, char **argv);
@@ -191,6 +192,92 @@ static void test_udp_proto(const char *fakes)
     CHECK_EQ(udp_detect_proto("", 0), UDP_PROTO_UNKNOWN);
 }
 
+static size_t read_fake(const char *dir, const char *name, uint8_t *buf, size_t size)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t n = fread(buf, 1, size, f);
+    fclose(f);
+    return n;
+}
+
+/* SNI of QUIC Initials, also when Chrome's ClientHello with Kyber spans two (in either order). */
+static void test_quic_sni(const char *fakes)
+{
+    struct { const char *first, *second, *sni; } cases[] = {
+        { "quic_initial_www_google_com.bin", 0, "www.google.com" },
+        { "quic_initial_facebook_com_quiche.bin", 0, "facebook.com" },
+        { "quic2_example_com.bin", 0, "example.com" },
+        { "quic_initial_rutracker_org_kyber_1.bin", "quic_initial_rutracker_org_kyber_2.bin", "rutracker.org" },
+        { "quic_initial_rr1---sn-xguxaxjvh-n8me_googlevideo_com_kyber_2.bin",
+          "quic_initial_rr1---sn-xguxaxjvh-n8me_googlevideo_com_kyber_1.bin", "rr1---sn-xguxaxjvh-n8me.googlevideo.com" },
+    };
+    static struct quic_crypto qc;
+    uint8_t buf[4096];
+    char sni[256];
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        memset(&qc, 0, sizeof(qc));
+        size_t n = read_fake(fakes, cases[i].first, buf, sizeof(buf));
+        CHECK(quic_add_initial(&qc, buf, n));
+        int len = quic_crypto_sni(&qc, sni, sizeof(sni));
+        if (cases[i].second) {
+            CHECK_EQ(len, 0);
+            n = read_fake(fakes, cases[i].second, buf, sizeof(buf));
+            CHECK(quic_add_initial(&qc, buf, n));
+            len = quic_crypto_sni(&qc, sni, sizeof(sni));
+        }
+        CHECK_EQ(len, (long) strlen(cases[i].sni));
+        CHECK(len && !strcmp(sni, cases[i].sni));
+    }
+    memset(&qc, 0, sizeof(qc));
+    size_t n = read_fake(fakes, "quic_short_header.bin", buf, sizeof(buf));
+    CHECK(!quic_add_initial(&qc, buf, n));
+    n = read_fake(fakes, "stun.bin", buf, sizeof(buf));
+    CHECK(!quic_add_initial(&qc, buf, n));
+}
+
+/* DNS answers name the addresses: the question's name, also through a CNAME. */
+static void test_dns_cache(void)
+{
+    static const uint8_t answer[] = {
+        0x12, 0x34, 0x81, 0x80, 0, 1, 0, 2, 0, 0, 0, 0,
+        // question: C-FRA06.Discord.Media A IN
+        7, 'C', '-', 'F', 'R', 'A', '0', '6', 7, 'D', 'i', 's', 'c', 'o', 'r', 'd', 5, 'M', 'e', 'd', 'i', 'a', 0,
+        0, 1, 0, 1,
+        // CNAME to x.y
+        0xc0, 12, 0, 5, 0, 1, 0, 0, 0, 60, 0, 5, 1, 'x', 1, 'y', 0,
+        // x.y A 162.159.130.234
+        0xc0, 51, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 162, 159, 130, 234,
+    };
+    dns_cache_reset();
+    dns_cache_feed(answer, sizeof(answer));
+    union sockaddr_u a = {0};
+    a.in.sin_family = AF_INET;
+    memcpy(&a.in.sin_addr, (const uint8_t[]) {162, 159, 130, 234}, 4);
+    const char *name = dns_cache_get(&a);
+    CHECK(name && !strcmp(name, "c-fra06.discord.media"));
+    // IPv4-mapped IPv6, as the engine sees addresses on an IPv6 socket
+    union sockaddr_u m = {0};
+    m.in6.sin6_family = AF_INET6;
+    memcpy(&m.in6.sin6_addr, (const uint8_t[]) {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 162, 159, 130, 234}, 16);
+    name = dns_cache_get(&m);
+    CHECK(name && !strcmp(name, "c-fra06.discord.media"));
+    memcpy(&a.in.sin_addr, (const uint8_t[]) {1, 2, 3, 4}, 4);
+    CHECK(!dns_cache_get(&a));
+    // A query (QR not set) and a truncated message change nothing
+    uint8_t query[sizeof(answer)];
+    memcpy(query, answer, sizeof(answer));
+    query[2] = 0x01;
+    query[sizeof(query) - 1] = 1;
+    dns_cache_feed(query, sizeof(query));
+    dns_cache_feed(answer, 40);
+    memcpy(&a.in.sin_addr, (const uint8_t[]) {162, 159, 130, 1}, 4);
+    CHECK(!dns_cache_get(&a));
+    dns_cache_reset();
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -203,6 +290,8 @@ int main(int argc, char **argv)
     test_markers_tls(argc > 1 ? argv[1] : "tls_clienthello_www_google_com.bin");
     test_parsing();
     if (argc > 2) test_udp_proto(argv[2]);
+    if (argc > 2) test_quic_sni(argv[2]);
+    test_dns_cache();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

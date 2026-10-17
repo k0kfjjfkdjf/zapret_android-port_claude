@@ -137,6 +137,10 @@ void del_event(struct poolhd *pool, struct eval *val)
         free(val->host);
         val->host = 0;
     }
+    if (val->udp_quic) {
+        free(val->udp_quic);
+        val->udp_quic = 0;
+    }
     close(val->fd);
     val->fd = -1;
     val->mod_iter = pool->iters;

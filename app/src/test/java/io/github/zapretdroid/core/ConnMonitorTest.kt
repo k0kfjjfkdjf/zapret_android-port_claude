@@ -36,4 +36,23 @@ class ConnMonitorTest {
         assertEquals(1, s.retries)
         assertEquals(1, s.udpNoReply)
     }
+
+    @Test
+    fun namedUdpFlows() {
+        val events = ConnMonitor.parse(
+            listOf(
+                "10-17 13:00:00.000 vpn | ===== VPN session start (io.github.zapretdroid.START) =====",
+                "10-17 13:00:01.000 byedpi | udp 6: -> ::ffff:66.22.196.10:50003, other, host c-fra06.discord.media (dns), group 1",
+                "10-17 13:00:02.000 byedpi | udp 7: -> 142.250.74.14:443, quic, host unknown (SNI in a later Initial), group 3",
+                "10-17 13:00:02.050 byedpi | udp 7: host rr1---sn-abc.googlevideo.com (sni in Initial 2), group 3 -> 0",
+            ),
+        )
+        assertEquals(listOf(Kind.UDP_START, Kind.UDP_START, Kind.UDP_START), events.map { it.kind })
+        assertEquals("c-fra06.discord.media", events[0].host)
+        assertTrue(events[0].discord)
+        assertTrue(events[0].text.startsWith("c-fra06.discord.media (66.22.196.10:50003), other, group 1"))
+        assertEquals("142.250.74.14:443", events[1].host)
+        assertEquals("rr1---sn-abc.googlevideo.com", events[2].host)
+        assertTrue(events[2].text.endsWith("group 3 -> 0"))
+    }
 }

@@ -116,6 +116,9 @@ struct eval {
     long long udp_max_out_gap, udp_max_in_gap;
     long long udp_first_reply_ms; // valid once udp_in_pkts > 0
     unsigned int udp_retries; // Discord IP discovery repeated without a reply
+    // ZapretDroid: a QUIC flow whose first Initial had no SNI (the ClientHello goes on in the
+    // next one), kept on the remote socket to choose the group again when it is complete.
+    struct quic_crypto *udp_quic;
 };
 
 struct poolhd {

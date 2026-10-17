@@ -822,6 +822,7 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
             if (params.conn_log) {
                 udp_stat_in(val, n);
             }
+            udp_reply_hook(data, n, &addr);
             map_fix(&addr, 0);
             memset(buff->data, 0, S_SIZE_I6);
             

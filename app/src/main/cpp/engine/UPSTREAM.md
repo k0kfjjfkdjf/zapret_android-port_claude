@@ -43,3 +43,13 @@ Changes in this fork:
 - `--mss <n>` (as tpws `--mss`): TCP_MAXSEG on outgoing connections, so the server also sends
   small segments (88 gives 76-byte segments on loopback). No root needed.
 - `--tlsminor 0` is accepted (zapret-termux generates it; the value set flag already tells it from unset).
+- Host lists (`-H`) for UDP and for TCP without SNI (`udphost.c`). Upstream checks host lists
+  only on TCP data with a readable SNI or Host, so a UDP flow took the first group without
+  regard to `-H` (community strategies with per-service `-H` groups put `--udp-fake` in the
+  Discord group in vain). A UDP flow now gets a host name from its first datagram: the SNI of
+  a QUIC Initial (v1 and v2, decrypted with the Initial keys of RFC 9001 5.2; when Chrome's
+  ClientHello with Kyber continues in the next Initial, the group is chosen again on it), else
+  the name the address was resolved from (kept from DNS answers relayed by the engine), else
+  `discord.media` for Discord's IP discovery. Groups with `-H` take a UDP flow only when its
+  host is known and listed. TCP without SNI or Host (other protocols, ECH) is matched by the
+  DNS name too. `--conn-log` names the host and where it came from.

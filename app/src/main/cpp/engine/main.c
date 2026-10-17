@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 
 #include "params.h"
+#include "udphost.h"
 #include "proxy.h"
 #include "packets.h"
 #include "error.h"
@@ -87,6 +88,7 @@ void engine_reset(void)
     else {
         params = pristine;
     }
+    dns_cache_reset();
     opterr = 0; // parse_args reports errors itself, through ENGINE_LOG
     #ifdef __BIONIC__
     optreset = 1;

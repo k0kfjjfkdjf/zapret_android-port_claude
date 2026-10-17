@@ -19,7 +19,9 @@ object ConnMonitor {
     private val BLOCK = Regex("""\bconn (\d+): block detected \((\w+)\) on (\S+) \((\S+)\) with group (\d+), (.*)""")
     private val TCP_FAILED = Regex("""\btcp (\d+): connect to (\S+) FAILED after (\d+) ms: (.*)""")
     private val TCP_SLOW = Regex("""\btcp (\d+): slow connect to (\S+): (\d+) ms""")
-    private val UDP_START = Regex("""\budp (\d+): -> (\S+):(\d+), (\w+), group (\d+)""")
+    // "host NAME (where from), " is there since the engine names UDP flows (SNI, DNS answers).
+    private val UDP_START = Regex("""\budp (\d+): -> (\S+):(\d+), (\w+), (?:host (\S+) \(([^)]*)\), )?group (\d+)""")
+    private val UDP_REGROUP = Regex("""\budp (\d+): host (\S+) \(([^)]*)\), group (\d+) -> (\d+)""")
     private val UDP_REPLY = Regex("""\budp (\d+): first reply after (\d+) ms \((\d+) datagrams and (\d+) fakes""")
     private val UDP_RETRY = Regex("""\budp (\d+): discord IP discovery RETRY #(\d+) after (\d+) ms""")
     private val UDP_CLOSED = Regex("""\budp (\d+) closed: -> (\S+):(\d+) (\w+), out (\d+) pkts/\d+ B, in (\d+) pkts""")
@@ -74,10 +76,19 @@ object ConnMonitor {
                 val ip = stripMapped(m.groupValues[2])
                 val port = m.groupValues[3].toInt()
                 val proto = m.groupValues[4]
-                val discord = proto == "discord" || DISCORD_PORTS.any { port in it }
+                val name = m.groupValues[5].takeIf { it.isNotEmpty() && it != "unknown" }
+                val discord = proto == "discord" || DISCORD_PORTS.any { port in it } || (name != null && isDiscordHost(name))
                 udpProto[fd] = proto
                 udpDiscord[fd] = discord
-                out += Event(time, Kind.UDP_START, "$ip:$port", "$ip:$port, $proto, group ${m.groupValues[5]}", discord)
+                val target = if (name != null) "$name ($ip:$port)" else "$ip:$port"
+                out += Event(time, Kind.UDP_START, name ?: "$ip:$port", "$target, $proto, group ${m.groupValues[7]}", discord)
+                return@forEach
+            }
+            UDP_REGROUP.find(line)?.let { m ->
+                val name = m.groupValues[2]
+                val discord = isDiscordHost(name)
+                if (discord) udpDiscord[m.groupValues[1]] = true
+                out += Event(time, Kind.UDP_START, name, "$name (${m.groupValues[3]}): group ${m.groupValues[4]} -> ${m.groupValues[5]}", discord)
                 return@forEach
             }
             UDP_REPLY.find(line)?.let { m ->
