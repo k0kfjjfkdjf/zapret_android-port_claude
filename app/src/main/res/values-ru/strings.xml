@@ -311,4 +311,14 @@
     <string name="proxy_address">Адрес прокси</string>
     <string name="proxy_address_hint">хост:порт; Tor в Orbot и InviZible: 127.0.0.1:9050</string>
     <string name="proxy_address_invalid">Нужно хост:порт, например 127.0.0.1:9050</string>
+    <string name="update_title">Доступна версия %1$s</string>
+    <string name="update_installed">Установлена: %1$s</string>
+    <string name="update_install">Скачать и установить</string>
+    <string name="update_later">Позже</string>
+    <string name="update_allow_install">Разрешите установку приложений от ZapretDroid в открывшемся окне и нажмите ещё раз</string>
+    <string name="update_failed">Не удалось обновить: %1$s</string>
+    <string name="update_latest">%1$s — последняя версия</string>
+    <string name="update_check_failed">Не удалось проверить обновления: %1$s</string>
+    <string name="update_check">Проверить обновления</string>
+    <string name="update_check_desc">Установлена %1$s. Нажмите, чтобы проверить сейчас; переключатель — проверка раз в 12 часов. APK берётся из релизов на GitHub и сверяется с их SHA-256.</string>
 </resources>

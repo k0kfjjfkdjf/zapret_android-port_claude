@@ -67,6 +67,7 @@ import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.TorProxy
+import io.github.zapretdroid.core.Updater
 import io.github.zapretdroid.core.isIpLiteral
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -86,6 +87,7 @@ fun SettingsScreen(
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
     onOpenClassic: () -> Unit,
+    onCheckUpdates: () -> Unit,
 ) {
     var strategyId by remember { mutableStateOf(settings.strategyId) }
     var customArgs by remember { mutableStateOf(settings.customArgs) }
@@ -181,6 +183,21 @@ fun SettingsScreen(
                     headlineContent = { Text(stringResource(R.string.classic_title)) },
                     supportingContent = { Text(stringResource(R.string.classic_desc)) },
                     modifier = Modifier.selectable(selected = false, onClick = onOpenClassic),
+                )
+            }
+
+            item {
+                var auto by remember { mutableStateOf(Updater.isAuto(context)) }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.update_check)) },
+                    supportingContent = { Text(stringResource(R.string.update_check_desc, BuildConfig.VERSION_NAME)) },
+                    trailingContent = {
+                        Switch(checked = auto, onCheckedChange = {
+                            auto = it
+                            Updater.setAuto(context, it)
+                        })
+                    },
+                    modifier = Modifier.selectable(selected = false, onClick = onCheckUpdates),
                 )
             }
 

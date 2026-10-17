@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +34,7 @@ import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.core.Updater
 import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppsScreen
@@ -47,7 +49,11 @@ import io.github.zapretdroid.ui.MonitorScreen
 import io.github.zapretdroid.ui.SelfCheckScreen
 import io.github.zapretdroid.ui.SettingsScreen
 import io.github.zapretdroid.ui.TestScreen
+import io.github.zapretdroid.ui.UpdateDialog
 import io.github.zapretdroid.ui.theme.ZapretTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private var connectRequest by mutableStateOf(false)
@@ -126,6 +132,32 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     }
 
     LaunchedEffect(screen) { AppLog.i("screen: ${screen.name.lowercase()}") }
+
+    // Updates from GitHub releases: checked at most every 12 hours, or from the settings.
+    var update by remember { mutableStateOf<Updater.Release?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        if (!Updater.due(context)) return@LaunchedEffect
+        val release = withContext(Dispatchers.IO) {
+            runCatching { Updater.check(context) }.onFailure { AppLog.w("update check failed: ${it.message}") }.getOrNull()
+        }
+        if (release != null && !Updater.isSkipped(context, release.version)) {
+            AppLog.i("update available: ${release.version}")
+            update = release
+        }
+    }
+    val checkUpdates = {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Updater.check(context) } }
+            result.onSuccess { release ->
+                if (release != null) update = release
+                else Toast.makeText(context, context.getString(R.string.update_latest, BuildConfig.VERSION_NAME), Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, context.getString(R.string.update_check_failed, it.message ?: it.javaClass.simpleName), Toast.LENGTH_LONG).show()
+            }
+        }
+        Unit
+    }
 
     val vpnPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (VpnService.prepare(context) == null) {
@@ -259,6 +291,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenDeep = { screen = Screen.DEEP },
             onOpenCollect = { screen = Screen.COLLECT },
             onOpenClassic = { ClassicBridge.open(context) },
+            onCheckUpdates = checkUpdates,
         )
         Screen.APPS -> AppsScreen(
             settings = settings,
@@ -304,6 +337,16 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
                 settingsVersion++
                 Toast.makeText(context, R.string.test_applied, Toast.LENGTH_LONG).show()
             },
+        )
+    }
+    update?.let { release ->
+        UpdateDialog(
+            release = release,
+            onLater = {
+                Updater.skip(context, release.version)
+                update = null
+            },
+            onClose = { update = null },
         )
     }
 }

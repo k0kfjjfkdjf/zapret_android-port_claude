@@ -313,4 +313,14 @@
     <string name="proxy_address">Proxy address</string>
     <string name="proxy_address_hint">host:port, Tor in Orbot and InviZible: 127.0.0.1:9050</string>
     <string name="proxy_address_invalid">Expected host:port, e.g. 127.0.0.1:9050</string>
+    <string name="update_title">Version %1$s is available</string>
+    <string name="update_installed">Installed: %1$s</string>
+    <string name="update_install">Download and install</string>
+    <string name="update_later">Later</string>
+    <string name="update_allow_install">Allow installing apps from ZapretDroid in the screen that opened, then tap again</string>
+    <string name="update_failed">Update failed: %1$s</string>
+    <string name="update_latest">%1$s is the latest version</string>
+    <string name="update_check_failed">Could not check for updates: %1$s</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_check_desc">Installed %1$s. Tap to check now; the switch checks automatically every 12 hours. The APK comes from GitHub releases and is checked against their SHA-256.</string>
 </resources>
