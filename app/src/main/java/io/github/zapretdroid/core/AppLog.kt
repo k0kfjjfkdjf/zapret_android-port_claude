@@ -81,7 +81,8 @@ object AppLog {
 
     @Synchronized
     private fun write(priority: Int, message: String, error: Throwable?, sourceOverride: String?) {
-        Log.println(priority, TAG, if (error != null) "$message\n${Log.getStackTraceString(error)}" else message)
+        // Unit tests run without Android's Log (not mocked) and without init(): both skipped.
+        runCatching { Log.println(priority, TAG, if (error != null) "$message\n${Log.getStackTraceString(error)}" else message) }
         if (!::dir.isInitialized) return
         val src = sourceOverride ?: source
         val level = when (priority) {
