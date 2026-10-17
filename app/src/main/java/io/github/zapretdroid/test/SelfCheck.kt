@@ -443,10 +443,28 @@ object SelfCheck {
             check(g, "chatgpt.com through the proxy") {
                 if (settings.proxyList == TorProxy.LIST) TorProxy.ensureList(context)
                 val list = HostLists.file(context, settings.proxyList)
-                val group = TorProxy.group(list.absolutePath, address).joinToString(" ")
+                val group = TorProxy.group(list.absolutePath, address, settings.proxyUdp).joinToString(" ")
                 val addr = runCatching { InetAddress.getAllByName("chatgpt.com").firstOrNull { it is Inet4Address } }.getOrNull()
                 val r = TestEngine.with(group, PORT, fakeDir, listDir) { SiteProbe.probe(PORT, "chatgpt.com", addr, TIMEOUT_MS * 3) }
                 (if (r.responded) CheckStatus.OK else CheckStatus.WARN) to r.summary()
+            }
+            if (settings.proxyUdp) {
+                // The proxy's own UDP ASSOCIATE: a DNS query to 8.8.8.8 through its relay.
+                check(g, "UDP through the proxy $address") {
+                    val id = 0x5a00 + (System.nanoTime() and 0xff).toInt()
+                    val reply = runCatching {
+                        UdpProbe.exchange(TorProxy.socketAddress(address), InetAddress.getByName("8.8.8.8") as Inet4Address, 53,
+                            DnsClient.buildQuery(id, "www.google.com"), TIMEOUT_MS)
+                    }
+                    reply.fold(
+                        onSuccess = { r ->
+                            val ips = r?.let { runCatching { DnsClient.parseResponse(it.second, id) }.getOrNull() }
+                            if (!ips.isNullOrEmpty()) CheckStatus.OK to "DNS answer from ${r.first} via the relay: ${ips.joinToString { it.hostAddress ?: "?" }}"
+                            else CheckStatus.WARN to "no answer through the relay: the proxy may not carry UDP, turn \"UDP too\" off"
+                        },
+                        onFailure = { CheckStatus.WARN to "UDP ASSOCIATE failed (${it.message}): Tor and many proxies carry TCP only, turn \"UDP too\" off" },
+                    )
+                }
             }
         }
         check(g, "DNS as the tester resolves (${TestDns.spec(settings)})") {

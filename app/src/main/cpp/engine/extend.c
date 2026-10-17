@@ -14,6 +14,10 @@
 #endif
 
 #include <stdlib.h>
+#include <errno.h>
+#ifndef _WIN32
+#include <fcntl.h>
+#endif
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -1080,7 +1084,210 @@ void udp_reply_hook(struct eval *val, const char *buffer, ssize_t n, const union
 }
 
 
-ssize_t udp_hook(struct eval *val, 
+/*
+ * ZapretDroid: UDP through the group's upstream SOCKS5 proxy (--udp-proxy): one UDP ASSOCIATE
+ * per association, set up on a non-blocking control connection; datagrams go to the proxy's
+ * relay with a SOCKS5 UDP header (RFC 1928 7), replies are unwrapped in on_udp_tunnel.
+ */
+static size_t ups_header(char *out, const union sockaddr_u *dst)
+{
+    out[0] = out[1] = out[2] = 0;
+    if (dst->sa.sa_family == AF_INET6) {
+        out[3] = S_ATP_I6;
+        memcpy(out + 4, &dst->in6.sin6_addr, 16);
+        memcpy(out + 20, &dst->in6.sin6_port, 2);
+        return 22;
+    }
+    out[3] = S_ATP_I4;
+    memcpy(out + 4, &dst->in.sin_addr, 4);
+    memcpy(out + 8, &dst->in.sin_port, 2);
+    return 10;
+}
+
+
+static void ups_fail(struct eval *remote, const char *why)
+{
+    struct udp_upstream *u = remote->ups;
+    if (!u || u->state < 0) return;
+    u->state = -1;
+    if (params.conn_log) {
+        fprintf(ENGINE_LOG, "udp %d: proxy UDP failed: %s\n", remote->fd, why);
+    }
+}
+
+
+static int on_ups_ctrl(struct poolhd *pool, struct eval *ctrl, int et)
+{
+    struct eval *remote = ctrl->ups_owner;
+    struct udp_upstream *u = remote ? remote->ups : 0;
+    if (!u) {
+        return -1;
+    }
+    char buf[64];
+    switch (u->state) {
+    case 0: {
+        int err = 0;
+        socklen_t len = sizeof(err);
+        if (getsockopt(ctrl->fd, SOL_SOCKET, SO_ERROR, (char *) &err, &len) || err) {
+            ups_fail(remote, "cannot connect to the proxy");
+            return -1;
+        }
+        static const char hello[3] = { S_VER5, 1, 0 };
+        if (send(ctrl->fd, hello, sizeof(hello), 0) != sizeof(hello) || mod_etype(pool, ctrl, POLLIN)) {
+            ups_fail(remote, "send");
+            return -1;
+        }
+        u->state = 1;
+        return 0;
+    }
+    case 1: {
+        ssize_t n = recv(ctrl->fd, buf, 2, 0);
+        if (n != 2 || buf[0] != S_VER5 || buf[1] != 0) {
+            ups_fail(remote, "the proxy wants authentication or is not SOCKS5");
+            return -1;
+        }
+        // UDP ASSOCIATE, client address unknown (0.0.0.0:0).
+        static const char req[10] = { S_VER5, 3, 0, S_ATP_I4, 0, 0, 0, 0, 0, 0 };
+        if (send(ctrl->fd, req, sizeof(req), 0) != sizeof(req)) {
+            ups_fail(remote, "send");
+            return -1;
+        }
+        u->state = 2;
+        return 0;
+    }
+    case 2: {
+        ssize_t n = recv(ctrl->fd, buf, sizeof(buf), 0);
+        if (n < 10 || buf[0] != S_VER5 || buf[1] != 0) {
+            ups_fail(remote, n >= 2 ? "the proxy refused UDP ASSOCIATE" : "no reply from the proxy");
+            return -1;
+        }
+        union sockaddr_u relay = u->proxy;
+        if (buf[3] == S_ATP_I4 && n >= 10) {
+            relay.in.sin_family = AF_INET;
+            memcpy(&relay.in.sin_addr, buf + 4, 4);
+            memcpy(&relay.in.sin_port, buf + 8, 2);
+            // 0.0.0.0: the relay is at the proxy's own address.
+            if (!relay.in.sin_addr.s_addr && u->proxy.sa.sa_family == AF_INET) {
+                relay.in.sin_addr = u->proxy.in.sin_addr;
+            }
+        }
+        else if (buf[3] == S_ATP_I6 && n >= 22) {
+            relay.in6.sin6_family = AF_INET6;
+            memcpy(&relay.in6.sin6_addr, buf + 4, 16);
+            memcpy(&relay.in6.sin6_port, buf + 20, 2);
+        }
+        else {
+            ups_fail(remote, "unexpected relay address");
+            return -1;
+        }
+        u->relay = relay;
+        u->state = 3;
+        if (params.conn_log) {
+            INIT_ADDR_STR((relay));
+            fprintf(ENGINE_LOG, "udp %d: through the proxy, relay %s:%d, %d queued\n",
+                remote->fd, ADDR_STR, ntohs(relay.in.sin_port), u->queued);
+        }
+        for (int i = 0; i < u->queued; i++) {
+            sendto(remote->fd, u->queue[i], u->queue_len[i], 0, &u->relay.sa, SA_SIZE(&u->relay));
+            free(u->queue[i]);
+        }
+        u->queued = 0;
+        return 0;
+    }
+    default: {
+        // Ready: the association lasts while this connection does.
+        ssize_t n = recv(ctrl->fd, buf, sizeof(buf), 0);
+        if (n <= 0 || (et & (POLLHUP | POLLERR))) {
+            ups_fail(remote, "the proxy closed the association");
+            return -1;
+        }
+        return 0;
+    }
+    }
+}
+
+
+static int ups_start(struct poolhd *pool, struct eval *remote, struct desync_params *dp)
+{
+    struct udp_upstream *u = calloc(1, sizeof(*u));
+    if (!u) {
+        return -1;
+    }
+    u->proxy = dp->out_addr;
+    remote->ups = u;
+    int fd = socket(u->proxy.sa.sa_family, SOCK_STREAM, 0);
+    if (fd < 0) {
+        ups_fail(remote, "socket");
+        return -1;
+    }
+    #ifdef __linux__
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    #endif
+    if (socket_mod(fd) < 0
+            || (connect(fd, &u->proxy.sa, SA_SIZE(&u->proxy)) < 0 && get_e() != EINPROGRESS)) {
+        close(fd);
+        ups_fail(remote, "cannot connect to the proxy");
+        return -1;
+    }
+    struct eval *ctrl = add_event(pool, &on_ups_ctrl, fd, POLLOUT);
+    if (!ctrl) {
+        close(fd);
+        ups_fail(remote, "event pool full");
+        return -1;
+    }
+    ctrl->ups_owner = remote;
+    u->ctrl = ctrl;
+    return 0;
+}
+
+
+/* Sends or queues one datagram through the proxy; always "sent" for the caller. */
+static ssize_t ups_dgram(struct poolhd *pool, struct eval *remote, struct desync_params *dp,
+        const union sockaddr_u *dst, const char *buffer, ssize_t n)
+{
+    if (!remote->ups && ups_start(pool, remote, dp) < 0) {
+        return n;
+    }
+    struct udp_upstream *u = remote->ups;
+    if (u->state < 0) {
+        return n;
+    }
+    char *pkt = malloc(22 + n);
+    if (!pkt) {
+        return n;
+    }
+    size_t hl = ups_header(pkt, dst);
+    memcpy(pkt + hl, buffer, n);
+    if (u->state == 3) {
+        sendto(remote->fd, pkt, hl + n, 0, &u->relay.sa, SA_SIZE(&u->relay));
+        free(pkt);
+    }
+    else if (u->queued < UPS_QUEUE) {
+        u->queue[u->queued] = pkt;
+        u->queue_len[u->queued++] = hl + n;
+    }
+    else {
+        free(pkt);
+    }
+    return n;
+}
+
+
+/* Whether [from] is the relay of the association: then the datagram carries a SOCKS5 header. */
+bool ups_is_relay(struct eval *remote, const union sockaddr_u *from)
+{
+    struct udp_upstream *u = remote->ups;
+    if (!u || u->state != 3 || from->sa.sa_family != u->relay.sa.sa_family
+            || from->in.sin_port != u->relay.in.sin_port) {
+        return 0;
+    }
+    return from->sa.sa_family == AF_INET
+        ? !memcmp(&from->in.sin_addr, &u->relay.in.sin_addr, 4)
+        : !memcmp(&from->in6.sin6_addr, &u->relay.in6.sin6_addr, 16);
+}
+
+
+ssize_t udp_hook(struct poolhd *pool, struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst)
 {
     struct eval *pair = val->pair->pair;
@@ -1201,6 +1408,11 @@ ssize_t udp_hook(struct eval *val,
     // ZapretDroid: a group that connects through a proxy (-C, e.g. Tor) carries TCP only: its
     // UDP (QUIC) is dropped, so that browsers and apps fall back to TCP through the proxy.
     if (dp->out_type) {
+        if (dp->udp_proxy && dp->out_type == MODE_SOCKS5) {
+            ssize_t sent = ups_dgram(pool, val, dp, dst, buffer, n);
+            udp_maybe_report(val, now);
+            return sent;
+        }
         if (!dindex && params.conn_log) {
             fprintf(ENGINE_LOG, "udp %d: dropped, group %d goes through a proxy (TCP only)\n", val->fd, dp->id);
         }

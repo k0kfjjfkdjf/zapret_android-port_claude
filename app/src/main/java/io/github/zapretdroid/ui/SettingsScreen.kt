@@ -96,6 +96,7 @@ fun SettingsScreen(
     var dnsProvider by remember { mutableStateOf(settings.dnsProvider) }
     var proxyEnabled by remember { mutableStateOf(settings.proxyEnabled) }
     var proxyAddress by remember { mutableStateOf(settings.proxyAddress) }
+    var proxyUdp by remember { mutableStateOf(settings.proxyUdp) }
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
     var logLevel by remember { mutableStateOf(settings.logLevel) }
@@ -485,6 +486,17 @@ fun SettingsScreen(
                             TextButton(onClick = onOpenLists) { Text(stringResource(R.string.proxy_edit_list, settings.proxyList)) }
                         }
                     }
+                }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.proxy_udp)) },
+                        supportingContent = { Text(stringResource(R.string.proxy_udp_desc)) },
+                        trailingContent = { Switch(checked = proxyUdp, onCheckedChange = null) },
+                        modifier = Modifier.toggleable(value = proxyUdp, role = Role.Switch) {
+                            proxyUdp = it
+                            settings.proxyUdp = it
+                        },
+                    )
                 }
                 item {
                     val valid = TorProxy.isValid(proxyAddress)

@@ -62,6 +62,22 @@ struct buffer {
     char data[];
 };
 
+/*
+ * ZapretDroid: UDP of a group through its upstream SOCKS5 proxy (-C socks5://… --udp-proxy):
+ * the association's own UDP ASSOCIATE with the proxy. Datagrams wait in the queue until the
+ * proxy has given its relay address.
+ */
+#define UPS_QUEUE 16
+
+struct udp_upstream {
+    struct eval *ctrl; // TCP control connection to the proxy, while open
+    int state; // 0 connecting, 1 greeting sent, 2 ASSOCIATE sent, 3 ready, -1 failed
+    union sockaddr_u proxy, relay;
+    char *queue[UPS_QUEUE];
+    size_t queue_len[UPS_QUEUE];
+    int queued;
+};
+
 struct eval {
     int fd;    
     int index;
@@ -128,6 +144,10 @@ struct eval {
     // IDs of DNS queries relayed on this association: only answers to them name addresses.
     uint16_t dns_ids[4];
     uint8_t dns_ids_n;
+    // ZapretDroid: on a remote UDP socket, its association with the upstream proxy; on that
+    // association's control connection, the remote UDP socket it belongs to.
+    struct udp_upstream *ups;
+    struct eval *ups_owner;
 };
 
 struct poolhd {

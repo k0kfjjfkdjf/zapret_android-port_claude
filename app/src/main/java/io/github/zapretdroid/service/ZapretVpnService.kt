@@ -532,8 +532,9 @@ class ZapretVpnService : VpnService() {
             // Kept anyway: the listed sites must not silently go elsewhere; the log says why they fail.
             AppLog.w("proxy $address does not answer yet: start Tor in Orbot or InviZible Pro (proxy mode, their own VPN off)")
         }
-        AppLog.i("proxy group: ${HostLists.count(this, settings.proxyList)} domains of list '${settings.proxyList}' through socks5://$address")
-        return TorProxy.group(list.absolutePath, address)
+        AppLog.i("proxy group: ${HostLists.count(this, settings.proxyList)} domains of list '${settings.proxyList}' through socks5://$address" +
+            if (settings.proxyUdp) ", UDP too" else ", TCP only")
+        return TorProxy.group(list.absolutePath, address, settings.proxyUdp)
     }
 
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */

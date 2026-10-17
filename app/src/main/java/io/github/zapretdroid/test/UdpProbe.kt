@@ -80,10 +80,14 @@ object UdpProbe {
      * (from the SOCKS5 header) and data, or null without a reply.
      */
     fun exchange(proxyPort: Int, address: Inet4Address, port: Int, payload: ByteArray, timeoutMs: Int): Pair<InetSocketAddress, ByteArray>? =
+        exchange(InetSocketAddress("127.0.0.1", proxyPort), address, port, payload, timeoutMs)
+
+    /** The same through any SOCKS5 proxy; its relay is taken to be at the proxy's own address. */
+    fun exchange(proxy: InetSocketAddress, address: Inet4Address, port: Int, payload: ByteArray, timeoutMs: Int): Pair<InetSocketAddress, ByteArray>? =
         Socket().use { control ->
             control.soTimeout = timeoutMs
-            control.connect(InetSocketAddress("127.0.0.1", proxyPort), timeoutMs)
-            val relay = InetSocketAddress("127.0.0.1", associate(control))
+            control.connect(proxy, timeoutMs)
+            val relay = InetSocketAddress(proxy.address, associate(control))
             DatagramSocket().use { udp ->
                 udp.soTimeout = timeoutMs
                 val datagram = byteArrayOf(0, 0, 0, 1) + address.address + byteArrayOf((port shr 8).toByte(), port.toByte()) + payload

@@ -133,6 +133,14 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putString(KEY_PROXY_ADDRESS, value) }
         }
 
+    /** The proxy relays UDP (SOCKS5 UDP ASSOCIATE): the listed sites' QUIC and calls go through it too. Tor cannot. */
+    var proxyUdp: Boolean
+        get() = prefs.getBoolean(KEY_PROXY_UDP, false)
+        set(value) {
+            logChange("proxyUdp", proxyUdp, value)
+            prefs.edit(commit = true) { putBoolean(KEY_PROXY_UDP, value) }
+        }
+
     var proxyList: String
         get() = prefs.getString(KEY_PROXY_LIST, TorProxy.LIST)!!
         set(value) {
@@ -176,5 +184,6 @@ class Settings(context: Context) {
         private const val KEY_PROXY_ENABLED = "proxy_enabled"
         private const val KEY_PROXY_ADDRESS = "proxy_address"
         private const val KEY_PROXY_LIST = "proxy_list"
+        private const val KEY_PROXY_UDP = "proxy_udp"
     }
 }

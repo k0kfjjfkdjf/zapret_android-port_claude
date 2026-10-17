@@ -132,6 +132,9 @@ struct desync_params {
     int rounds[2];
     
     uint16_t out_type;
+    // ZapretDroid --udp-proxy: with -C socks5://…, the group's UDP also goes through the proxy
+    // (its UDP ASSOCIATE); without it UDP of a -C group is dropped (Tor carries TCP only).
+    bool udp_proxy;
     union sockaddr_u out_addr;
     
     int _optind;

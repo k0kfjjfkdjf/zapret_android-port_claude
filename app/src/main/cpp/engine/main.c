@@ -19,6 +19,7 @@
 #define OPT_MSS 0x101
 #define OPT_NAMES_DNS 0x102
 #define OPT_DNS_REDIRECT 0x103
+#define OPT_UDP_PROXY 0x104
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -161,6 +162,7 @@ static const char help_text[] = {
     "    --mss <n>                 TCP MSS of outgoing connections (tpws --mss)\n"
     "    --names-dns <ip[,ip]>     Only these DNS servers' answers name hosts for -H\n"
     "    --dns-redirect <ip>=<ip:port>  UDP DNS to the first address goes to the second\n"
+    "    --udp-proxy               UDP of a -C socks5 group through the proxy too\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
@@ -203,6 +205,7 @@ const struct option options[] = {
     {"mss",           1, 0, OPT_MSS},
     {"names-dns",     1, 0, OPT_NAMES_DNS},
     {"dns-redirect",  1, 0, OPT_DNS_REDIRECT},
+    {"udp-proxy",     0, 0, OPT_UDP_PROXY},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -957,6 +960,10 @@ int parse_args(int argc, char **argv)
             free(list);
             break;
         }
+
+        case OPT_UDP_PROXY:
+            dp->udp_proxy = 1;
+            break;
 
         case OPT_DNS_REDIRECT: {
             char *copy = strdup(optarg);

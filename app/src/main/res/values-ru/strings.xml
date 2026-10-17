@@ -298,9 +298,11 @@
     <string name="dns_secure_desc">ByeZapret сам отвечает приложениям на запросы DNS и спрашивает сервер ниже по зашифрованному соединению (по IP, без SNI): провайдер не видит и не подменяет ответы, а имена для списков доменов всегда известны. Если сервер не отвечает, пробуются остальные из списка.</string>
     <string name="dns_provider_custom">Свой сервер</string>
     <string name="dns_provider_custom_hint">https://хост/dns-query для DoH, tls://хост для DoT; пусто — выбранный выше</string>
-    <string name="section_proxy">Сайты через Tor</string>
-    <string name="proxy_toggle">Сайты из списка через Tor (SOCKS5-прокси)</string>
-    <string name="proxy_toggle_desc">Для сервисов, которые сами отказывают российским адресам (ChatGPT, Gemini, Claude…): обход DPI тут не поможет, сайт должен видеть адрес за границей. Tor берётся у Orbot или InviZible Pro в режиме прокси (их собственный VPN нужно выключить: Android разрешает только один). UDP (QUIC) таких сайтов отбрасывается, приложения переходят на TCP. Медленно, и некоторые сайты показывают для Tor капчу.</string>
+    <string name="section_proxy">Сайты через прокси (Tor или свой)</string>
+    <string name="proxy_toggle">Сайты из списка через SOCKS5-прокси</string>
+    <string name="proxy_toggle_desc">Для сервисов, которые сами отказывают российским адресам (ChatGPT, Gemini, Claude…): обход DPI тут не поможет, сайт должен видеть адрес за границей. Tor берётся у Orbot или InviZible Pro в режиме прокси (их собственный VPN нужно выключить: Android разрешает только один). Или ваш собственный локальный прокси (sing-box, Xray, NekoBox… в режиме SOCKS). Без поддержки UDP QUIC таких сайтов отбрасывается, приложения переходят на TCP. Tor медленный, и некоторые сайты показывают для него капчу.</string>
+    <string name="proxy_udp">UDP тоже через прокси</string>
+    <string name="proxy_udp_desc">Если прокси передаёт UDP (SOCKS5 UDP ASSOCIATE: sing-box, Xray, NekoBox и подобные), QUIC и звонки сайтов из списка тоже пойдут через него. Tor UDP не умеет — для него оставьте выключенным. Самопроверка проверяет UDP прокси.</string>
     <string name="proxy_checking">Проверка прокси…</string>
     <string name="proxy_up">Прокси отвечает на %1$s</string>
     <string name="proxy_none_installed">Нет приложения с Tor: установите Orbot (или InviZible Pro) и запустите Tor в режиме прокси</string>
@@ -309,7 +311,7 @@
     <string name="proxy_get_orbot">Скачать Orbot</string>
     <string name="proxy_edit_list">Домены: список %1$s</string>
     <string name="proxy_address">Адрес прокси</string>
-    <string name="proxy_address_hint">хост:порт; Tor в Orbot и InviZible: 127.0.0.1:9050</string>
+    <string name="proxy_address_hint">хост:порт (IP-адрес); Tor в Orbot и InviZible: 127.0.0.1:9050</string>
     <string name="proxy_address_invalid">Нужно хост:порт, например 127.0.0.1:9050</string>
     <string name="update_title">Доступна версия %1$s</string>
     <string name="update_installed">Установлена: %1$s</string>

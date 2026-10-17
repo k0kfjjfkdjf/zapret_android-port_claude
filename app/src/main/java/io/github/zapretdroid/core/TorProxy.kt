@@ -10,7 +10,8 @@ import java.net.Socket
  * proxy mode (Android allows one VPN: ours). For services that refuse Russian addresses
  * themselves (ChatGPT, Gemini…), where DPI bypass cannot help: the site sees the proxy's exit.
  * The engine sends the host name to the proxy (resolved at the exit) and drops the group's UDP
- * (Tor carries TCP only), so apps fall back from QUIC to TCP.
+ * (Tor carries TCP only), so apps fall back from QUIC to TCP; with the user's own proxy that
+ * relays UDP (sing-box, Xray, NekoBox… in SOCKS mode) the UDP goes through it too ([udp]).
  */
 object TorProxy {
     const val DEFAULT_PROXY = "127.0.0.1:9050"
@@ -39,9 +40,13 @@ object TorProxy {
         return InetSocketAddress(host, port)
     }
 
+    /** host:port with an IP address: the engine takes no host names for -C. */
     fun isValid(address: String) = runCatching {
-        val a = socketAddress(address)
-        a.port in 1..65535 && a.hostString.isNotEmpty()
+        val host = address.substringBeforeLast(':').trim().removePrefix("[").removeSuffix("]")
+        val port = address.substringAfterLast(':').trim().toInt()
+        val v4 = host.split('.').let { p -> p.size == 4 && p.all { it.toIntOrNull() in 0..255 && it.isNotEmpty() } }
+        val v6 = ':' in host && host.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
+        port in 1..65535 && (v4 || v6)
     }.getOrDefault(false)
 
     /** Asks Orbot to start Tor (its public intent); InviZible has none, it is started by hand. */
@@ -63,7 +68,7 @@ object TorProxy {
         HostLists.save(context, LIST, text)
     }
 
-    /** The engine group in front of the strategy: listed hosts through the proxy. */
-    fun group(listPath: String, address: String): List<String> =
-        listOf("--hosts", listPath, "-C", "socks5://$address", "--auto=none")
+    /** The engine group in front of the strategy: listed hosts through the proxy, UDP too if [udp]. */
+    fun group(listPath: String, address: String, udp: Boolean = false): List<String> =
+        listOf("--hosts", listPath, "-C", "socks5://$address") + (if (udp) listOf("--udp-proxy") else emptyList()) + "--auto=none"
 }

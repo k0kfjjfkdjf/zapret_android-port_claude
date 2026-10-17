@@ -22,7 +22,9 @@ void udp_stat_in(struct eval *remote, ssize_t n);
 
 void udp_reply_hook(struct eval *val, const char *buffer, ssize_t n, const union sockaddr_u *src);
 
-ssize_t udp_hook(struct eval *val, 
+bool ups_is_relay(struct eval *remote, const union sockaddr_u *from);
+
+ssize_t udp_hook(struct poolhd *pool, struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst);
     
 static bool check_l34(struct desync_params *dp, int st, const union sockaddr_u *dst);

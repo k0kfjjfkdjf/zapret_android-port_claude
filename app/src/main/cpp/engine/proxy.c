@@ -826,11 +826,26 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                     val->fd, ADDR_STR, ntohs(addr.in.sin_port));
                 pair->addr = addr;
             }
-            ns = udp_hook(pair, data + offs, n - offs, &addr);
+            ns = udp_hook(pool, pair, data + offs, n - offs, &addr);
         }
         else {
+            // ZapretDroid: replies through the upstream proxy's relay carry a SOCKS5 UDP header
+            // with the real source; unwrapped here (fragments are not supported, dropped).
+            char *pl = data;
+            ssize_t pn = n;
+            if (ups_is_relay(val, &addr)) {
+                if (n < 10 || data[2] != 0 || data[3] == S_ATP_ID) {
+                    continue;
+                }
+                int hoffs = s5_get_addr(data, n, &addr, SOCK_DGRAM);
+                if (hoffs < 0 || hoffs > n) {
+                    continue;
+                }
+                pl = data + hoffs;
+                pn = n - hoffs;
+            }
             if (params.conn_log) {
-                udp_stat_in(val, n);
+                udp_stat_in(val, pn);
             }
             // Answers of the app's resolver look like they come from the VPN's DNS address.
             if (params.dns_redir && addr.sa.sa_family == params.dns_redir_to.sa.sa_family
@@ -840,15 +855,16 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                         : !memcmp(&addr.in6.sin6_addr, &params.dns_redir_to.in6.sin6_addr, 16))) {
                 addr = params.dns_redir_from;
             }
-            udp_reply_hook(val, data, n, &addr);
+            udp_reply_hook(val, pl, pn, &addr);
             map_fix(&addr, 0);
             memset(buff->data, 0, S_SIZE_I6);
             
-            int offs = s5_set_addr(data, S_SIZE_I6, &addr, 1);
+            int offs = s5_set_addr(pl, S_SIZE_I6, &addr, 1);
             if (offs < 0 || offs > S_SIZE_I6) {
                 return -1;
             }
-            ns = send(pair->fd, data - offs, offs + n, 0);
+            memset(pl - offs, 0, 3); // RSV, FRAG: pl may sit after the proxy's own header
+            ns = send(pair->fd, pl - offs, offs + pn, 0);
         }
         if (ns < 0) {
             int err = get_e();

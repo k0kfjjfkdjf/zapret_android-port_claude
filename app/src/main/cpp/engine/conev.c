@@ -170,6 +170,27 @@ void del_event(struct poolhd *pool, struct eval *val)
         val->pair = 0;
         del_event(pool, e);
     }
+    // ZapretDroid: an association with the upstream proxy lives as long as its UDP socket.
+    if (val->ups) {
+        struct udp_upstream *u = val->ups;
+        val->ups = 0;
+        for (int i = 0; i < u->queued; i++) {
+            free(u->queue[i]);
+        }
+        struct eval *ctrl = u->ctrl;
+        free(u);
+        if (ctrl) {
+            ctrl->ups_owner = 0;
+            del_event(pool, ctrl);
+        }
+    }
+    if (val->ups_owner) {
+        if (val->ups_owner->ups) {
+            val->ups_owner->ups->ctrl = 0;
+            val->ups_owner->ups->state = -1;
+        }
+        val->ups_owner = 0;
+    }
     assert(pool->count >= 0);
 }
 

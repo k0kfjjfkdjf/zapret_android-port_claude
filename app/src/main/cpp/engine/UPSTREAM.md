@@ -74,7 +74,13 @@ Changes in this fork:
 - Upstream SOCKS5 of a group (`-C socks5://…`): the CONNECT carries the host name (from the
   client's first data, SNI or Host, else the DNS cache) instead of the address, so the proxy
   resolves it (Tor at the exit). UDP of a group with `-C` is dropped (the proxy carries TCP
-  only; apps fall back from QUIC to TCP).
+  only; apps fall back from QUIC to TCP), unless the group has `--udp-proxy`: then each UDP
+  association of the group sets up its own UDP ASSOCIATE with the proxy (non-blocking control
+  connection; up to 16 datagrams wait for the relay address, a 0.0.0.0 relay means the proxy's
+  own address), datagrams go to the relay with a SOCKS5 UDP header per destination and replies
+  from the relay are unwrapped to their real source. Fragments and domain addresses in replies
+  are dropped; if the proxy refuses or closes the association, the socket's UDP is dropped and
+  the log says why (`udp N: proxy UDP failed: …`).
 - Stop before listen: a stop requested while the engine still starts (large host lists) used
   to be lost; `engine_stop_requested` (set by the JNI layer) makes the engine return right
   after `listen`. Inside the app (`ZAPRETDROID_JNI`) no SIGINT/SIGTERM/SIGHUP handlers are

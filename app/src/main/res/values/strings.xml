@@ -300,9 +300,11 @@
     <string name="dns_secure_desc">ByeZapret answers the apps\' DNS itself and asks the server below over an encrypted connection (by IP, without SNI): the provider cannot see or spoof the answers, and names for host lists are always known. If the server fails, the other presets are tried.</string>
     <string name="dns_provider_custom">Own server</string>
     <string name="dns_provider_custom_hint">https://host/dns-query for DoH, tls://host for DoT; empty: the preset chosen above</string>
-    <string name="section_proxy">Sites through Tor</string>
-    <string name="proxy_toggle">Listed sites through Tor (SOCKS5 proxy)</string>
-    <string name="proxy_toggle_desc">For services that refuse Russian addresses themselves (ChatGPT, Gemini, Claude…): DPI bypass cannot help, the site has to see an address abroad. Tor comes from Orbot or InviZible Pro in proxy mode (turn their own VPN off: Android allows one). Their UDP (QUIC) is dropped, apps fall back to TCP. Slow, and some sites ask for a captcha from Tor.</string>
+    <string name="section_proxy">Sites through a proxy (Tor or your own)</string>
+    <string name="proxy_toggle">Listed sites through a SOCKS5 proxy</string>
+    <string name="proxy_toggle_desc">For services that refuse Russian addresses themselves (ChatGPT, Gemini, Claude…): DPI bypass cannot help, the site has to see an address abroad. Tor comes from Orbot or InviZible Pro in proxy mode (turn their own VPN off: Android allows one). Or your own local proxy (sing-box, Xray, NekoBox… in SOCKS mode). Without UDP support their QUIC is dropped and apps fall back to TCP. Tor is slow, and some sites ask for a captcha from it.</string>
+    <string name="proxy_udp">UDP through the proxy too</string>
+    <string name="proxy_udp_desc">If the proxy relays UDP (SOCKS5 UDP ASSOCIATE: sing-box, Xray, NekoBox and the like), QUIC and calls of the listed sites go through it as well. Tor cannot carry UDP: leave this off for it. The self-check tests the proxy's UDP.</string>
     <string name="proxy_checking">Checking the proxy…</string>
     <string name="proxy_up">The proxy answers at %1$s</string>
     <string name="proxy_none_installed">No Tor app installed: install Orbot (or InviZible Pro), start Tor in proxy mode</string>
@@ -311,7 +313,7 @@
     <string name="proxy_get_orbot">Get Orbot</string>
     <string name="proxy_edit_list">Domains: list %1$s</string>
     <string name="proxy_address">Proxy address</string>
-    <string name="proxy_address_hint">host:port, Tor in Orbot and InviZible: 127.0.0.1:9050</string>
+    <string name="proxy_address_hint">host:port (IP address); Tor in Orbot and InviZible: 127.0.0.1:9050</string>
     <string name="proxy_address_invalid">Expected host:port, e.g. 127.0.0.1:9050</string>
     <string name="update_title">Version %1$s is available</string>
     <string name="update_installed">Installed: %1$s</string>
