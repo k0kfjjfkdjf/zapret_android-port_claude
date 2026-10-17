@@ -178,7 +178,7 @@
     <string name="test_share_report">Share test report</string>
     <string name="selfcheck_title">Function check</string>
     <string name="selfcheck_desc">Checks the device, the engine and the network and makes a report to send to the developer</string>
-    <string name="selfcheck_intro">Runs about 40 checks in a minute or two: permissions, Private DNS, battery optimization, fake payloads; the engine against local servers on this phone (SOCKS5, TCP with split and disorder, UDP with fakes); every preset; then DNS, HTTPS, QUIC and STUN without bypass and with the current strategy. The report includes the end of the journal. The VPN can stay on.</string>
+    <string name="selfcheck_intro">Runs about 80 checks in two or three minutes: permissions, Private DNS, battery optimization, fake payloads; the engine against local servers on this phone (SOCKS5, TCP with split and disorder, UDP with fakes); every preset; then DNS, HTTPS, QUIC and STUN without bypass and with the current strategy; at the end Discord (site, app gateway, CDN) with a dozen strategies, zapret-termux, --mss 88 and allowed-SNI fakes among them. The report includes the end of the journal. The VPN can stay on.</string>
     <string name="selfcheck_start">Run the check</string>
     <string name="selfcheck_running">Checking…</string>
     <string name="selfcheck_summary">OK %1$d · warnings %2$d · failures %3$d</string>

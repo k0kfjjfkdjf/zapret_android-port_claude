@@ -112,6 +112,7 @@ object SelfCheck {
         engineLocal(fakeDir, listDir)
         presets(fakeDir, listDir)
         network(context, settings, fakeDir, listDir)
+        discordComparison(fakeDir, listDir)
     }
 
     // --- device -----------------------------------------------------------------------------
@@ -493,6 +494,70 @@ object SelfCheck {
     }
 
     private fun mark(b: Boolean) = if (b) "✓" else "✗"
+
+    // --- Discord across strategies ------------------------------------------------------------
+
+    /** Strategies compared on Discord: presets and candidates against the 16-20 KB freeze. */
+    private val discordStrategies = listOf(
+        "--disorder 1",
+        "--disorder 1 --tlsrec 1+s",
+        "--disorder 1 --disorder midsld --tlsrec sniext+1",
+        "--oob 3",
+        Strategies.DISCORD_TERMUX_TCP,
+        Strategies.DISCORD_TERMUX_TCP + " --mss 88",
+        "--disorder 1 --mss 88",
+        "--tlsrec sniext+1 --mss 88",
+        "--fake -1 --ttl 4 --fake-tls-mod rand,orig --fake-sni www.google.com",
+        "--fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com",
+        "--fake -1 --ttl 8 --fake-tls-mod rand,orig --fake-sni www.google.com",
+        "--disorder sniext+1 --fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com",
+    )
+
+    /** discord.com shows the freeze (its page is over 100 KB), the gateway is what the app needs. */
+    private val discordTargets = listOf("discord.com", "gateway.discord.gg", "cdn.discordapp.com/embed/avatars/0.png")
+
+    private fun discordComparison(fakeDir: File, listDir: File) {
+        val g = "discord strategies"
+        val addresses = discordTargets.associateWith { spec ->
+            val host = ProbeTarget.parse(spec).host
+            runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
+        }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(discordTargets.size)
+        val scores = mutableListOf<Pair<String, Int>>()
+        try {
+            discordStrategies.forEach { strategy ->
+                check(g, strategy) {
+                    val results = TestEngine.with(strategy, PORT, fakeDir, listDir, connLog = false) {
+                        pool.invokeAll(discordTargets.map { spec ->
+                            java.util.concurrent.Callable { SiteProbe.probe(PORT, spec, addresses[spec], TIMEOUT_MS) }
+                        }).map { it.get() }
+                    }
+                    // loaded counts double: the freeze is what breaks the app
+                    val score = results.sumOf { (if (it.ok) 2 else 0) + (if (it.responded) 1 else 0) }
+                    synchronized(scores) { scores += strategy to score }
+                    val text = results.joinToString("; ") { r ->
+                        val name = ProbeTarget.parse(r.host).host
+                        val state = when {
+                            r.ok -> "loaded"
+                            r.responded -> "answered, froze at ${r.bytes / 1024} KB"
+                            else -> "failed (${r.reason}: ${r.detail.take(60)})"
+                        }
+                        "$name $state"
+                    }
+                    (if (results.all { it.ok }) CheckStatus.OK else CheckStatus.WARN) to text
+                }
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        check(g, "best for Discord") {
+            val best = scores.maxByOrNull { it.second } ?: return@check CheckStatus.WARN to "no results"
+            val top = scores.maxOf { it.second }
+            val max = discordTargets.size * 3
+            (if (top == max) CheckStatus.OK else CheckStatus.INFO) to "${best.first} (score ${best.second} of $max: loaded 2, answered 1 per target)" +
+                if (top < max) "; none loads every target: the freeze is not beaten by these strategies" else ""
+        }
+    }
 
     // --- report -----------------------------------------------------------------------------
 
