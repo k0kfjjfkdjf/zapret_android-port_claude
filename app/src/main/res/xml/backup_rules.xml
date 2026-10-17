@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 11 and older: the journal (every visited domain, by --conn-log), deep check runs and
+<!-- Android 11 and older: the journal (every visited domain, from the connection log), deep check runs and
      generated fakes stay on the device. Settings, host lists and strategy history are backed up. -->
 <full-backup-content>
     <exclude domain="file" path="logs/" />
