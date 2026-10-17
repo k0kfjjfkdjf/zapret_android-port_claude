@@ -128,7 +128,7 @@ object SelfCheck {
             else CheckStatus.WARN to "not granted yet: Android asks on the first connection"
         }
         val ours = VpnStatus.isServiceRunning(context)
-        check(g, "ZapretDroid VPN") { CheckStatus.INFO to if (ours) "running" else "stopped" }
+        check(g, "ByeZapret VPN") { CheckStatus.INFO to if (ours) "running" else "stopped" }
         val manager = context.getSystemService(ConnectivityManager::class.java)
         val network = manager?.activeNetwork
         val caps = network?.let { manager.getNetworkCapabilities(it) }
@@ -156,7 +156,7 @@ object SelfCheck {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || link == null) return@check CheckStatus.INFO to "not available"
             if (link.isPrivateDnsActive) {
                 CheckStatus.WARN to "active (${link.privateDnsServerName ?: "automatic"}): Android sends DNS over TLS on port 853 " +
-                    "itself, past the DNS server set in ZapretDroid; if sites do not open, turn it off"
+                    "itself, past the DNS server set in ByeZapret; if sites do not open, turn it off"
             } else {
                 CheckStatus.OK to "off"
             }
@@ -561,7 +561,7 @@ object SelfCheck {
         return when {
             loaded -> CheckStatus.OK to "$signs: works"
             answered -> CheckStatus.WARN to "$signs: the server answers but the data freezes (${https?.bytes?.div(1024)} KB): " +
-                "the IP-based freeze after 16-20 KB; splitting does not help, try fakes with an allowed SNI (ZapretDroid features set)"
+                "the IP-based freeze after 16-20 KB; splitting does not help, try fakes with an allowed SNI (ByeZapret features set)"
             asChrome -> CheckStatus.WARN to "$signs: blocked by SNI only for small ClientHellos: browsers and Chromium apps pass, " +
                 "Android apps (OkHttp) do not; look for a strategy in the tester with TLS \"Android + Chrome\""
             else -> CheckStatus.WARN to "$signs: the TLS handshake does not get through: another strategy is needed"
@@ -695,7 +695,7 @@ object SelfCheck {
             val file = File(AppLog.file.parentFile, "selfcheck.txt")
             val list = items
             file.bufferedWriter().use { out ->
-                out.appendLine("ZapretDroid function check, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()) + ", ${totalMs / 1000} s")
+                out.appendLine("ByeZapret function check, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()) + ", ${totalMs / 1000} s")
                 Diagnostics.report(context, settings).forEach { out.appendLine(it) }
                 val counts = list.groupingBy { it.status }.eachCount()
                 out.appendLine("summary: " + CheckStatus.entries.joinToString { "${it.name} ${counts[it] ?: 0}" })

@@ -16,7 +16,7 @@ class ZapretApp : Application() {
         if (!vpnRunning && !AppLog.inEngineProcess) AppLog.trimIfLarge()
         AppLog.i(
             "process started: ${if (AppLog.inEngineProcess) "vpn" else "ui"}, " +
-                "ZapretDroid ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), " +
+                "ByeZapret ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), " +
                 "${Build.MANUFACTURER} ${Build.MODEL}" + if (!AppLog.inEngineProcess) ", vpn running: $vpnRunning" else "",
         )
         val default = Thread.getDefaultUncaughtExceptionHandler()

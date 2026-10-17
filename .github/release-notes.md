@@ -1,4 +1,4 @@
-Тестовая сборка: обход DPI без root через VpnService (ByeDPI + hev-socks5-tunnel).
+**ByeZapret** (бывший ZapretDroid). Тестовая сборка: обход DPI без root через VpnService (ByeDPI + hev-socks5-tunnel).
 
 **Какой файл скачать**
 - `zapretdroid-*-universal.apk` — подходит для любого устройства;

@@ -160,7 +160,7 @@ object StrategyTester {
         runCatching {
             val file = java.io.File(AppLog.file.parentFile, "test-report.txt")
             file.bufferedWriter().use { out ->
-                out.appendLine("ZapretDroid strategy test, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+                out.appendLine("ByeZapret strategy test, " + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
                 out.appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                 out.appendLine()
                 out.appendLine("loaded: the data arrived without a freeze; responded: the server answered at all (as ByeByeDPI counts).")

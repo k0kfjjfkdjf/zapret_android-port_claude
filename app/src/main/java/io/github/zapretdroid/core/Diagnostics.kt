@@ -9,7 +9,7 @@ import io.github.zapretdroid.BuildConfig
 /** Environment summary written at the top of every session log. */
 object Diagnostics {
     fun report(context: Context, settings: Settings): List<String> = buildList {
-        add("ZapretDroid ${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE}), ${context.packageName}")
+        add("ByeZapret ${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE}), ${context.packageName}")
         add("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}, ABI ${Build.SUPPORTED_ABIS.joinToString()}")
         add("strategy: ${settings.strategyId}")
         add("args: ${settings.strategyArgs}")

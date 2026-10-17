@@ -51,7 +51,7 @@ class ByeDpiProxyCmdPreferences(val args: Array<String>) : ByeDpiProxyPreference
                 if (domainList != null && domainList.domains.isNotEmpty()) {
                     domainList.domains.joinToString(" ")
                 } else {
-                    Log.w("ProxyPref", "List '$listName' is not a ByeByeDPI list, left for ZapretDroid")
+                    Log.w("ProxyPref", "List '$listName' is not a ByeByeDPI list, left for ByeZapret")
                     matchResult.value
                 }
             }

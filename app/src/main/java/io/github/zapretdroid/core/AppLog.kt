@@ -20,7 +20,7 @@ import java.util.Locale
  * VPN session holds it open (app start without a session, or right before a session starts).
  */
 object AppLog {
-    private const val TAG = "ZapretDroid"
+    private const val TAG = "ByeZapret"
     private const val TRIM_ABOVE = 4L * 1024 * 1024
     private const val KEEP = 2 * 1024 * 1024
 

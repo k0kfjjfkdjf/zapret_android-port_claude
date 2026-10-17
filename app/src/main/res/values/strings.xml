@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">ZapretDroid</string>
+    <string name="app_name" translatable="false">ByeZapret</string>
 
     <string name="state_stopped">Disconnected</string>
     <string name="state_starting">Connecting…</string>
@@ -234,7 +234,7 @@
     <string name="multi_result">%1$d strategies together should open %2$d of %3$d openable domains (%4$d tested)</string>
     <string name="multi_lists">Domains of each extra strategy are saved as host lists: %1$s</string>
     <string name="multi_verify">Re-check</string>
-    <string name="private_dns_warning">Android Private DNS is on (%1$s): DNS goes encrypted (TLS), so ZapretDroid cannot see names: host lists cannot pick groups for QUIC without SNI, voice calls and TCP without SNI. If sites do not open, turn it off in Settings → Network → Private DNS.</string>
+    <string name="private_dns_warning">Android Private DNS is on (%1$s): DNS goes encrypted (TLS), so ByeZapret cannot see names: host lists cannot pick groups for QUIC without SNI, voice calls and TCP without SNI. If sites do not open, turn it off in Settings → Network → Private DNS.</string>
     <string name="private_dns_auto">automatic</string>
     <string name="strategy_tap_to_change">Tap to change</string>
     <string name="strategy_pick">Strategy</string>
@@ -267,7 +267,7 @@
     <string name="dns_system">System (router)</string>
     <string name="test_tls_chrome">as Chrome</string>
     <string name="test_tls_android_chrome">Android + Chrome</string>
-    <string name="test_ours">ZapretDroid features (%1$d)</string>
+    <string name="test_ours">ByeZapret features (%1$d)</string>
     <string name="test_responded">server answered %1$d of %2$d (ByeByeDPI would count these); the rest froze or was cut</string>
     <string name="test_probe_responded">◐ %1$s: answered but did not load: %2$s · %3$s</string>
     <string name="strategy_discord_termux">Discord (as in zapret-termux)</string>
@@ -292,12 +292,12 @@
     <string name="monitor_udp_closed">UDP flow ended</string>
     <string name="test_termux">zapret-termux generated (%1$d)</string>
     <string name="classic_title">ByeByeDPI interface</string>
-    <string name="classic_desc">Switch to the interface of ByeByeDPI with all its screens. It runs ZapretDroid\'s engine, so ZapretDroid options work in its command line; the way back is in its menu</string>
-    <string name="classic_back">ZapretDroid interface</string>
+    <string name="classic_desc">Switch to the interface of ByeByeDPI with all its screens. It runs ByeZapret\'s engine, so ByeZapret options work in its command line; the way back is in its menu</string>
+    <string name="classic_back">ByeZapret interface</string>
     <string name="dns_mode_plain">Plain DNS</string>
     <string name="dns_mode_doh">DNS over HTTPS</string>
     <string name="dns_mode_dot">DNS over TLS</string>
-    <string name="dns_secure_desc">ZapretDroid answers the apps\' DNS itself and asks the server below over an encrypted connection (by IP, without SNI): the provider cannot see or spoof the answers, and names for host lists are always known. If the server fails, the other presets are tried.</string>
+    <string name="dns_secure_desc">ByeZapret answers the apps\' DNS itself and asks the server below over an encrypted connection (by IP, without SNI): the provider cannot see or spoof the answers, and names for host lists are always known. If the server fails, the other presets are tried.</string>
     <string name="dns_provider_custom">Own server</string>
     <string name="dns_provider_custom_hint">https://host/dns-query for DoH, tls://host for DoT; empty: the preset chosen above</string>
     <string name="section_proxy">Sites through Tor</string>
@@ -317,7 +317,7 @@
     <string name="update_installed">Installed: %1$s</string>
     <string name="update_install">Download and install</string>
     <string name="update_later">Later</string>
-    <string name="update_allow_install">Allow installing apps from ZapretDroid in the screen that opened, then tap again</string>
+    <string name="update_allow_install">Allow installing apps from ByeZapret in the screen that opened, then tap again</string>
     <string name="update_failed">Update failed: %1$s</string>
     <string name="update_latest">%1$s is the latest version</string>
     <string name="update_check_failed">Could not check for updates: %1$s</string>

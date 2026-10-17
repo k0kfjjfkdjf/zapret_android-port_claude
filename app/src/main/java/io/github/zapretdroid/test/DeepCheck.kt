@@ -260,7 +260,7 @@ object DeepCheck {
         val ranked = results
         val base = baseline
         File(dir, "summary.txt").bufferedWriter().use { out ->
-            out.appendLine("ZapretDroid deep check, ${tested.size} domains" + if (cancelled) " (stopped early)" else "")
+            out.appendLine("ByeZapret deep check, ${tested.size} domains" + if (cancelled) " (stopped early)" else "")
             out.appendLine("codes: + opened, r reset, t timeout, f freeze or short body, c no TCP, m wrong certificate, p test proxy, x other")
             out.appendLine("loaded: data arrived on every attempt without a freeze; answered: the server replied on every attempt (as ByeByeDPI counts)")
             base?.let { out.appendLine("without bypass: loaded ${it.count}/${tested.size}, answered ${it.respondedCount}, failures ${it.reasons}") }

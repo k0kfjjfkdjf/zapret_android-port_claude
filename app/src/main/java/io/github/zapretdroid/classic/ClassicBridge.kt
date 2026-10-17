@@ -33,7 +33,7 @@ object ClassicBridge {
 
     fun setClassic(context: Context, classic: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(KEY_CLASSIC, classic) }
-        AppLog.i("interface: ${if (classic) "ByeByeDPI" else "ZapretDroid"}")
+        AppLog.i("interface: ${if (classic) "ByeByeDPI" else "ByeZapret"}")
     }
 
     /** The engine arguments the classic settings produce, without the program name and listen address. */

@@ -29,7 +29,7 @@ object Backup {
             }
         }
         return JSONObject()
-            .put("app", "ZapretDroid")
+            .put("app", "ByeZapret")
             .put("format", FORMAT)
             .put("settings", settings)
             .put("strategies", SavedStrategies.file(context).takeIf { it.exists() }?.readText() ?: "")
@@ -40,7 +40,8 @@ object Backup {
     /** Returns how many settings, strategies and lists were restored. */
     fun import(context: Context, text: String): Triple<Int, Int, Int> {
         val root = JSONObject(text)
-        require(root.optString("app") == "ZapretDroid") { "not a ZapretDroid backup" }
+        // Backups from before the rename to ByeZapret say "ZapretDroid".
+        require(root.optString("app") in setOf("ByeZapret", "ZapretDroid")) { "not a ByeZapret backup" }
         val settings = root.optJSONObject("settings") ?: JSONObject()
         val editor = context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
         settings.keys().forEach { key ->

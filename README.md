@@ -1,4 +1,11 @@
-# ZapretDroid
+# ByeZapret
+
+> **Почему новое название.** До версии 0.9.7 приложение называлось ZapretDroid. На GitHub
+> есть отдельный проект с точно таким же именем —
+> [ezxidze/ZapretDroid](https://github.com/ezxidze/ZapretDroid), — устроенный совсем
+> по-другому и никак с этим не связанный. Чтобы их не путали, это приложение теперь
+> называется **ByeZapret**. Идентификатор пакета (`io.github.zapretdroid`) оставлен прежним:
+> обновления ставятся поверх, настройки сохраняются, старые резервные копии импортируются.
 
 Обход DPI на Android **без root**: обычное приложение, которое работает через системный VPN
 (`VpnService`). Трафик никуда не уходит — «VPN» локальный, он нужен только чтобы перехватить
@@ -36,10 +43,10 @@ zapret на Android без root не воспроизвести.
 - Готовые стратегии и своя командная строка движка.
 - **Интерфейс ByeByeDPI** (*Настройки → Интерфейс ByeByeDPI*): все экраны ByeByeDPI 1.8.2 —
   главный экран, настройки (редактор и командная строка), выбор приложений, подбор стратегий,
-  режим прокси. Работает на VPN-сервисе и движке ZapretDroid, поэтому в его командной строке
-  работают и параметры ZapretDroid (`{fake:...}`, `{list:...}`, маркеры tpws, `--mss`,
+  режим прокси. Работает на VPN-сервисе и движке ByeZapret, поэтому в его командной строке
+  работают и параметры ByeZapret (`{fake:...}`, `{list:...}`, маркеры tpws, `--mss`,
   `--udp-proto-fake`…). Стратегия, DNS, IPv6 и список приложений общие для обоих интерфейсов;
-  вернуться — пункт «Интерфейс ZapretDroid» в меню.
+  вернуться — пункт «Интерфейс ByeZapret» в меню.
 - **Списки доменов (`-H`) и для UDP:** движок определяет хост UDP-потока по SNI в QUIC Initial
   (включая Chrome с Kyber, где ClientHello в двух пакетах), по ответам DNS, прошедшим через
   него, и по Discord IP discovery. Группы стратегий по сервисам (YouTube, Discord…) теперь
@@ -129,7 +136,7 @@ zapret на Android без root не воспроизвести.
   одну сессию ограничен 8 МБ, дальше только в logcat. В облачный бэкап журнал не попадает.
 - DNS-сервер, IPv6, раздельное туннелирование по приложениям.
 - Поддержка «Постоянного VPN» Android (автозапуск при загрузке:
-  *Настройки → Сеть → VPN → ZapretDroid → Постоянная VPN*).
+  *Настройки → Сеть → VPN → ByeZapret → Постоянная VPN*).
 - Интерфейс на русском и английском, Material You. Android 7.0+ (API 24).
 
 Движок — форк ByeDPI в `app/src/main/cpp/engine` (изменения перечислены в
@@ -177,7 +184,7 @@ CI (GitHub Actions) собирает их на каждый push — смотр�
 
 ## English
 
-ZapretDroid is a rootless DPI bypass for Android. It runs a local VPN (`VpnService`) that feeds
+ByeZapret is a rootless DPI bypass for Android. It runs a local VPN (`VpnService`) that feeds
 traffic through [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) into the
 [ByeDPI](https://github.com/hufrea/byedpi) desync engine; nothing leaves the device through a
 remote server. Packet-level zapret techniques (nfqws) require root and are out of scope; tpws position

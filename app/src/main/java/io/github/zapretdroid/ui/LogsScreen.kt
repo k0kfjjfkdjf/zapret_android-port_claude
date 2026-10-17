@@ -299,6 +299,6 @@ private fun copyLog(context: Context, lines: List<String>) {
     AppLog.i("journal copied to the clipboard (${lines.size} lines)")
     val text = lines.joinToString("\n").takeLast(200_000)
     val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-    clipboard?.setPrimaryClip(ClipData.newPlainText("ZapretDroid log", text))
+    clipboard?.setPrimaryClip(ClipData.newPlainText("ByeZapret log", text))
     Toast.makeText(context, R.string.logs_copied, Toast.LENGTH_SHORT).show()
 }

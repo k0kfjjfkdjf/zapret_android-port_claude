@@ -162,7 +162,7 @@ object Updater {
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
             conn.instanceFollowRedirects = false
-            conn.setRequestProperty("User-Agent", "ZapretDroid/${BuildConfig.VERSION_NAME}")
+            conn.setRequestProperty("User-Agent", "ByeZapret/${BuildConfig.VERSION_NAME}")
             conn.setRequestProperty("Accept", if (current.startsWith("https://api.github.com")) "application/vnd.github+json" else "*/*")
             val code = conn.responseCode
             if (code in 300..399) {
