@@ -3,6 +3,7 @@
 strategy (assets/strategies/byebyedpi.list) through the
 engine's option parser, so that a strategy the app offers can never fail to start."""
 import re
+import shlex
 import subprocess
 import sys
 
@@ -56,7 +57,7 @@ for i in range(3):
 failed = 0
 for line in strategies:
     line = line.replace("{fake:quic_sni}", quic_sni)
-    args = re.sub(r"\{fake:([^}]+)\}", lambda m: fake + m.group(1), line).split()
+    args = shlex.split(re.sub(r"\{fake:([^}]+)\}", lambda m: fake + m.group(1), line))
     r = subprocess.run([binary, "--parse"] + args, capture_output=True, text=True)
     if r.returncode != 0:
         failed += 1

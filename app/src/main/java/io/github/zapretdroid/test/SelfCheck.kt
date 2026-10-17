@@ -511,6 +511,9 @@ object SelfCheck {
         "--fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com",
         "--fake -1 --ttl 8 --fake-tls-mod rand,orig --fake-sni www.google.com",
         "--disorder sniext+1 --fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com",
+        // Discord groups of strategies from the ByeByeDPI Telegram group (zapretdroid.list).
+        "-T4 -q1 -d1 -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s -d35+s -r1+s -S -t6",
+        "-s1+s -d3+s -f-1 -t4 -Qorig",
     )
 
     /** discord.com shows the freeze (its page is over 100 KB), the gateway is what the app needs. */
