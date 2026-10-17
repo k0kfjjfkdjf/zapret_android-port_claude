@@ -42,6 +42,7 @@ import io.github.zapretdroid.ui.HomeScreen
 import io.github.zapretdroid.ui.HostListEditorScreen
 import io.github.zapretdroid.ui.HostListsScreen
 import io.github.zapretdroid.ui.LogsScreen
+import io.github.zapretdroid.ui.MonitorScreen
 import io.github.zapretdroid.ui.SelfCheckScreen
 import io.github.zapretdroid.ui.SettingsScreen
 import io.github.zapretdroid.ui.TestScreen
@@ -84,7 +85,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -191,6 +192,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP, Screen.COLLECT -> Screen.SETTINGS
             Screen.LIST_EDIT -> Screen.LISTS
             Screen.LOGS -> logsReturn
+            Screen.MONITOR -> Screen.HOME
             else -> Screen.HOME
         }
     }
@@ -231,7 +233,9 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onDismissError = { error = null },
             onOpenSettings = { screen = Screen.SETTINGS },
             onOpenLogs = { openLogs(Screen.HOME) },
+            onOpenMonitor = { screen = Screen.MONITOR },
         )
+        Screen.MONITOR -> MonitorScreen(vpnRunning = state == VpnState.RUNNING, onBack = { screen = Screen.HOME })
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
             vpnActive = state != VpnState.STOPPED,

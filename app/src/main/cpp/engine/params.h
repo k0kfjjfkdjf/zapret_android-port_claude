@@ -180,6 +180,9 @@ struct params {
     const char *protect_path;
     const char *autohost_log;
     bool conn_log;
+    // --mss: TCP maximum segment size of outgoing connections (as tpws --mss): both sides then
+    // send small segments
+    int mss;
     bool daemonize;
     const char *pid_file;
     int pid_fd;

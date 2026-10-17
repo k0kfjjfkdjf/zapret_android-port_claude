@@ -87,3 +87,21 @@
 --disorder sniext+1 --fake -1 --ttl 4 --fake-tls-mod rand,orig --fake-sni www.google.com
 --disorder sniext+1 --fake -1 --ttl 6 --fake-tls-mod rand,orig --fake-sni www.google.com
 --disorder sniext+1 --fake -1 --ttl 8 --fake-tls-mod rand,orig --fake-sni www.google.com
+
+# From zapret-termux (tpws): multisplit at many markers with disorder and OOB, as its
+# "discord", "discord_ultimate", "oob_split3", "tlsrec_1midsld_dis" (two-way Discord voice there)
+# and --mss 88 (small TCP segments both ways).
+--disoob 1 --disorder sniext+1 --disorder host+1 --disorder midsld-2 --disorder midsld --disorder midsld+2 --disorder endhost-1
+--disoob 1 --disorder sniext --disorder sniext+1 --disorder sniext+2 --disorder host --disorder host+1 --disorder host+2 --disorder midsld --disorder midsld+1 --disorder midsld+2 --disorder endhost-2 --disorder endhost-1 --disorder endhost --tlsrec sniext+1 --tlsrec sniext+2 --tlsrec sniext+3
+--disorder 1 --disorder midsld
+--disoob 1 --disorder midsld
+--disoob 1 --disorder 3 --disorder 5 --disorder 7 --disorder 9
+--disoob 1 --disorder 2 --disorder 3 --disorder 4 --disorder 5 --disorder 6 --disorder 7 --disorder 8
+--disorder 1 --disorder 2 --disorder 3 --disorder 4 --disorder 5 --disorder 6 --disorder 7 --disorder 8 --disorder 9 --disorder 10 --disorder 11 --disorder 12
+--oob 3
+--disorder 1 --disorder midsld --tlsrec sniext+1
+--oob 1 --split midsld --tlsrec sniext+1
+--oob 1 --split midsld --tlsrec sniext+1
+--disorder 1 --mss 88
+--tlsrec sniext+1 --mss 88
+--disoob 1 --disorder sniext+1 --disorder host+1 --disorder midsld-2 --disorder midsld --disorder midsld+2 --disorder endhost-1 --mss 88

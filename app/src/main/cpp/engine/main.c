@@ -14,6 +14,9 @@
 #include "conev.h"
 #include "tpws.h"
 
+/* Long-only options without a letter. */
+#define OPT_MSS 0x101
+
 #ifndef _WIN32
     #include <arpa/inet.h>
     #include <unistd.h>
@@ -151,6 +154,7 @@ static const char help_text[] = {
     "    -r, --tlsrec <pos_t>      Make TLS record at position\n"
     "    -m, --tlsminor <ver>      Change minor version of TLS\n"
     "    -a, --udp-fake <count>    UDP fakes count, default 0\n"
+    "    --mss <n>                 TCP MSS of outgoing connections (tpws --mss)\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
@@ -190,6 +194,7 @@ const struct option options[] = {
     {"cache-file",    1, 0, 'y'},
     {"autohost-log",  1, 0, 'J'},
     {"conn-log",      0, 0, 'k'},
+    {"mss",           1, 0, OPT_MSS},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -924,6 +929,14 @@ int parse_args(int argc, char **argv)
             params.autohost_log = optarg;
             break;
             
+        case OPT_MSS:
+            val = strtol(optarg, &end, 0);
+            if (val < 64 || val > 65535 || *end)
+                invalid = 1;
+            else
+                params.mss = val;
+            break;
+
         case 'k':
             params.conn_log = 1;
             break;

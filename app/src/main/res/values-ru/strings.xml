@@ -268,4 +268,24 @@
     <string name="test_ours">Функции ZapretDroid (%1$d)</string>
     <string name="test_responded">сервер ответил на %1$d из %2$d (так считает ByeByeDPI); остальные замерли или оборвались</string>
     <string name="test_probe_responded">◐ %1$s: ответил, но не загрузился: %2$s · %3$s</string>
+    <string name="strategy_discord_termux">Discord (как в zapret-termux)</string>
+    <string name="strategy_discord_termux_desc">TCP-стратегия, которая давала двусторонний голос Discord в zapret-termux: разрез ClientHello в 7 точках с disorder и OOB; UDP-фейки на голосовых портах</string>
+    <string name="monitor_title">Монитор соединений</string>
+    <string name="monitor_open">Монитор соединений: что сейчас делает Discord</string>
+    <string name="monitor_intro">В реальном времени из журнала движка этой сессии VPN. Откройте Discord и подключитесь к голосовому каналу: будут видны шлюз, голосовые серверы, UDP-потоки, повторы IP discovery, блокировки и обрывы, которых приложение не показывает.</string>
+    <string name="monitor_vpn_off">VPN выключен: показана последняя сессия. Включите VPN, чтобы смотреть вживую.</string>
+    <string name="monitor_discord">Discord</string>
+    <string name="monitor_all">Всё</string>
+    <string name="monitor_summary">соединений %1$d · блокировок %2$d · обрывов %3$d · повторов IP discovery %4$d · UDP без ответа %5$d</string>
+    <string name="monitor_connect">соединение</string>
+    <string name="monitor_closed">закрыто</string>
+    <string name="monitor_freeze">закрыто после ~16–32 КБ: обрыв DPI</string>
+    <string name="monitor_block">обнаружена блокировка</string>
+    <string name="monitor_tcp_failed">TCP-соединение не удалось</string>
+    <string name="monitor_tcp_slow">медленное TCP-соединение</string>
+    <string name="monitor_udp_start">UDP-поток</string>
+    <string name="monitor_udp_reply">ответ по UDP</string>
+    <string name="monitor_udp_retry">Discord повторяет IP discovery</string>
+    <string name="monitor_udp_no_reply">UDP-поток без ответа</string>
+    <string name="monitor_udp_closed">UDP-поток завершён</string>
 </resources>

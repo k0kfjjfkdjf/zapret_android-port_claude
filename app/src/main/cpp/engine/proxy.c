@@ -410,6 +410,12 @@ static int remote_sock(union sockaddr_u *dst, int type)
             return -1;
         }
     }
+    #ifdef TCP_MAXSEG
+    if (type == SOCK_STREAM && params.mss > 0 && setsockopt(sfd, IPPROTO_TCP,
+            TCP_MAXSEG, (char *)&params.mss, sizeof(params.mss))) {
+        uniperror("setsockopt TCP_MAXSEG");
+    }
+    #endif
     if (bind(sfd, (struct sockaddr *)&params.baddr, 
             SA_SIZE(&params.baddr)) < 0) {
         uniperror("bind");  

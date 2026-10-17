@@ -72,6 +72,7 @@ fun HomeScreen(
     onDismissError: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenMonitor: () -> Unit,
 ) {
     var picking by remember { mutableStateOf(false) }
     Scaffold(
@@ -167,6 +168,7 @@ fun HomeScreen(
                     )
                 }
             }
+            TextButton(onClick = onOpenMonitor) { Text(stringResource(R.string.monitor_open)) }
         }
     }
     if (picking) {

@@ -270,4 +270,24 @@
     <string name="test_ours">ZapretDroid features (%1$d)</string>
     <string name="test_responded">server answered %1$d of %2$d (ByeByeDPI would count these); the rest froze or was cut</string>
     <string name="test_probe_responded">◐ %1$s: answered but did not load: %2$s · %3$s</string>
+    <string name="strategy_discord_termux">Discord (as in zapret-termux)</string>
+    <string name="strategy_discord_termux_desc">The TCP strategy that gave two-way Discord voice in zapret-termux: splits at 7 points of the ClientHello with disorder and OOB; UDP fakes on the voice ports</string>
+    <string name="monitor_title">Connection monitor</string>
+    <string name="monitor_open">Connection monitor: what Discord is doing now</string>
+    <string name="monitor_intro">Live from the engine log of this VPN session. Open Discord and join a voice channel: you will see the gateway, voice servers, UDP flows, IP discovery retries, blocks and freezes that the app does not show.</string>
+    <string name="monitor_vpn_off">The VPN is off: showing the last session. Turn the VPN on to watch live.</string>
+    <string name="monitor_discord">Discord</string>
+    <string name="monitor_all">All</string>
+    <string name="monitor_summary">connections %1$d · blocks %2$d · freezes %3$d · IP discovery retries %4$d · UDP without reply %5$d</string>
+    <string name="monitor_connect">connection</string>
+    <string name="monitor_closed">closed</string>
+    <string name="monitor_freeze">closed after ~16-32 KB: the DPI freeze</string>
+    <string name="monitor_block">block detected</string>
+    <string name="monitor_tcp_failed">TCP connection failed</string>
+    <string name="monitor_tcp_slow">slow TCP connection</string>
+    <string name="monitor_udp_start">UDP flow</string>
+    <string name="monitor_udp_reply">UDP reply</string>
+    <string name="monitor_udp_retry">Discord repeats IP discovery</string>
+    <string name="monitor_udp_no_reply">UDP flow without a reply</string>
+    <string name="monitor_udp_closed">UDP flow ended</string>
 </resources>

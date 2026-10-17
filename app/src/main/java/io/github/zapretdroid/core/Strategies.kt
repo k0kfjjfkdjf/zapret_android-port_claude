@@ -49,6 +49,16 @@ object Strategies {
                 "--proto u --pf 443 $UDP_FAKES",
         ),
         Strategy(
+            "discord_termux", R.string.strategy_discord_termux, R.string.strategy_discord_termux_desc,
+            // zapret-termux's "discord" TCP strategy (tpws multisplit with disorder and OOB, which gave
+            // two-way voice there) with the UDP profile of the "Discord and calls" preset.
+            "--proto t,h $DISCORD_TERMUX_TCP --auto=none " +
+                "--proto u --pf 50000-65535 $UDP_FAKES --auto=none " +
+                "--proto u --pf 19294-19344 $UDP_FAKES --auto=none " +
+                "--proto u --pf 3478-3481 $UDP_FAKES --auto=none " +
+                "--proto u --pf 443 $UDP_FAKES",
+        ),
+        Strategy(
             "fake_google", R.string.strategy_fake_google, R.string.strategy_fake_google_desc,
             "--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_www_google_com.bin}",
         ),
@@ -64,6 +74,10 @@ object Strategies {
     )
 
     const val CUSTOM = "custom"
+
+    /** zapret-termux "discord": tpws --split-pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1 --disorder --oob. */
+    const val DISCORD_TERMUX_TCP = "--disoob 1 --disorder sniext+1 --disorder host+1 --disorder midsld-2 " +
+        "--disorder midsld --disorder midsld+2 --disorder endhost-1"
 
     /** UDP desync used by the presets: protocol-specific fakes with a low TTL. */
     const val UDP_FAKES = "--ttl 4 --udp-fake 6 --udp-desync 4 " +
