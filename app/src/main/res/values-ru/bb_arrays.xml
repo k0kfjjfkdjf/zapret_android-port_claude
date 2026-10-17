@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="bb_languages">
+        <item name="system">Автоматически</item>
+        <item name="ru">Русский</item>
+        <item name="en">English</item>
+    </array>
+
+    <array name="bb_themes">
+        <item name="system">Системная</item>
+        <item name="light">Светлая</item>
+        <item name="dark">Темная</item>
+    </array>
+
+    <array name="bb_byedpi_hosts_modes">
+        <item name="disable">Нет</item>
+        <item name="blacklist">Черный список</item>
+        <item name="whitelist">Белый список</item>
+    </array>
+
+    <array name="bb_applist_types">
+        <item name="disable">Нет</item>
+        <item name="blacklist">Черный список</item>
+        <item name="whitelist">Белый список</item>
+    </array>
+</resources>

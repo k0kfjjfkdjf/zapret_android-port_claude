@@ -291,4 +291,7 @@
     <string name="monitor_udp_no_reply">UDP flow without a reply</string>
     <string name="monitor_udp_closed">UDP flow ended</string>
     <string name="test_termux">zapret-termux generated (%1$d)</string>
+    <string name="classic_title">ByeByeDPI interface</string>
+    <string name="classic_desc">Switch to the interface of ByeByeDPI with all its screens. It runs ZapretDroid\'s engine, so ZapretDroid options work in its command line; the way back is in its menu</string>
+    <string name="classic_back">ZapretDroid interface</string>
 </resources>

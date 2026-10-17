@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.zapretdroid"
         minSdk = 24
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.8.7"
+        versionCode = 18
+        versionName = "0.9.0"
 
         ndk {
             abiFilters += abis
@@ -63,6 +63,8 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // The ByeByeDPI interface (classic/) uses views and ViewBinding.
+        viewBinding = true
     }
 
     compileOptions {
@@ -139,6 +141,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // ByeByeDPI interface (classic/), same libraries as ByeByeDPI 1.8.2.
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("com.google.android.material:material:1.13.0")
+    implementation("com.google.code.gson:gson:2.14.0")
 
     testImplementation("junit:junit:4.13.2")
 }

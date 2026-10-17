@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <EditTextPreference
+        android:key="byedpi_proxytest_delay"
+        android:title="@string/bb_test_delay"
+        android:inputType="number"
+        android:defaultValue="1"
+        app:useSimpleSummaryProvider="true"
+        app:iconSpaceReserved="false" />
+
+    <EditTextPreference
+        android:key="byedpi_proxytest_requests"
+        android:title="@string/bb_test_requests"
+        android:inputType="number"
+        android:defaultValue="1"
+        app:useSimpleSummaryProvider="true"
+        app:iconSpaceReserved="false" />
+
+    <EditTextPreference
+        android:key="byedpi_proxytest_limit"
+        android:title="@string/bb_test_requests_limit"
+        android:inputType="number"
+        android:defaultValue="20"
+        app:useSimpleSummaryProvider="true"
+        app:iconSpaceReserved="false" />
+
+    <EditTextPreference
+        android:key="byedpi_proxytest_timeout"
+        android:title="@string/bb_test_timeout"
+        android:inputType="number"
+        android:defaultValue="5"
+        app:useSimpleSummaryProvider="true"
+        app:iconSpaceReserved="false" />
+
+    <EditTextPreference
+        android:key="byedpi_proxytest_sni"
+        android:title="@string/bb_test_settings_sni"
+        android:inputType="text"
+        android:defaultValue="google.com"
+        app:useSimpleSummaryProvider="true"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="manage_domain_lists"
+        android:title="@string/bb_domain_lists"
+        android:summary="@string/bb_domain_lists_summary"
+        app:fragment="io.github.zapretdroid.classic.fragments.DomainListsFragment"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreference
+        android:key="byedpi_proxytest_usercommands"
+        android:title="@string/bb_test_settings_usercommands"
+        app:iconSpaceReserved="false" />
+
+    <EditTextPreference
+        android:key="byedpi_proxytest_commands"
+        android:title="@string/bb_test_settings_commands"
+        android:enabled="false"
+        android:inputType="textMultiLine"
+        app:useSimpleSummaryProvider="true"
+        app:iconSpaceReserved="false" />
+
+</PreferenceScreen>

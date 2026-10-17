@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="BbTheme.ByeDPI" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:statusBarColor">?attr/colorSurfaceContainer</item>
+
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+
+        <item name="colorControlActivated">?attr/colorPrimary</item>
+        <item name="colorControlHighlight">?attr/colorSecondaryContainer</item>
+
+        <item name="alertDialogTheme">@style/BbCustomAlertDialog</item>
+
+        <item name="android:textAppearanceListItem">@style/BbTextPrimary</item>
+        <item name="android:textAppearanceListItemSecondary">@style/BbTextSummary</item>
+        <item name="android:textAppearanceListItemSmall">@style/BbTextSummary</item>
+
+        <item name="switchPreferenceStyle">@style/BbApp.Preference.SwitchPreference</item>
+        <item name="materialCardViewStyle">@style/BbSmallShadowCard</item>
+    </style>
+
+    <style name="BbAppToolbar" parent="Widget.Material3.Toolbar.Surface">
+        <item name="android:background">?attr/colorSurfaceContainer</item>
+    </style>
+
+    <style name="BbCircleButton" parent="Widget.Material3.Button.Icon">
+        <item name="cornerRadius">60dp</item>
+        <item name="android:textSize">0sp</item>
+    </style>
+
+    <style name="BbApp.Preference.SwitchPreference" parent="Preference.SwitchPreference.Material">
+        <item name="android:widgetLayout">@layout/bb_material_switch</item>
+    </style>
+
+    <style name="BbCustomAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:windowBackground">@drawable/bb_material_alert</item>
+        <item name="android:textColorPrimary">?attr/colorOnSurface</item>
+        <item name="android:textColorSecondary">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <style name="BbTextPrimary" parent="TextAppearance.AppCompat.Title">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="BbTextSummary" parent="TextAppearance.AppCompat.Subhead">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="BbPillCard">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+</resources>

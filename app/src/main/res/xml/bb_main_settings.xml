@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:tag="main_settings">
+
+    <androidx.preference.PreferenceCategory
+        android:title="@string/bb_general_category">
+
+        <ListPreference
+            android:key="language"
+            android:icon="@drawable/bb_ic_language"
+            android:title="@string/bb_lang_settings"
+            android:entries="@array/bb_languages"
+            android:entryValues="@array/bb_languages_entries"
+            android:summary="%s"
+            android:defaultValue="system" />
+
+        <ListPreference
+            android:key="app_theme"
+            android:icon="@drawable/bb_ic_palette"
+            android:title="@string/bb_theme_settings"
+            android:entries="@array/bb_themes"
+            android:entryValues="@array/bb_themes_entries"
+            android:summary="%s"
+            android:defaultValue="system" />
+
+        <ListPreference
+            android:key="byedpi_mode"
+            android:icon="@drawable/bb_ic_vpn_key"
+            android:title="@string/bb_mode_setting"
+            android:entries="@array/bb_byedpi_modes"
+            android:entryValues="@array/bb_byedpi_modes_entries"
+            android:summary="%s"
+            android:defaultValue="vpn" />
+
+        <Preference
+            android:key="dns_ip_picker"
+            android:icon="@drawable/bb_ic_dns"
+            android:title="@string/bb_dbs_ip_setting" />
+
+        <Preference
+            android:key="private_dns"
+            android:icon="@drawable/bb_ic_dns"
+            android:title="@string/bb_private_dns"
+            android:persistent="false"
+            app:isPreferenceVisible="false" />
+
+        <EditTextPreference
+            android:key="dns_ip"
+            android:title="@string/bb_dbs_ip_setting"
+            android:defaultValue="1.1.1.1" />
+
+        <SwitchPreference
+            android:key="ipv6_enable"
+            android:icon="@drawable/bb_ic_network"
+            android:title="@string/bb_ipv6_setting"
+            android:defaultValue="false" />
+
+        <ListPreference
+            android:key="applist_type"
+            android:icon="@drawable/bb_ic_filter_list"
+            android:title="@string/bb_applist_setting"
+            android:entries="@array/bb_applist_types"
+            android:entryValues="@array/bb_applist_types_entries"
+            android:summary="%s"
+            android:defaultValue="disable" />
+
+        <Preference
+            android:key="selected_apps"
+            android:icon="@drawable/bb_ic_apps"
+            android:title="@string/bb_apps_select"
+            app:fragment="io.github.zapretdroid.classic.fragments.AppSelectionFragment" />
+
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:title="@string/bb_automation">
+
+        <SwitchPreference
+            android:key="autostart"
+            android:icon="@drawable/bb_ic_power"
+            android:title="@string/bb_autostart_settings"
+            android:defaultValue="false" />
+
+        <SwitchPreference
+            android:key="auto_connect"
+            android:icon="@drawable/bb_ic_autorenew"
+            android:title="@string/bb_autoconnect_settings"
+            android:defaultValue="false" />
+
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:title="@string/bb_byedpi_category">
+
+        <SwitchPreference
+            android:key="byedpi_enable_cmd_settings"
+            android:icon="@drawable/bb_ic_terminal"
+            android:title="@string/bb_use_command_line_settings"
+            android:defaultValue="true" />
+
+        <Preference
+            android:key="byedpi_ui_settings"
+            android:icon="@drawable/bb_ic_tune"
+            android:title="@string/bb_ui_editor"
+            app:useSimpleSummaryProvider="true"
+            app:fragment="io.github.zapretdroid.classic.fragments.ByeDpiUISettingsFragment" />
+
+        <Preference
+            android:key="byedpi_cmd_settings"
+            android:icon="@drawable/bb_ic_code"
+            android:title="@string/bb_command_line_editor"
+            app:useSimpleSummaryProvider="true"
+            app:fragment="io.github.zapretdroid.classic.fragments.ByeDpiCMDSettingsFragment" />
+
+        <Preference
+            android:key="proxy_test"
+            android:icon="@drawable/bb_ic_speed"
+            android:title="@string/bb_title_test"
+            android:summary="@string/bb_summary_test"/>
+
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:title="@string/bb_byedpi_proxy"
+        android:key="byedpi_proxy_category">
+
+        <EditTextPreference
+            android:key="byedpi_proxy_ip"
+            android:icon="@drawable/bb_ic_computer"
+            android:title="@string/bb_bye_dpi_proxy_ip_setting"
+            android:defaultValue="127.0.0.1"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            android:key="byedpi_proxy_port"
+            android:icon="@drawable/bb_ic_port"
+            android:title="@string/bb_byedpi_proxy_port_setting"
+            android:inputType="number"
+            android:defaultValue="1080"
+            app:useSimpleSummaryProvider="true" />
+
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:title="@string/bb_permission_category">
+
+        <Preference
+            android:key="battery_optimization"
+            android:icon="@drawable/bb_ic_battery"
+            android:title="@string/bb_battery_optimization"
+            android:summary="@string/bb_battery_optimization_summary">
+        </Preference>
+
+        <Preference
+            android:key="storage_access"
+            android:icon="@drawable/bb_ic_folder"
+            android:title="@string/bb_storage_access"
+            android:summary="@string/bb_storage_access_summary">
+        </Preference>
+
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:title="@string/bb_about_category">
+
+        <Preference
+            android:key="donate"
+            android:icon="@drawable/bb_ic_favorite"
+            android:title="@string/bb_donate" />
+
+        <Preference
+            android:key="telegram_group"
+            android:title="@string/bb_telegram_link"
+            android:icon="@drawable/bb_ic_telegram">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://t.me/byebyedpi_group" />
+        </Preference>
+
+        <Preference
+            android:key="source_code"
+            android:title="@string/bb_source_code_link"
+            android:icon="@drawable/bb_ic_github">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://github.com/romanvht/ByeDPIAndroid" />
+        </Preference>
+
+        <Preference
+            android:key="documentation"
+            android:icon="@drawable/bb_ic_documentation"
+            android:title="@string/bb_documentation_link">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="https://byebyedpi.xyz" />
+        </Preference>
+
+        <Preference
+            android:key="version"
+            android:icon="@drawable/bb_ic_info"
+            android:title="@string/bb_version"
+            app:useSimpleSummaryProvider="true"
+            tools:summary="1.0.0" />
+
+        <Preference
+            android:key="byedpi_version"
+            android:icon="@drawable/bb_ic_info"
+            android:title="@string/bb_byedpi_version"
+            app:useSimpleSummaryProvider="true"
+            android:summary="0.0.1" />
+
+    </androidx.preference.PreferenceCategory>
+
+</PreferenceScreen>

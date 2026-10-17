@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import io.github.zapretdroid.classic.ClassicBridge
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Settings
@@ -54,6 +55,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // The ByeByeDPI interface was chosen last time: open it instead (it has a way back).
+        if (savedInstanceState == null && ClassicBridge.isClassic(this) && !intent.getBooleanExtra(EXTRA_CONNECT, false)) {
+            ClassicBridge.open(this)
+            finish()
+            return
+        }
         connectRequest = intent.getBooleanExtra(EXTRA_CONNECT, false)
         setContent {
             ZapretTheme {
@@ -251,6 +258,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenSelfCheck = { screen = Screen.SELFCHECK },
             onOpenDeep = { screen = Screen.DEEP },
             onOpenCollect = { screen = Screen.COLLECT },
+            onOpenClassic = { ClassicBridge.open(context) },
         )
         Screen.APPS -> AppsScreen(
             settings = settings,

@@ -75,6 +75,7 @@ fun SettingsScreen(
     onOpenCollect: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
+    onOpenClassic: () -> Unit,
 ) {
     var strategyId by remember { mutableStateOf(settings.strategyId) }
     var customArgs by remember { mutableStateOf(settings.customArgs) }
@@ -155,6 +156,14 @@ fun SettingsScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
+            }
+
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.classic_title)) },
+                    supportingContent = { Text(stringResource(R.string.classic_desc)) },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenClassic),
+                )
             }
 
             item { SectionHeader(R.string.section_strategy) }

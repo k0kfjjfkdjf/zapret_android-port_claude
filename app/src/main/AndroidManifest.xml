@@ -8,6 +8,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- ByeByeDPI interface (classic/): its proxy test, autostart, battery and file settings. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
 
     <!-- Lists launchable apps for per-app routing without QUERY_ALL_PACKAGES. -->
     <queries>
@@ -83,6 +93,77 @@
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true" />
         </service>
+
+        <!-- ByeByeDPI interface, ported from ByeByeDPI (see classic/ClassicBridge.kt). -->
+        <activity
+            android:name=".classic.activities.MainActivity"
+            android:exported="false"
+            android:label="@string/bb_app_name"
+            android:theme="@style/BbTheme.ByeDPI" />
+
+        <activity
+            android:name=".classic.activities.ToggleActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <activity
+            android:name=".classic.activities.SettingsActivity"
+            android:exported="false"
+            android:label="@string/bb_title_settings"
+            android:theme="@style/BbTheme.ByeDPI" />
+
+        <activity
+            android:name=".classic.activities.FileActivity"
+            android:exported="false"
+            android:theme="@style/BbTheme.ByeDPI" />
+
+        <activity
+            android:name=".classic.activities.TestActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/bb_title_test"
+            android:theme="@style/BbTheme.ByeDPI" />
+
+        <activity
+            android:name=".classic.activities.TestSettingsActivity"
+            android:exported="false"
+            android:label="@string/bb_title_settings"
+            android:theme="@style/BbTheme.ByeDPI" />
+
+        <!-- Proxy mode of the ByeByeDPI interface: own process, the engine has global state. -->
+        <service
+            android:name=".classic.services.ClassicProxyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":proxy">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local SOCKS5 proxy for censorship circumvention started by the user" />
+        </service>
+
+        <service
+            android:name=".classic.services.TestService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".classic.receiver.ServiceActionReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".classic.receiver.BootReceiver"
+            android:exported="false"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
 
         <!-- Shares log files with other apps (see LogsScreen). -->
         <provider

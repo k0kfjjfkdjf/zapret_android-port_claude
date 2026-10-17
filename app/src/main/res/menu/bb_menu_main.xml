@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".activities.MainActivity">
+
+    <item
+        android:id="@+id/action_zapretdroid"
+        android:orderInCategory="0"
+        android:title="@string/classic_back"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_diagnostics"
+        android:orderInCategory="1"
+        android:title="@string/bb_diagnostics"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_save_logs"
+        android:orderInCategory="2"
+        android:title="@string/bb_save_logs"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_close_app"
+        android:orderInCategory="3"
+        android:title="@string/bb_close_app"
+        app:showAsAction="never" />
+
+</menu>
