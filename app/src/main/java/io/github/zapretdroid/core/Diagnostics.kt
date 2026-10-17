@@ -13,6 +13,7 @@ object Diagnostics {
         add("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}, ABI ${Build.SUPPORTED_ABIS.joinToString()}")
         add("strategy: ${settings.strategyId}")
         add("args: ${settings.strategyArgs}")
+        if (settings.proxyEnabled) add("proxy: list ${settings.proxyList} through socks5://${settings.proxyAddress}")
         add("dns: ${settings.dns}, mode: ${settings.dnsMode}" + (if (settings.dnsMode != DnsMode.PLAIN) " via ${settings.dnsProvider}" else "") + ", ipv6: ${settings.ipv6}, log level: ${settings.logLevel}")
         add("hosts: ${settings.hostScope}" + (if (settings.hostScope != HostScope.ALL) " list '${settings.hostList}'" else "") + ", autohost: ${settings.autohost}")
         add("apps: ${settings.appFilterMode}" + if (settings.appFilterMode != AppFilterMode.ALL) " ${settings.selectedApps.sorted()}" else "")

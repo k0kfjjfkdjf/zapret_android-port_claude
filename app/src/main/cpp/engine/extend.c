@@ -157,6 +157,39 @@ static int on_socks_recv(struct poolhd *pool, struct eval *val, int t)
     if (val->conn_state != FLAG_S5) {
         r.cmd = S_CMD_CONN;
         int len = s5_set_addr((char *)&r, sizeof(r), &val->addr, 0);
+        // ZapretDroid: the host name (SNI or Host) when known, so that the proxy resolves it
+        // (Tor: at the exit, past any spoofed DNS here); the address otherwise.
+        char named[4 + 1 + 255 + 2];
+        struct eval *client = val->pair;
+        char *host = 0;
+        int hlen = 0;
+        // The client's first data is already here (connections to a proxy group wait for it).
+        if (client && client->buff && client->buff->lock > 0) {
+            if (!(hlen = parse_tls(client->buff->data, client->buff->lock, &host))) {
+                hlen = parse_http(client->buff->data, client->buff->lock, &host, 0);
+            }
+        }
+        if (hlen <= 0 || !host) {
+            const char *name = dns_cache_get(&val->addr);
+            host = (char *) name;
+            hlen = name ? (int) strlen(name) : 0;
+        }
+        if (host && hlen > 0 && hlen <= 255 && host_name_ok(host, hlen)) {
+            named[0] = S_VER5;
+            named[1] = S_CMD_CONN;
+            named[2] = 0;
+            named[3] = 3; // domain name
+            named[4] = (char) hlen;
+            memcpy(named + 5, host, hlen);
+            memcpy(named + 5 + hlen, &val->addr.in.sin_port, 2);
+            len = 5 + hlen + 2;
+            if (send(val->fd, named, len, 0) < 0) {
+                uniperror("socks send");
+                return (val->after_conn_cb)(pool, val, POLLERR);
+            }
+            val->conn_state = FLAG_S5;
+            return 0;
+        }
         
         if (send(val->fd, (char *)&r, len, 0) < 0) {
             uniperror("socks send");
@@ -1164,6 +1197,15 @@ ssize_t udp_hook(struct eval *val,
             val->udp_dp_base = index;
             dindex = 0;
         }
+    }
+    // ZapretDroid: a group that connects through a proxy (-C, e.g. Tor) carries TCP only: its
+    // UDP (QUIC) is dropped, so that browsers and apps fall back to TCP through the proxy.
+    if (dp->out_type) {
+        if (!dindex && params.conn_log) {
+            fprintf(ENGINE_LOG, "udp %d: dropped, group %d goes through a proxy (TCP only)\n", val->fd, dp->id);
+        }
+        udp_maybe_report(val, now);
+        return n;
     }
     // --udp-desync N[:K] counts datagrams of the flow; otherwise rounds (request/response) apply.
     bool desync = dp->udp_first > 0

@@ -27,6 +27,7 @@ import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.Diagnostics
 import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.SecureDns
+import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.AutoHost
 import io.github.zapretdroid.core.HostLists
@@ -284,6 +285,14 @@ class ZapretVpnService : VpnService() {
             if (mode == AppFilterMode.EXCEPT_SELECTED) {
                 selected.forEach { builder.addDisallowedApplication(it) }
             }
+            // The Tor app's own connections (relays, bridges) go around the VPN: the strategy's
+            // desync is meant for sites, not for Tor's handshakes.
+            if (settings.proxyEnabled) {
+                TorProxy.installed(this).forEach { (provider, pkg) ->
+                    if (pkg !in selected) runCatching { builder.addDisallowedApplication(pkg) }
+                        .onSuccess { AppLog.i("${provider.title} ($pkg) left outside the VPN for the proxy group") }
+                }
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
@@ -504,7 +513,27 @@ class ZapretVpnService : VpnService() {
                 ?: throw IllegalStateException(getString(R.string.error_unknown_list, settings.hostList))
         }
         val autohostLog = if (settings.autohost) AutoHost.file(this).absolutePath else null
-        return StrategyArgs.build(strategy, scope, listPath, autohostLog)
+        return proxyGroup(settings) + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+    }
+
+    /** Listed domains through the SOCKS5 proxy (Tor), in front of every other group; empty if off. */
+    private fun proxyGroup(settings: Settings): List<String> {
+        if (!settings.proxyEnabled) return emptyList()
+        val address = settings.proxyAddress.trim()
+        if (!TorProxy.isValid(address)) {
+            AppLog.w("proxy group skipped: bad proxy address '$address'")
+            return emptyList()
+        }
+        if (settings.proxyList == TorProxy.LIST) TorProxy.ensureList(this)
+        val list = HostLists.file(this, settings.proxyList).takeIf { it.isFile }
+            ?: throw IllegalStateException(getString(R.string.error_unknown_list, settings.proxyList))
+        TorProxy.requestStart(this)
+        if (!TorProxy.reachable(address, 1500)) {
+            // Kept anyway: the listed sites must not silently go elsewhere; the log says why they fail.
+            AppLog.w("proxy $address does not answer yet: start Tor in Orbot or InviZible Pro (proxy mode, their own VPN off)")
+        }
+        AppLog.i("proxy group: ${HostLists.count(this, settings.proxyList)} domains of list '${settings.proxyList}' through socks5://$address")
+        return TorProxy.group(list.absolutePath, address)
     }
 
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */

@@ -71,6 +71,10 @@ Changes in this fork:
   (the app's DNS over HTTPS/TLS resolver), untouched by any group; its answers come back with
   the first address as their source and still name addresses for host lists. TCP connections
   to the first address are refused at once (Android's DNS over TLS probe falls back to UDP).
+- Upstream SOCKS5 of a group (`-C socks5://…`): the CONNECT carries the host name (from the
+  client's first data, SNI or Host, else the DNS cache) instead of the address, so the proxy
+  resolves it (Tor at the exit). UDP of a group with `-C` is dropped (the proxy carries TCP
+  only; apps fall back from QUIC to TCP).
 - Stop before listen: a stop requested while the engine still starts (large host lists) used
   to be lost; `engine_stop_requested` (set by the JNI layer) makes the engine return right
   after `listen`. Inside the app (`ZAPRETDROID_JNI`) no SIGINT/SIGTERM/SIGHUP handlers are

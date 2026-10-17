@@ -21,6 +21,7 @@ import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.isIpLiteral
 import io.github.zapretdroid.core.splitArgs
 import io.github.zapretdroid.service.VpnStatus
@@ -428,6 +429,24 @@ object SelfCheck {
                 secureOk.isNotEmpty() -> CheckStatus.INFO to "working here: ${secureOk.joinToString()}: turn it on in Settings -> DNS " +
                     "(answers cannot be spoofed, names for host lists always known)"
                 else -> CheckStatus.WARN to "neither DoH nor DoT gets through on this network"
+            }
+        }
+        if (settings.proxyEnabled) {
+            // Sites through the SOCKS5 proxy (Tor): is it up, and does a listed site open with the
+            // engine's proxy group (host name passed to the proxy, resolved at the exit)?
+            val address = settings.proxyAddress.trim()
+            check(g, "proxy $address") {
+                val installed = TorProxy.installed(context).joinToString { it.first.title }.ifEmpty { "no Tor app installed" }
+                if (TorProxy.reachable(address, 1500)) CheckStatus.OK to "answers ($installed)"
+                else CheckStatus.WARN to "does not answer: start Tor in proxy mode ($installed)"
+            }
+            check(g, "chatgpt.com through the proxy") {
+                if (settings.proxyList == TorProxy.LIST) TorProxy.ensureList(context)
+                val list = HostLists.file(context, settings.proxyList)
+                val group = TorProxy.group(list.absolutePath, address).joinToString(" ")
+                val addr = runCatching { InetAddress.getAllByName("chatgpt.com").firstOrNull { it is Inet4Address } }.getOrNull()
+                val r = TestEngine.with(group, PORT, fakeDir, listDir) { SiteProbe.probe(PORT, "chatgpt.com", addr, TIMEOUT_MS * 3) }
+                (if (r.responded) CheckStatus.OK else CheckStatus.WARN) to r.summary()
             }
         }
         check(g, "DNS as the tester resolves (${TestDns.spec(settings)})") {

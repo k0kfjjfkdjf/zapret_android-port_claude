@@ -118,6 +118,28 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putString(KEY_DNS_PROVIDER, value) }
         }
 
+    /** Listed domains (host list [proxyList]) through a SOCKS5 proxy, e.g. Tor from Orbot (see TorProxy). */
+    var proxyEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PROXY_ENABLED, false)
+        set(value) {
+            logChange("proxyEnabled", proxyEnabled, value)
+            prefs.edit(commit = true) { putBoolean(KEY_PROXY_ENABLED, value) }
+        }
+
+    var proxyAddress: String
+        get() = prefs.getString(KEY_PROXY_ADDRESS, TorProxy.DEFAULT_PROXY)!!
+        // Typed character by character: the settings screen logs the final value when it closes.
+        set(value) {
+            prefs.edit(commit = true) { putString(KEY_PROXY_ADDRESS, value) }
+        }
+
+    var proxyList: String
+        get() = prefs.getString(KEY_PROXY_LIST, TorProxy.LIST)!!
+        set(value) {
+            logChange("proxyList", proxyList, value)
+            prefs.edit(commit = true) { putString(KEY_PROXY_LIST, value) }
+        }
+
     /** Every settings change goes to the journal, whichever screen made it. */
     private fun logChange(name: String, old: Any, new: Any) {
         if (old == new) return
@@ -151,5 +173,8 @@ class Settings(context: Context) {
         private const val KEY_COLLECT_APP = "collect_app"
         private const val KEY_DNS_MODE = "dns_mode"
         private const val KEY_DNS_PROVIDER = "dns_provider"
+        private const val KEY_PROXY_ENABLED = "proxy_enabled"
+        private const val KEY_PROXY_ADDRESS = "proxy_address"
+        private const val KEY_PROXY_LIST = "proxy_list"
     }
 }

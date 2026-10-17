@@ -1,0 +1,24 @@
+# Services that refuse Russian addresses themselves (not blocked by the censor, so DPI bypass
+# does not help): they go through the proxy (Tor) with their own exit abroad. Subdomains included.
+# OpenAI / ChatGPT
+chatgpt.com
+openai.com
+oaistatic.com
+oaiusercontent.com
+sora.com
+# Anthropic / Claude
+claude.ai
+anthropic.com
+# Google AI
+gemini.google.com
+aistudio.google.com
+notebooklm.google.com
+generativelanguage.googleapis.com
+alkalimakersuite-pa.clients6.google.com
+# Microsoft Copilot
+copilot.microsoft.com
+# xAI / Grok
+grok.com
+x.ai
+# Perplexity
+perplexity.ai

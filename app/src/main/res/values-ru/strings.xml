@@ -298,4 +298,17 @@
     <string name="dns_secure_desc">ZapretDroid сам отвечает приложениям на запросы DNS и спрашивает сервер ниже по зашифрованному соединению (по IP, без SNI): провайдер не видит и не подменяет ответы, а имена для списков доменов всегда известны. Если сервер не отвечает, пробуются остальные из списка.</string>
     <string name="dns_provider_custom">Свой сервер</string>
     <string name="dns_provider_custom_hint">https://хост/dns-query для DoH, tls://хост для DoT; пусто — выбранный выше</string>
+    <string name="section_proxy">Сайты через Tor</string>
+    <string name="proxy_toggle">Сайты из списка через Tor (SOCKS5-прокси)</string>
+    <string name="proxy_toggle_desc">Для сервисов, которые сами отказывают российским адресам (ChatGPT, Gemini, Claude…): обход DPI тут не поможет, сайт должен видеть адрес за границей. Tor берётся у Orbot или InviZible Pro в режиме прокси (их собственный VPN нужно выключить: Android разрешает только один). UDP (QUIC) таких сайтов отбрасывается, приложения переходят на TCP. Медленно, и некоторые сайты показывают для Tor капчу.</string>
+    <string name="proxy_checking">Проверка прокси…</string>
+    <string name="proxy_up">Прокси отвечает на %1$s</string>
+    <string name="proxy_none_installed">Нет приложения с Tor: установите Orbot (или InviZible Pro) и запустите Tor в режиме прокси</string>
+    <string name="proxy_down">Прокси не отвечает: запустите Tor в %1$s (режим прокси, его собственный VPN выключен)</string>
+    <string name="proxy_open">Открыть %1$s</string>
+    <string name="proxy_get_orbot">Скачать Orbot</string>
+    <string name="proxy_edit_list">Домены: список %1$s</string>
+    <string name="proxy_address">Адрес прокси</string>
+    <string name="proxy_address_hint">хост:порт; Tor в Orbot и InviZible: 127.0.0.1:9050</string>
+    <string name="proxy_address_invalid">Нужно хост:порт, например 127.0.0.1:9050</string>
 </resources>

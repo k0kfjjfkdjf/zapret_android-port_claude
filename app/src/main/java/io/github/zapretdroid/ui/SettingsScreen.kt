@@ -1,5 +1,7 @@
 package io.github.zapretdroid.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,7 +66,10 @@ import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.isIpLiteral
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,6 +92,8 @@ fun SettingsScreen(
     var dns by remember { mutableStateOf(settings.dns) }
     var dnsMode by remember { mutableStateOf(settings.dnsMode) }
     var dnsProvider by remember { mutableStateOf(settings.dnsProvider) }
+    var proxyEnabled by remember { mutableStateOf(settings.proxyEnabled) }
+    var proxyAddress by remember { mutableStateOf(settings.proxyAddress) }
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
     var logLevel by remember { mutableStateOf(settings.logLevel) }
@@ -99,6 +107,7 @@ fun SettingsScreen(
         val argsBefore = settings.customArgs
         val dnsBefore = settings.dns
         val providerBefore = settings.dnsProvider
+        val proxyBefore = settings.proxyAddress
         onDispose {
             if (settings.customArgs != argsBefore) {
                 AppLog.i("setting customArgs: '$argsBefore' -> '${settings.customArgs}'")
@@ -106,6 +115,7 @@ fun SettingsScreen(
             }
             if (settings.dns != dnsBefore) AppLog.i("setting dns: '$dnsBefore' -> '${settings.dns}'")
             if (settings.dnsProvider != providerBefore) AppLog.i("setting dnsProvider: '$providerBefore' -> '${settings.dnsProvider}'")
+            if (settings.proxyAddress != proxyBefore) AppLog.i("setting proxyAddress: '$proxyBefore' -> '${settings.proxyAddress}'")
         }
     }
     val setCustomArgs = { args: String ->
@@ -411,6 +421,74 @@ fun SettingsScreen(
                 )
             }
 
+            item { SectionHeader(R.string.section_proxy) }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.proxy_toggle)) },
+                    supportingContent = { Text(stringResource(R.string.proxy_toggle_desc)) },
+                    trailingContent = { Switch(checked = proxyEnabled, onCheckedChange = null) },
+                    modifier = Modifier.toggleable(value = proxyEnabled, role = Role.Switch) {
+                        proxyEnabled = it
+                        settings.proxyEnabled = it
+                        if (it && settings.proxyList == TorProxy.LIST) runCatching { TorProxy.ensureList(context) }
+                    },
+                )
+            }
+            if (proxyEnabled) {
+                item {
+                    val installed = remember { TorProxy.installed(context) }
+                    var reachable by remember { mutableStateOf<Boolean?>(null) }
+                    LaunchedEffect(proxyAddress) {
+                        reachable = null
+                        reachable = withContext(Dispatchers.IO) { TorProxy.isValid(proxyAddress) && TorProxy.reachable(proxyAddress.trim()) }
+                    }
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        Text(
+                            when {
+                                reachable == null -> stringResource(R.string.proxy_checking)
+                                reachable == true -> stringResource(R.string.proxy_up, proxyAddress.trim())
+                                installed.isEmpty() -> stringResource(R.string.proxy_none_installed)
+                                else -> stringResource(R.string.proxy_down, installed.joinToString { it.first.title })
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (reachable == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            installed.forEach { (provider, pkg) ->
+                                TextButton(onClick = {
+                                    if (provider == TorProxy.Provider.ORBOT) TorProxy.requestStart(context)
+                                    context.packageManager.getLaunchIntentForPackage(pkg)?.let { runCatching { context.startActivity(it) } }
+                                }) { Text(stringResource(R.string.proxy_open, provider.title)) }
+                            }
+                            if (installed.isEmpty()) {
+                                TextButton(onClick = {
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ORBOT_URL))) }
+                                }) { Text(stringResource(R.string.proxy_get_orbot)) }
+                            }
+                            TextButton(onClick = onOpenLists) { Text(stringResource(R.string.proxy_edit_list, settings.proxyList)) }
+                        }
+                    }
+                }
+                item {
+                    val valid = TorProxy.isValid(proxyAddress)
+                    OutlinedTextField(
+                        value = proxyAddress,
+                        onValueChange = {
+                            proxyAddress = it
+                            if (TorProxy.isValid(it)) settings.proxyAddress = it.trim()
+                        },
+                        label = { Text(stringResource(R.string.proxy_address)) },
+                        supportingText = { Text(stringResource(if (valid) R.string.proxy_address_hint else R.string.proxy_address_invalid)) },
+                        isError = !valid,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
+
             item { SectionHeader(R.string.section_apps) }
             items(AppFilterMode.entries.toList(), key = { it.name }) { mode ->
                 RadioRow(
@@ -616,3 +694,5 @@ private fun RadioRow(title: String, subtitle: String?, selected: Boolean, onSele
         }
     }
 }
+
+private const val ORBOT_URL = "https://orbot.app/download/"
