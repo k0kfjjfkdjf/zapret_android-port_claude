@@ -1,0 +1,154 @@
+# zapret-termux blockcheck "full" generated candidates (bc_generated), tpws options converted:
+# --split-pos=a,b with --disorder -> --disorder at each position; --oob -> OOB at the first one;
+# --tlsrec, --mss, --oob-data, --tlsminor as they are. Its auto_N strategies come from this list.
+
+# gen: --split-pos=1 
+--split 1
+# gen: --split-pos=1 disorder
+--disorder 1
+# gen: --split-pos=1 oob
+--oob 1
+# gen: --split-pos=1 disorder oob
+--disoob 1
+# gen: --split-pos=1 tlsrec=sniext+1
+--split 1 --tlsrec sniext+1
+# gen: --split-pos=1 tlsrec=sniext+1 disorder
+--disorder 1 --tlsrec sniext+1
+# gen: --split-pos=1 disorder mss=88
+--disorder 1 --mss 88
+# gen: --split-pos=2 
+--split 2
+# gen: --split-pos=2 disorder
+--disorder 2
+# gen: --split-pos=2 oob
+--oob 2
+# gen: --split-pos=2 disorder oob
+--disoob 2
+# gen: --split-pos=2 tlsrec=sniext+1
+--split 2 --tlsrec sniext+1
+# gen: --split-pos=2 tlsrec=sniext+1 disorder
+--disorder 2 --tlsrec sniext+1
+# gen: --split-pos=2 disorder mss=88
+--disorder 2 --mss 88
+# gen: --split-pos=3 
+--split 3
+# gen: --split-pos=3 disorder
+--disorder 3
+# gen: --split-pos=3 oob
+--oob 3
+# gen: --split-pos=3 disorder oob
+--disoob 3
+# gen: --split-pos=3 tlsrec=sniext+1
+--split 3 --tlsrec sniext+1
+# gen: --split-pos=3 tlsrec=sniext+1 disorder
+--disorder 3 --tlsrec sniext+1
+# gen: --split-pos=3 disorder mss=88
+--disorder 3 --mss 88
+# gen: --split-pos=sniext+1 
+--split sniext+1
+# gen: --split-pos=sniext+1 disorder
+--disorder sniext+1
+# gen: --split-pos=sniext+1 oob
+--oob sniext+1
+# gen: --split-pos=sniext+1 disorder oob
+--disoob sniext+1
+# gen: --split-pos=sniext+1 tlsrec=sniext+1
+--split sniext+1 --tlsrec sniext+1
+# gen: --split-pos=sniext+1 tlsrec=sniext+1 disorder
+--disorder sniext+1 --tlsrec sniext+1
+# gen: --split-pos=sniext+1 disorder mss=88
+--disorder sniext+1 --mss 88
+# gen: --split-pos=host+1 
+--split host+1
+# gen: --split-pos=host+1 disorder
+--disorder host+1
+# gen: --split-pos=host+1 oob
+--oob host+1
+# gen: --split-pos=host+1 disorder oob
+--disoob host+1
+# gen: --split-pos=host+1 tlsrec=sniext+1
+--split host+1 --tlsrec sniext+1
+# gen: --split-pos=host+1 tlsrec=sniext+1 disorder
+--disorder host+1 --tlsrec sniext+1
+# gen: --split-pos=host+1 disorder mss=88
+--disorder host+1 --mss 88
+# gen: --split-pos=midsld 
+--split midsld
+# gen: --split-pos=midsld disorder
+--disorder midsld
+# gen: --split-pos=midsld oob
+--oob midsld
+# gen: --split-pos=midsld disorder oob
+--disoob midsld
+# gen: --split-pos=midsld tlsrec=sniext+1
+--split midsld --tlsrec sniext+1
+# gen: --split-pos=midsld tlsrec=sniext+1 disorder
+--disorder midsld --tlsrec sniext+1
+# gen: --split-pos=midsld disorder mss=88
+--disorder midsld --mss 88
+# gen: --split-pos=1,midsld 
+--split 1 --split midsld
+# gen: --split-pos=1,midsld disorder
+--disorder 1 --disorder midsld
+# gen: --split-pos=1,midsld oob
+--oob 1 --split midsld
+# gen: --split-pos=1,midsld disorder oob
+--disoob 1 --disorder midsld
+# gen: --split-pos=1,midsld tlsrec=sniext+1
+--split 1 --split midsld --tlsrec sniext+1
+# gen: --split-pos=1,midsld tlsrec=sniext+1 disorder
+--disorder 1 --disorder midsld --tlsrec sniext+1
+# gen: --split-pos=1,midsld disorder mss=88
+--disorder 1 --disorder midsld --mss 88
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 
+--split 1 --split sniext+1 --split host+1 --split midsld --split endhost-1
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 disorder
+--disorder 1 --disorder sniext+1 --disorder host+1 --disorder midsld --disorder endhost-1
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 oob
+--oob 1 --split sniext+1 --split host+1 --split midsld --split endhost-1
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 disorder oob
+--disoob 1 --disorder sniext+1 --disorder host+1 --disorder midsld --disorder endhost-1
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 tlsrec=sniext+1
+--split 1 --split sniext+1 --split host+1 --split midsld --split endhost-1 --tlsrec sniext+1
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 tlsrec=sniext+1 disorder
+--disorder 1 --disorder sniext+1 --disorder host+1 --disorder midsld --disorder endhost-1 --tlsrec sniext+1
+# gen: --split-pos=1,sniext+1,host+1,midsld,endhost-1 disorder mss=88
+--disorder 1 --disorder sniext+1 --disorder host+1 --disorder midsld --disorder endhost-1 --mss 88
+# gen: --split-pos=2,sniext+1,midsld 
+--split 2 --split sniext+1 --split midsld
+# gen: --split-pos=2,sniext+1,midsld disorder
+--disorder 2 --disorder sniext+1 --disorder midsld
+# gen: --split-pos=2,sniext+1,midsld oob
+--oob 2 --split sniext+1 --split midsld
+# gen: --split-pos=2,sniext+1,midsld disorder oob
+--disoob 2 --disorder sniext+1 --disorder midsld
+# gen: --split-pos=2,sniext+1,midsld tlsrec=sniext+1
+--split 2 --split sniext+1 --split midsld --tlsrec sniext+1
+# gen: --split-pos=2,sniext+1,midsld tlsrec=sniext+1 disorder
+--disorder 2 --disorder sniext+1 --disorder midsld --tlsrec sniext+1
+# gen: --split-pos=2,sniext+1,midsld disorder mss=88
+--disorder 2 --disorder sniext+1 --disorder midsld --mss 88
+# gen: --tlsrec=sniext
+--tlsrec sniext
+# gen: --tlsrec=sniext+2
+--tlsrec sniext+2
+# gen: --tlsrec=midsld
+--tlsrec midsld
+# gen: --tlsrec=sniext+1 --mss=88
+--tlsrec sniext+1 --mss 88
+# gen: --split-pos=3 --oob --oob-data=a
+--oob 3 --oob-data a
+# gen: --split-pos=host+1 --oob --oob-data=a
+--oob host+1 --oob-data a
+# gen: --split-pos=1,midsld --disorder --oob --oob-data=a
+--disoob 1 --disorder midsld --oob-data a
+# gen: --tlsminor=0
+--tlsminor 0
+# gen: --tlsminor=4
+--tlsminor 4
+# gen: --split-pos=host+1 --oob --tlsminor=4
+--oob host+1 --tlsminor 4
+# gen: --split-pos=1,midsld --tlsrec=sniext+1 --disorder --tlsminor=4
+--disorder 1 --disorder midsld --tlsrec sniext+1 --tlsminor 4
+# gen: --tlsrec=sniext+1 --tlsminor=0
+--tlsrec sniext+1 --tlsminor 0

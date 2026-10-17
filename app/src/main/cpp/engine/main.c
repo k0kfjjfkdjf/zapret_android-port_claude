@@ -1350,7 +1350,7 @@ int parse_args(int argc, char **argv)
             
         case 'm':
             val = strtol(optarg, &end, 0);
-            if (val <= 0 || val > 255 || *end) 
+            if (val < 0 || val > 255 || *end) 
                 invalid = 1;
             else {
                 dp->tlsminor = val;

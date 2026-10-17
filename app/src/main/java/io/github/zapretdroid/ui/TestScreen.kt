@@ -138,6 +138,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                                             StrategySet.QUICK -> R.string.test_quick
                                             StrategySet.FULL -> R.string.test_full
                                             StrategySet.OURS -> R.string.test_ours
+                                            StrategySet.TERMUX -> R.string.test_termux
                                             StrategySet.COMMUNITY -> R.string.test_community
                                             StrategySet.UDP -> R.string.test_udp
                                         },

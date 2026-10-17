@@ -290,4 +290,5 @@
     <string name="monitor_udp_retry">Discord repeats IP discovery</string>
     <string name="monitor_udp_no_reply">UDP flow without a reply</string>
     <string name="monitor_udp_closed">UDP flow ended</string>
+    <string name="test_termux">zapret-termux generated (%1$d)</string>
 </resources>

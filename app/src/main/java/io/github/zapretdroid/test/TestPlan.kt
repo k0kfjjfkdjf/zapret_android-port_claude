@@ -9,7 +9,7 @@ import io.github.zapretdroid.core.Strategies
 data class SiteGroup(val id: String, @StringRes val title: Int, val hosts: List<String>)
 
 /** A set of strategies to try. */
-enum class StrategySet { QUICK, FULL, OURS, COMMUNITY, UDP }
+enum class StrategySet { QUICK, FULL, OURS, TERMUX, COMMUNITY, UDP }
 
 object TestPlan {
     private val GROUPS = listOf(
@@ -38,6 +38,8 @@ object TestPlan {
             .map { it.replace("{sni}", sni.ifBlank { DEFAULT_SNI }) }
         // Strategies on ZapretDroid's own additions (assets/strategies/zapretdroid.list).
         StrategySet.OURS -> readLines(context, "strategies/zapretdroid.list")
+        // zapret-termux's generated candidates, where its auto_N strategies come from.
+        StrategySet.TERMUX -> readLines(context, "strategies/termux_generated.list")
         StrategySet.UDP -> udp
     }
 

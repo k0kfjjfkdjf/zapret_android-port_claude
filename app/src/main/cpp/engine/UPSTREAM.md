@@ -42,3 +42,4 @@ Changes in this fork:
   every engine start, as zapret-termux's `--udp-fake-quic-sni` does inside tpws.
 - `--mss <n>` (as tpws `--mss`): TCP_MAXSEG on outgoing connections, so the server also sends
   small segments (88 gives 76-byte segments on loopback). No root needed.
+- `--tlsminor 0` is accepted (zapret-termux generates it; the value set flag already tells it from unset).

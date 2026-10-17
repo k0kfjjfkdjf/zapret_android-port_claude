@@ -34,6 +34,10 @@ strategies += ["--proto u " + c for c in [
 qs = u.replace("{fake:quic_initial_www_google_com.bin}", "{fake:quic_sni}")
 strategies += ["--proto u " + qs, "--proto u " + qs.replace("--ttl 4", "--ttl 2")]
 
+# zapret-termux's generated candidates.
+strategies += [l.strip() for l in open(root + "/src/main/assets/strategies/termux_generated.list")
+               if l.strip() and not l.strip().startswith("#")]
+
 # Strategies on ZapretDroid's own additions.
 strategies += [l.strip() for l in open(root + "/src/main/assets/strategies/zapretdroid.list")
                if l.strip() and not l.strip().startswith("#")]

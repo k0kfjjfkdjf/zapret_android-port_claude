@@ -140,7 +140,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
             item { Text(stringResource(R.string.deep_strategies), style = MaterialTheme.typography.titleSmall) }
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(StrategySet.QUICK to R.string.test_quick, StrategySet.FULL to R.string.test_full, StrategySet.OURS to R.string.test_ours, StrategySet.COMMUNITY to R.string.test_community)
+                    listOf(StrategySet.QUICK to R.string.test_quick, StrategySet.FULL to R.string.test_full, StrategySet.OURS to R.string.test_ours, StrategySet.TERMUX to R.string.test_termux, StrategySet.COMMUNITY to R.string.test_community)
                         .forEach { (option, label) ->
                             FilterChip(
                                 selected = set == option, enabled = !running, onClick = { set = option },
