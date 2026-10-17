@@ -259,6 +259,15 @@ object SiteProbe {
                 val input = raw.getInputStream()
                 val head = readN(input, 6)
                 val tlsMs = elapsed() - connectMs!!
+                // Read what the server sends next (certificate etc.) before closing: closing with
+                // unread data makes the kernel send a reset, which the engine logs as a block.
+                runCatching {
+                    raw.soTimeout = 300
+                    val sink = ByteArray(8192)
+                    var drained = 0
+                    while (drained < 64 * 1024 && input.read(sink).also { if (it > 0) drained += it } > 0) Unit
+                }
+                runCatching { raw.shutdownOutput() }
                 val type = head[0].toInt() and 0xff
                 val version = "%d.%d".format(head[1].toInt(), head[2].toInt())
                 when {

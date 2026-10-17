@@ -435,6 +435,28 @@ object SelfCheck {
                 }
             }
         }.onFailure { add(g, "engine with UDP fakes", CheckStatus.FAIL, it.message ?: it.toString(), 0) }
+        // What the YouTube app itself opens: it rarely touches www.youtube.com, so that name can
+        // be blocked while the app works.
+        runCatching {
+            TestEngine.with(strategy, PORT, fakeDir, listDir) {
+                listOf("youtubei.googleapis.com", "i.ytimg.com", "redirector.googlevideo.com").forEach { host ->
+                    val addr = runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
+                    var https: ProbeResult? = null
+                    var chrome: ProbeResult? = null
+                    check(g, "HTTPS $host (YouTube app), current strategy") {
+                        val r = SiteProbe.probe(PORT, host, addr, TIMEOUT_MS)
+                        https = r
+                        (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
+                    }
+                    check(g, "TLS as Chrome $host, current strategy") {
+                        val r = SiteProbe.probe(PORT, host, addr, TIMEOUT_MS, TlsMode.CHROME)
+                        chrome = r
+                        (if (r.ok) CheckStatus.OK else CheckStatus.WARN) to r.summary()
+                    }
+                    check(g, "verdict $host, current strategy") { verdict(https, chrome) }
+                }
+            }
+        }
         // Discord's avatar CDN: where the 16-20 KB freeze shows up.
         runCatching {
             TestEngine.with(strategy, PORT, fakeDir, listDir) {
