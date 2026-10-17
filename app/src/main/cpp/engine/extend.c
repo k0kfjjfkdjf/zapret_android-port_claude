@@ -27,6 +27,8 @@
 #include "packets.h"
 #include "udphost.h"
 
+static bool dest_equ(const union sockaddr_u *a, const union sockaddr_u *b);
+
 
 static int set_timeout(int fd, unsigned int s)
 {
@@ -1080,6 +1082,13 @@ ssize_t udp_hook(struct eval *val,
         uint16_t id = (uint16_t) ((uint8_t) buffer[0] << 8 | (uint8_t) buffer[1]);
         if (val->dns_ids_n < 4) val->dns_ids[val->dns_ids_n++] = id;
         else val->dns_ids[index % 4] = id;
+    }
+    // ZapretDroid: DNS for the VPN's own DNS address goes to the app's encrypted resolver,
+    // untouched by any group (see --dns-redirect).
+    if (params.dns_redir && dest_equ(dst, &params.dns_redir_from)) {
+        ssize_t sent = sendto(val->fd, buffer, n, 0, &params.dns_redir_to.sa, SA_SIZE(&params.dns_redir_to));
+        udp_maybe_report(val, now);
+        return sent;
     }
     
     // The first destination of the association keeps its group on the client side (pair->dp);

@@ -14,9 +14,11 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.Diagnostics
+import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.NativeLog
+import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.isIpLiteral
@@ -375,8 +377,61 @@ object SelfCheck {
                 (if (bad) CheckStatus.WARN else CheckStatus.OK) to parts.joinToString("; ")
             }
         }
-        check(g, "DNS as the tester resolves (${settings.dns})") {
-            val notes = names.mapNotNull { TestDns.resolve(it, settings.dns).note }
+        // Encrypted DNS: the answers cannot be spoofed on the way; whether DoH (443) and DoT (853)
+        // get through here at all.
+        val secureOk = mutableListOf<String>()
+        for (provider in SecureDns.providers) for (mode in listOf(DnsMode.DOH, DnsMode.DOT)) {
+            check(g, "encrypted DNS ${provider.title} ${if (mode == DnsMode.DOH) "DoH" else "DoT"}") {
+                val up = SecureDns.Upstream(provider, mode)
+                try {
+                    val parts = names.map { host ->
+                        val start = System.currentTimeMillis()
+                        val id = kotlin.random.Random.nextInt(0x10000)
+                        val a = DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, host)), id)?.firstOrNull()
+                        "$host=${a?.hostAddress ?: "empty"} ${System.currentTimeMillis() - start}ms"
+                    }
+                    secureOk += "${provider.title} ${mode.name}"
+                    CheckStatus.OK to parts.joinToString("; ")
+                } catch (e: Exception) {
+                    // Blocked or throttled here, not broken in the app: a warning.
+                    CheckStatus.WARN to "does not get through: ${e.javaClass.simpleName}: ${e.message}"
+                } finally {
+                    up.close()
+                }
+            }
+        }
+        if (settings.dnsMode != DnsMode.PLAIN) {
+            // The chain of the VPN: query to the VPN's DNS address -> engine (--dns-redirect) ->
+            // the app's resolver -> provider; the answer must come back from the VPN's address.
+            check(g, "encrypted DNS through the engine (${settings.dnsMode} via ${settings.dnsProvider})") {
+                val server = SecureDns.Server(SecureDns.provider(settings.dnsProvider), settings.dnsMode)
+                try {
+                    val redirect = "--dns-redirect ${SecureDns.VPN_DNS}=127.0.0.1:${server.port}"
+                    val id = kotlin.random.Random.nextInt(0x10000)
+                    val reply = TestEngine.with(redirect, PORT, fakeDir, listDir) {
+                        UdpProbe.exchange(PORT, InetAddress.getByName(SecureDns.VPN_DNS) as Inet4Address, 53, DnsClient.buildQuery(id, "www.youtube.com"), TIMEOUT_MS)
+                    }
+                    when {
+                        reply == null -> CheckStatus.FAIL to "no answer through the engine and the resolver"
+                        reply.first.address.hostAddress != SecureDns.VPN_DNS -> CheckStatus.FAIL to "answer from ${reply.first} instead of ${SecureDns.VPN_DNS}:53"
+                        else -> CheckStatus.OK to "www.youtube.com=${DnsClient.parseResponse(reply.second, id)?.firstOrNull()?.hostAddress ?: "empty"}, answer from ${SecureDns.VPN_DNS}:53"
+                    }
+                } finally {
+                    server.stop()
+                }
+            }
+        }
+        check(g, "encrypted DNS recommendation") {
+            when {
+                settings.dnsMode != DnsMode.PLAIN && secureOk.any { it.endsWith(settings.dnsMode.name) } ->
+                    CheckStatus.OK to "in use: ${settings.dnsMode} via ${settings.dnsProvider}; working here: ${secureOk.joinToString()}"
+                secureOk.isNotEmpty() -> CheckStatus.INFO to "working here: ${secureOk.joinToString()}: turn it on in Settings -> DNS " +
+                    "(answers cannot be spoofed, names for host lists always known)"
+                else -> CheckStatus.WARN to "neither DoH nor DoT gets through on this network"
+            }
+        }
+        check(g, "DNS as the tester resolves (${TestDns.spec(settings)})") {
+            val notes = names.mapNotNull { TestDns.resolve(it, TestDns.spec(settings)).note }
             if (notes.isEmpty()) CheckStatus.OK to "no spoofing seen" else CheckStatus.WARN to notes.joinToString("; ")
         }
         check(g, "DNS recommendation") {

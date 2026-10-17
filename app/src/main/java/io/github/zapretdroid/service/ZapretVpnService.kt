@@ -25,6 +25,8 @@ import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.Diagnostics
+import io.github.zapretdroid.core.DnsMode
+import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.AutoHost
 import io.github.zapretdroid.core.HostLists
@@ -115,6 +117,7 @@ class ZapretVpnService : VpnService() {
             val hevLog = NativeLog.start(AppLog.file.absolutePath, NATIVE_LOG_LIMIT)
             if (hevLog == null) AppLog.w("could not capture native engine output")
             val logLevel = settings.logLevel
+            secureDns = startSecureDns(settings)
             val args = buildList {
                 add("ciadpi")
                 add("--ip"); add(PROXY_HOST)
@@ -122,7 +125,13 @@ class ZapretVpnService : VpnService() {
                 // One line per connection (host, group, bytes) and per detected block at every level.
                 add("--conn-log")
                 // Only the VPN's DNS servers name addresses for host lists (see udp_reply_hook).
-                add("--names-dns"); add(dnsServers(settings).take(4).joinToString(","))
+                val resolver = secureDns
+                if (resolver != null) {
+                    add("--names-dns"); add(SecureDns.VPN_DNS)
+                    add("--dns-redirect"); add("${SecureDns.VPN_DNS}=127.0.0.1:${resolver.port}")
+                } else {
+                    add("--names-dns"); add(dnsServers(settings).take(4).joinToString(","))
+                }
                 if (logLevel.byedpiDebug > 0) {
                     add("--debug"); add(logLevel.byedpiDebug.toString())
                 }
@@ -240,7 +249,8 @@ class ZapretVpnService : VpnService() {
             builder.addAddress("fd00:10:10::10", 128).addRoute("::", 0)
         }
 
-        val servers = dnsServers(settings)
+        // With encrypted DNS apps get the VPN's own address, answered by the app's resolver.
+        val servers = if (secureDns != null) listOf(SecureDns.VPN_DNS) else dnsServers(settings)
         if (servers.first() != settings.dns.trim()) AppLog.i("DNS '${settings.dns}': using ${servers.joinToString()}")
         val dns = servers.joinToString()
         servers.forEach { server ->
@@ -376,6 +386,21 @@ class ZapretVpnService : VpnService() {
 
     private val sessionLock = Any()
 
+    @Volatile
+    private var secureDns: SecureDns.Server? = null
+
+    /** The encrypted resolver, or null for plain DNS (also when it cannot start: plain then). */
+    private fun startSecureDns(settings: Settings): SecureDns.Server? {
+        val mode = settings.dnsMode
+        if (mode == DnsMode.PLAIN) return null
+        return runCatching {
+            val provider = SecureDns.provider(settings.dnsProvider)
+            SecureDns.Server(provider, mode).also {
+                AppLog.i("secure DNS: ${if (mode == DnsMode.DOH) "DNS over HTTPS" else "DNS over TLS"} via ${provider.title} (${provider.ip}), resolver on 127.0.0.1:${it.port}")
+            }
+        }.onFailure { AppLog.e("secure DNS not started, plain DNS instead: ${it.message}", it) }.getOrNull()
+    }
+
     private fun teardown() = synchronized(sessionLock) {
         networkCallback?.let { cb ->
             runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) }
@@ -388,6 +413,8 @@ class ZapretVpnService : VpnService() {
         engineThread?.join(STOP_TIMEOUT_MS)
         engine = null
         engineThread = null
+        secureDns?.stop()
+        secureDns = null
     }
 
     private fun setState(newState: VpnState) {

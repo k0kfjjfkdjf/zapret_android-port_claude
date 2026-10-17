@@ -67,6 +67,10 @@ Changes in this fork:
   servers from one socket). Every datagram now goes to its own destination; every destination
   gets its own group and datagram count (up to 8 per association), statistics stay per
   association.
+- `--dns-redirect <ip>=<ip>:<port>`: UDP DNS to the first address (port 53) goes to the second
+  (the app's DNS over HTTPS/TLS resolver), untouched by any group; its answers come back with
+  the first address as their source and still name addresses for host lists. TCP connections
+  to the first address are refused at once (Android's DNS over TLS probe falls back to UDP).
 - Stop before listen: a stop requested while the engine still starts (large host lists) used
   to be lost; `engine_stop_requested` (set by the JNI layer) makes the engine return right
   after `listen`. Inside the app (`ZAPRETDROID_JNI`) no SIGINT/SIGTERM/SIGHUP handlers are

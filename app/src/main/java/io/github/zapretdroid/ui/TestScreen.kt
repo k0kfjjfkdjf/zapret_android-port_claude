@@ -52,6 +52,7 @@ import io.github.zapretdroid.test.ProbeResult
 import io.github.zapretdroid.test.StrategyResult
 import io.github.zapretdroid.test.StrategySet
 import io.github.zapretdroid.test.StrategyTester
+import io.github.zapretdroid.test.TestDns
 import io.github.zapretdroid.test.TestPlan
 import io.github.zapretdroid.test.TlsMode
 import java.text.SimpleDateFormat
@@ -218,7 +219,7 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                                 5 -> listOf(TlsMode.ANY, TlsMode.CHROME)
                                 else -> listOf(TlsMode.ANY)
                             }
-                            StrategyTester.start(context, hosts, candidates, settings.dns, attempts, udp = set == StrategySet.UDP, tls = tls)
+                            StrategyTester.start(context, hosts, candidates, TestDns.spec(settings), attempts, udp = set == StrategySet.UDP, tls = tls)
                         },
                         enabled = hosts.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),

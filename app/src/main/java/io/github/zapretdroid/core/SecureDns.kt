@@ -1,0 +1,378 @@
+package io.github.zapretdroid.core
+
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
+import java.io.EOFException
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import kotlin.concurrent.thread
+
+/** How the VPN resolves names for apps: plain DNS through the engine, or encrypted by the app. */
+enum class DnsMode { PLAIN, DOH, DOT }
+
+/** An encrypted DNS server: reached at [ip], its certificate is checked for [tlsName]. */
+class DnsProvider(
+    val id: String,
+    val title: String,
+    val ip: String,
+    val tlsName: String,
+    val dohPath: String = "/dns-query",
+    val dohPort: Int = 443,
+    val dotPort: Int = 853,
+)
+
+/**
+ * DNS over HTTPS / over TLS for the VPN. The VPN hands apps [VPN_DNS] as their DNS server; the
+ * engine sends those queries to [Server] (--dns-redirect), which asks the provider over an
+ * encrypted connection and caches the answers. The provider is reached by IP and without SNI
+ * by default (nothing for DPI to read), its certificate still checked for its name; the
+ * provider's answers cannot be seen or spoofed on the way, unlike plain DNS here (NXDOMAIN for
+ * YouTube from 8.8.8.8). Answers still pass the engine, so names for host lists keep working.
+ */
+object SecureDns {
+    /** The DNS address apps see inside the VPN (routed into the tunnel, answered by the app). */
+    const val VPN_DNS = "10.10.10.53"
+
+    val providers = listOf(
+        DnsProvider("cloudflare", "Cloudflare", "1.1.1.1", "cloudflare-dns.com"),
+        DnsProvider("google", "Google", "8.8.8.8", "dns.google"),
+        DnsProvider("quad9", "Quad9", "9.9.9.9", "dns.quad9.net"),
+        DnsProvider("adguard", "AdGuard", "94.140.14.14", "dns.adguard-dns.com"),
+    )
+
+    /** A preset by id, or a custom server: "https://host/path", "tls://host" or a host name. */
+    fun provider(id: String): DnsProvider {
+        providers.firstOrNull { it.id == id }?.let { return it }
+        val text = id.trim()
+        val authority = text.substringAfter("://").substringBefore('/')
+        val host = authority.substringBefore(':')
+        val port = authority.substringAfter(':', "").toIntOrNull()
+        val path = "/" + text.substringAfter("://", text).substringAfter('/', "dns-query")
+        require(host.isNotEmpty()) { "no host in '$id'" }
+        // The app is outside the VPN: the system resolver answers (only for this one name).
+        val ip = InetAddress.getByName(host).hostAddress ?: throw IOException("cannot resolve $host")
+        return DnsProvider(text, host, ip, host, path, dohPort = port ?: 443, dotPort = port ?: 853)
+    }
+
+    /** One encrypted exchange: a DNS message in, the answer out. Connections are reused. */
+    class Upstream(val provider: DnsProvider, val mode: DnsMode) {
+        private class Conn(val socket: SSLSocket, val input: InputStream, val output: OutputStream) {
+            var uses = 0
+        }
+
+        private val idle = ArrayBlockingQueue<Conn>(4)
+
+        fun exchange(query: ByteArray): ByteArray {
+            var last: Exception? = null
+            // A reused connection may have been closed by the server: one retry on a new one.
+            repeat(2) { attempt ->
+                val conn = (if (attempt == 0) idle.poll() else null) ?: open()
+                try {
+                    val answer = if (mode == DnsMode.DOT) dot(conn, query) else doh(conn, query)
+                    // Some networks stall a TLS connection after its first 16-20 KB from the
+                    // server: a connection serves a limited number of answers.
+                    if (++conn.uses < MAX_USES && !idle.offer(conn)) conn.socket.close()
+                    else if (conn.uses >= MAX_USES) conn.socket.close()
+                    return answer
+                } catch (e: Exception) {
+                    runCatching { conn.socket.close() }
+                    last = e
+                }
+            }
+            throw last ?: IOException("no answer")
+        }
+
+        fun close() {
+            while (true) runCatching { (idle.poll() ?: return).socket.close() }
+        }
+
+        private fun open(): Conn {
+            val port = if (mode == DnsMode.DOT) provider.dotPort else provider.dohPort
+            val raw = Socket()
+            raw.connect(InetSocketAddress(InetAddress.getByName(provider.ip), port), TIMEOUT_MS)
+            raw.soTimeout = TIMEOUT_MS
+            // By IP: no SNI in the ClientHello. The certificate must still be the provider's.
+            val ssl = socketFactory.createSocket(raw, provider.ip, port, true) as SSLSocket
+            val verified = runCatching {
+                ssl.startHandshake()
+                certifiedFor(ssl, provider.tlsName) || certifiedFor(ssl, provider.ip)
+            }.getOrDefault(false)
+            if (!verified) {
+                runCatching { ssl.close() }
+                return openWithSni(port)
+            }
+            return Conn(ssl, BufferedInputStream(ssl.inputStream), ssl.outputStream)
+        }
+
+        /** Servers that give their own certificate only for the name in SNI. */
+        private fun openWithSni(port: Int): Conn {
+            val raw = Socket()
+            raw.connect(InetSocketAddress(InetAddress.getByName(provider.ip), port), TIMEOUT_MS)
+            raw.soTimeout = TIMEOUT_MS
+            val ssl = socketFactory.createSocket(raw, provider.tlsName, port, true) as SSLSocket
+            ssl.sslParameters = ssl.sslParameters.apply {
+                serverNames = listOf(SNIHostName(provider.tlsName))
+            }
+            ssl.startHandshake()
+            if (!certifiedFor(ssl, provider.tlsName)) {
+                ssl.close()
+                throw IOException("certificate of ${provider.ip} is not for ${provider.tlsName}")
+            }
+            return Conn(ssl, BufferedInputStream(ssl.inputStream), ssl.outputStream)
+        }
+
+        private fun dot(conn: Conn, query: ByteArray): ByteArray {
+            conn.output.write(byteArrayOf((query.size shr 8).toByte(), query.size.toByte()) + query)
+            conn.output.flush()
+            val len = (readByte(conn.input) shl 8) or readByte(conn.input)
+            return readFully(conn.input, len)
+        }
+
+        private fun doh(conn: Conn, query: ByteArray): ByteArray {
+            val head = "POST ${provider.dohPath} HTTP/1.1\r\nHost: ${provider.tlsName}\r\n" +
+                "Content-Type: application/dns-message\r\nAccept: application/dns-message\r\n" +
+                "Content-Length: ${query.size}\r\n\r\n"
+            conn.output.write(head.toByteArray(Charsets.US_ASCII) + query)
+            conn.output.flush()
+            val status = readLine(conn.input)
+            val code = status.split(' ').getOrNull(1)?.toIntOrNull() ?: throw IOException("bad HTTP status '$status'")
+            var length = -1
+            var chunked = false
+            var close = false
+            while (true) {
+                val line = readLine(conn.input)
+                if (line.isEmpty()) break
+                val name = line.substringBefore(':').trim().lowercase()
+                val value = line.substringAfter(':').trim()
+                when (name) {
+                    "content-length" -> length = value.toIntOrNull() ?: -1
+                    "transfer-encoding" -> chunked = value.contains("chunked", ignoreCase = true)
+                    "connection" -> close = value.equals("close", ignoreCase = true)
+                }
+            }
+            val body = when {
+                chunked -> readChunked(conn.input)
+                length >= 0 -> readFully(conn.input, length)
+                else -> throw IOException("HTTP answer without length")
+            }
+            if (close) conn.uses = MAX_USES
+            if (code != 200) throw IOException("HTTP $code from ${provider.title}")
+            return body
+        }
+
+        private fun readChunked(input: InputStream): ByteArray {
+            val out = ByteArrayOutputStream()
+            while (true) {
+                val size = readLine(input).substringBefore(';').trim().toInt(16)
+                if (size == 0) {
+                    while (readLine(input).isNotEmpty()) Unit
+                    return out.toByteArray()
+                }
+                out.write(readFully(input, size))
+                readLine(input)
+            }
+        }
+    }
+
+    /**
+     * The resolver the engine redirects the VPN's DNS to: UDP on 127.0.0.1, answers from the
+     * provider (the other presets if it fails), cached for their TTL.
+     */
+    class Server(provider: DnsProvider, mode: DnsMode) {
+        private val upstreams = (listOf(provider) + providers.filter { it.id != provider.id && providers.contains(provider) })
+            .map { Upstream(it, mode) }
+        private val socket = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
+        private val workers: ExecutorService = Executors.newFixedThreadPool(4)
+        private val cache = Cache()
+        private val queries = AtomicInteger()
+        private val hits = AtomicInteger()
+        private val failures = AtomicInteger()
+
+        @Volatile
+        private var running = true
+
+        val port: Int get() = socket.localPort
+
+        init {
+            thread(name = "secure-dns", isDaemon = true) {
+                val buf = ByteArray(4096)
+                while (running) {
+                    val packet = DatagramPacket(buf, buf.size)
+                    try {
+                        socket.receive(packet)
+                    } catch (_: IOException) {
+                        break
+                    }
+                    val query = buf.copyOf(packet.length)
+                    val from = packet.socketAddress
+                    workers.execute { answer(query)?.let { runCatching { socket.send(DatagramPacket(it, it.size, from)) } } }
+                }
+            }
+        }
+
+        private fun answer(query: ByteArray): ByteArray? {
+            if (query.size < 12) return null
+            queries.incrementAndGet()
+            val key = Cache.key(query) ?: return null
+            cache.get(key)?.let {
+                hits.incrementAndGet()
+                return it.withId(query)
+            }
+            for (upstream in upstreams) {
+                try {
+                    val answer = upstream.exchange(query)
+                    if (answer.size >= 12) {
+                        cache.put(key, answer)
+                        return answer.withId(query)
+                    }
+                } catch (e: Exception) {
+                    if (failures.incrementAndGet() <= 20) {
+                        AppLog.w("secure DNS: ${upstream.provider.title} (${upstream.mode}) failed: ${e.message ?: e.javaClass.simpleName}")
+                    }
+                }
+            }
+            // SERVFAIL: the app tries again instead of waiting for a timeout.
+            return query.copyOf().also {
+                it[2] = (it[2].toInt() or 0x80).toByte()
+                it[3] = 0x82.toByte()
+            }
+        }
+
+        fun stop() {
+            running = false
+            socket.close()
+            workers.shutdownNow()
+            upstreams.forEach { it.close() }
+            AppLog.i("secure DNS: ${queries.get()} queries, ${hits.get()} from cache, ${failures.get()} failed exchanges")
+        }
+    }
+
+    /** Answers by question (name, type, class), until their smallest TTL runs out. */
+    private class Cache {
+        private class Entry(val answer: ByteArray, val expires: Long)
+
+        private val map = object : LinkedHashMap<String, Entry>(256, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>) = size > 1024
+        }
+
+        @Synchronized
+        fun get(key: String): ByteArray? {
+            val e = map[key] ?: return null
+            if (System.currentTimeMillis() > e.expires) {
+                map.remove(key)
+                return null
+            }
+            return e.answer
+        }
+
+        @Synchronized
+        fun put(key: String, answer: ByteArray) {
+            val rcode = answer[3].toInt() and 0x0f
+            if (rcode != 0 && rcode != 3) return
+            val ttl = (minTtl(answer) ?: 60).coerceIn(30, 3600)
+            map[key] = Entry(answer, System.currentTimeMillis() + ttl * 1000L)
+        }
+
+        companion object {
+            /** The question section, lower case: same question, same answer. */
+            fun key(msg: ByteArray): String? {
+                if (((msg[4].toInt() and 0xff) shl 8 or (msg[5].toInt() and 0xff)) != 1) return null
+                var pos = 12
+                val sb = StringBuilder()
+                while (pos < msg.size) {
+                    val len = msg[pos].toInt() and 0xff
+                    if (len == 0) break
+                    if (len and 0xc0 != 0 || pos + 1 + len > msg.size) return null
+                    sb.append(String(msg, pos + 1, len, Charsets.ISO_8859_1).lowercase()).append('.')
+                    pos += len + 1
+                }
+                if (pos + 5 > msg.size) return null
+                for (i in pos + 1 until pos + 5) sb.append('/').append(msg[i].toInt() and 0xff)
+                return sb.toString()
+            }
+
+            fun minTtl(msg: ByteArray): Int? = runCatching {
+                val qd = (msg[4].toInt() and 0xff) shl 8 or (msg[5].toInt() and 0xff)
+                val an = (msg[6].toInt() and 0xff) shl 8 or (msg[7].toInt() and 0xff)
+                var pos = 12
+                repeat(qd) { pos = skipName(msg, pos) + 4 }
+                var min: Int? = null
+                repeat(an) {
+                    pos = skipName(msg, pos)
+                    val ttl = ((msg[pos + 4].toInt() and 0xff) shl 24) or ((msg[pos + 5].toInt() and 0xff) shl 16) or
+                        ((msg[pos + 6].toInt() and 0xff) shl 8) or (msg[pos + 7].toInt() and 0xff)
+                    min = minOf(min ?: ttl, ttl)
+                    pos += 10 + ((msg[pos + 8].toInt() and 0xff) shl 8 or (msg[pos + 9].toInt() and 0xff))
+                }
+                min
+            }.getOrNull()
+
+            private fun skipName(msg: ByteArray, start: Int): Int {
+                var pos = start
+                while (true) {
+                    val len = msg[pos].toInt() and 0xff
+                    if (len == 0) return pos + 1
+                    if (len and 0xc0 == 0xc0) return pos + 2
+                    pos += len + 1
+                }
+            }
+        }
+    }
+
+    /** Replaced in unit tests (a test certificate; the JVM's default verifier rejects everything). */
+    var socketFactory: SSLSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+    var hostnameVerifier: HostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+
+    /** Whether the server's certificate (already trusted by the handshake) names [host]. */
+    private fun certifiedFor(ssl: SSLSocket, host: String) = hostnameVerifier.verify(host, ssl.session)
+
+    private const val TIMEOUT_MS = 3000
+    private const val MAX_USES = 40
+
+    private fun ByteArray.withId(query: ByteArray): ByteArray = copyOf().also {
+        it[0] = query[0]
+        it[1] = query[1]
+    }
+
+    private fun readByte(input: InputStream): Int {
+        val b = input.read()
+        if (b < 0) throw EOFException()
+        return b
+    }
+
+    private fun readFully(input: InputStream, len: Int): ByteArray {
+        val out = ByteArray(len)
+        var off = 0
+        while (off < len) {
+            val n = input.read(out, off, len - off)
+            if (n < 0) throw EOFException()
+            off += n
+        }
+        return out
+    }
+
+    private fun readLine(input: InputStream): String {
+        val sb = StringBuilder()
+        while (true) {
+            val b = readByte(input)
+            if (b == '\n'.code) return sb.toString().trimEnd('\r')
+            sb.append(b.toChar())
+            if (sb.length > 8192) throw IOException("HTTP line too long")
+        }
+    }
+}

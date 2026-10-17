@@ -187,6 +187,11 @@ struct params {
     // VPN's DNS); without it, answers from any server to a query the engine relayed count.
     union sockaddr_u names_dns[4];
     int names_dns_n;
+    // ZapretDroid --dns-redirect <ip>=<ip>:<port>: UDP DNS to the first address (port 53) goes
+    // to the app's resolver at the second (DNS over HTTPS/TLS); its answers come back as if
+    // from the first.
+    bool dns_redir;
+    union sockaddr_u dns_redir_from, dns_redir_to;
     bool daemonize;
     const char *pid_file;
     int pid_fd;

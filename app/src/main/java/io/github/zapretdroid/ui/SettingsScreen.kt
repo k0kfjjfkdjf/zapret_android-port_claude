@@ -1,5 +1,10 @@
 package io.github.zapretdroid.ui
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -8,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
@@ -15,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,8 +34,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.FilterChip
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -45,19 +50,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.BuildConfig
 import io.github.zapretdroid.R
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.widget.Toast
-import io.github.zapretdroid.core.Backup
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
+import io.github.zapretdroid.core.Backup
+import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.LogLevel
-import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.SavedStrategies
+import io.github.zapretdroid.core.SecureDns
+import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.isIpLiteral
 
@@ -80,6 +84,8 @@ fun SettingsScreen(
     var strategyId by remember { mutableStateOf(settings.strategyId) }
     var customArgs by remember { mutableStateOf(settings.customArgs) }
     var dns by remember { mutableStateOf(settings.dns) }
+    var dnsMode by remember { mutableStateOf(settings.dnsMode) }
+    var dnsProvider by remember { mutableStateOf(settings.dnsProvider) }
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
     var logLevel by remember { mutableStateOf(settings.logLevel) }
@@ -92,12 +98,14 @@ fun SettingsScreen(
     DisposableEffect(Unit) {
         val argsBefore = settings.customArgs
         val dnsBefore = settings.dns
+        val providerBefore = settings.dnsProvider
         onDispose {
             if (settings.customArgs != argsBefore) {
                 AppLog.i("setting customArgs: '$argsBefore' -> '${settings.customArgs}'")
                 if (settings.strategyId == Strategies.CUSTOM) SavedStrategies.remember(context, settings.customArgs)
             }
             if (settings.dns != dnsBefore) AppLog.i("setting dns: '$dnsBefore' -> '${settings.dns}'")
+            if (settings.dnsProvider != providerBefore) AppLog.i("setting dnsProvider: '$providerBefore' -> '${settings.dnsProvider}'")
         }
     }
     val setCustomArgs = { args: String ->
@@ -286,37 +294,110 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
                 ) {
-                    listOf(Settings.SYSTEM_DNS, "77.88.8.8", "1.1.1.1", "8.8.8.8").forEach { option ->
+                    DnsMode.entries.forEach { mode ->
                         FilterChip(
-                            selected = dns.trim() == option,
+                            selected = dnsMode == mode,
                             onClick = {
-                                dns = option
-                                settings.dns = option
+                                dnsMode = mode
+                                settings.dnsMode = mode
                             },
-                            label = { Text(if (option == Settings.SYSTEM_DNS) stringResource(R.string.dns_system) else option) },
+                            label = {
+                                Text(
+                                    stringResource(
+                                        when (mode) {
+                                            DnsMode.PLAIN -> R.string.dns_mode_plain
+                                            DnsMode.DOH -> R.string.dns_mode_doh
+                                            DnsMode.DOT -> R.string.dns_mode_dot
+                                        },
+                                    ),
+                                )
+                            },
                         )
                     }
                 }
             }
-            item {
-                val valid = isIpLiteral(dns.trim()) || dns.trim() == Settings.SYSTEM_DNS
-                OutlinedTextField(
-                    value = dns,
-                    onValueChange = {
-                        dns = it
-                        if (isIpLiteral(it.trim()) || it.trim() == Settings.SYSTEM_DNS) settings.dns = it.trim()
-                    },
-                    label = { Text(stringResource(R.string.dns_server)) },
-                    supportingText = {
-                        Text(stringResource(if (valid) R.string.dns_server_hint else R.string.dns_server_invalid))
-                    },
-                    isError = !valid,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
+            if (dnsMode == DnsMode.PLAIN) {
+                item {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+                    ) {
+                        listOf(Settings.SYSTEM_DNS, "77.88.8.8", "1.1.1.1", "8.8.8.8").forEach { option ->
+                            FilterChip(
+                                selected = dns.trim() == option,
+                                onClick = {
+                                    dns = option
+                                    settings.dns = option
+                                },
+                                label = { Text(if (option == Settings.SYSTEM_DNS) stringResource(R.string.dns_system) else option) },
+                            )
+                        }
+                    }
+                }
+                item {
+                    val valid = isIpLiteral(dns.trim()) || dns.trim() == Settings.SYSTEM_DNS
+                    OutlinedTextField(
+                        value = dns,
+                        onValueChange = {
+                            dns = it
+                            if (isIpLiteral(it.trim()) || it.trim() == Settings.SYSTEM_DNS) settings.dns = it.trim()
+                        },
+                        label = { Text(stringResource(R.string.dns_server)) },
+                        supportingText = {
+                            Text(stringResource(if (valid) R.string.dns_server_hint else R.string.dns_server_invalid))
+                        },
+                        isError = !valid,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            } else {
+                item {
+                    Text(
+                        stringResource(R.string.dns_secure_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+                item {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        SecureDns.providers.forEach { provider ->
+                            FilterChip(
+                                selected = dnsProvider == provider.id,
+                                onClick = {
+                                    dnsProvider = provider.id
+                                    settings.dnsProvider = provider.id
+                                },
+                                label = { Text(provider.title) },
+                            )
+                        }
+                    }
+                }
+                item {
+                    val custom = SecureDns.providers.none { it.id == dnsProvider }
+                    OutlinedTextField(
+                        value = if (custom) dnsProvider else "",
+                        onValueChange = {
+                            dnsProvider = it.trim()
+                            if (it.trim().isNotEmpty()) settings.dnsProvider = it.trim()
+                        },
+                        label = { Text(stringResource(R.string.dns_provider_custom)) },
+                        supportingText = { Text(stringResource(R.string.dns_provider_custom_hint)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
             }
             item {
                 ListItem(

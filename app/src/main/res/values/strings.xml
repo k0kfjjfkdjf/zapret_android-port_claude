@@ -294,4 +294,10 @@
     <string name="classic_title">ByeByeDPI interface</string>
     <string name="classic_desc">Switch to the interface of ByeByeDPI with all its screens. It runs ZapretDroid\'s engine, so ZapretDroid options work in its command line; the way back is in its menu</string>
     <string name="classic_back">ZapretDroid interface</string>
+    <string name="dns_mode_plain">Plain DNS</string>
+    <string name="dns_mode_doh">DNS over HTTPS</string>
+    <string name="dns_mode_dot">DNS over TLS</string>
+    <string name="dns_secure_desc">ZapretDroid answers the apps\' DNS itself and asks the server below over an encrypted connection (by IP, without SNI): the provider cannot see or spoof the answers, and names for host lists are always known. If the server fails, the other presets are tried.</string>
+    <string name="dns_provider_custom">Own server</string>
+    <string name="dns_provider_custom_hint">https://host/dns-query for DoH, tls://host for DoT; empty: the preset chosen above</string>
 </resources>

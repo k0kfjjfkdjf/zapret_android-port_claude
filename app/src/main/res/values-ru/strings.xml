@@ -292,4 +292,10 @@
     <string name="classic_title">Интерфейс ByeByeDPI</string>
     <string name="classic_desc">Переключиться на интерфейс ByeByeDPI со всеми его экранами. Работает на движке ZapretDroid, поэтому параметры ZapretDroid работают в его командной строке; вернуться можно через его меню</string>
     <string name="classic_back">Интерфейс ZapretDroid</string>
+    <string name="dns_mode_plain">Обычный DNS</string>
+    <string name="dns_mode_doh">DNS over HTTPS</string>
+    <string name="dns_mode_dot">DNS over TLS</string>
+    <string name="dns_secure_desc">ZapretDroid сам отвечает приложениям на запросы DNS и спрашивает сервер ниже по зашифрованному соединению (по IP, без SNI): провайдер не видит и не подменяет ответы, а имена для списков доменов всегда известны. Если сервер не отвечает, пробуются остальные из списка.</string>
+    <string name="dns_provider_custom">Свой сервер</string>
+    <string name="dns_provider_custom_hint">https://хост/dns-query для DoH, tls://хост для DoT; пусто — выбранный выше</string>
 </resources>

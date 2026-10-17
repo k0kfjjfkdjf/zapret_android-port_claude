@@ -280,6 +280,7 @@ static void test_dns_cache(void)
 
 int engine_main(int argc, char **argv);
 void engine_reset(void);
+void clear_params(char *line, char **argv);
 extern int engine_stop_requested;
 
 /* A stop requested before the engine listens makes it return instead of serving forever. */
@@ -290,6 +291,30 @@ static void test_early_stop(void)
     engine_stop_requested = 1;
     CHECK_EQ(engine_main(5, args), 0);
     engine_stop_requested = 0;
+    engine_reset();
+}
+
+/* --dns-redirect and --names-dns: accepted forms and rejected ones. */
+static void test_dns_options(void)
+{
+    struct { const char *opt, *val; int ok; } cases[] = {
+        { "--dns-redirect", "10.10.10.53=127.0.0.1:5353", 1 },
+        { "--dns-redirect", "10.10.10.53=127.0.0.1", 0 },     // no port
+        { "--dns-redirect", "10.10.10.53", 0 },
+        { "--dns-redirect", "host=127.0.0.1:53", 0 },
+        { "--names-dns", "8.8.8.8,2001:4860::8888", 1 },
+        { "--names-dns", "8.8.8.8,not-an-ip", 0 },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        char *args[] = { "ciadpi", (char *) cases[i].opt, (char *) cases[i].val, 0 };
+        engine_reset();
+        int failed = parse_args(3, args) != 0;
+        clear_params(0, 0);
+        if (failed == cases[i].ok) {
+            failures++;
+            fprintf(stderr, "%s %s: expected %s\n", cases[i].opt, cases[i].val, cases[i].ok ? "accepted" : "rejected");
+        }
+    }
     engine_reset();
 }
 
@@ -308,6 +333,7 @@ int main(int argc, char **argv)
     if (argc > 2) test_quic_sni(argv[2]);
     test_dns_cache();
     test_early_stop();
+    test_dns_options();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

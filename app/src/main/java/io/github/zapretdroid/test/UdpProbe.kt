@@ -75,6 +75,32 @@ object UdpProbe {
         }
     }
 
+    /**
+     * One datagram to [address]:[port] through the proxy's UDP relay; the reply's source address
+     * (from the SOCKS5 header) and data, or null without a reply.
+     */
+    fun exchange(proxyPort: Int, address: Inet4Address, port: Int, payload: ByteArray, timeoutMs: Int): Pair<InetSocketAddress, ByteArray>? =
+        Socket().use { control ->
+            control.soTimeout = timeoutMs
+            control.connect(InetSocketAddress("127.0.0.1", proxyPort), timeoutMs)
+            val relay = InetSocketAddress("127.0.0.1", associate(control))
+            DatagramSocket().use { udp ->
+                udp.soTimeout = timeoutMs
+                val datagram = byteArrayOf(0, 0, 0, 1) + address.address + byteArrayOf((port shr 8).toByte(), port.toByte()) + payload
+                udp.send(DatagramPacket(datagram, datagram.size, relay))
+                val buf = ByteArray(4096)
+                val reply = DatagramPacket(buf, buf.size)
+                try {
+                    udp.receive(reply)
+                } catch (_: SocketTimeoutException) {
+                    return null
+                }
+                if (reply.length <= 10 || buf[3].toInt() != 1) return null
+                val from = InetSocketAddress(InetAddress.getByAddress(buf.copyOfRange(4, 8)), ((buf[8].toInt() and 0xff) shl 8) or (buf[9].toInt() and 0xff))
+                from to buf.copyOfRange(10, reply.length)
+            }
+        }
+
     /** SOCKS5 UDP ASSOCIATE; returns the relay port. */
     private fun associate(control: Socket): Int {
         val out = control.getOutputStream()

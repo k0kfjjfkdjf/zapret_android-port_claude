@@ -102,6 +102,22 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putString(KEY_COLLECT_APP, value) }
         }
 
+    /** Plain DNS through the engine, or the app's encrypted resolver (see SecureDns). */
+    var dnsMode: DnsMode
+        get() = prefs.getString(KEY_DNS_MODE, null)?.let { runCatching { DnsMode.valueOf(it) }.getOrNull() } ?: DnsMode.PLAIN
+        set(value) {
+            logChange("dnsMode", dnsMode, value)
+            prefs.edit(commit = true) { putString(KEY_DNS_MODE, value.name) }
+        }
+
+    /** Encrypted DNS server: a preset id (cloudflare, google…) or https://… / tls://… of one's own. */
+    var dnsProvider: String
+        get() = prefs.getString(KEY_DNS_PROVIDER, SecureDns.providers.first().id)!!
+        // Typed character by character: the settings screen logs the final value when it closes.
+        set(value) {
+            prefs.edit(commit = true) { putString(KEY_DNS_PROVIDER, value) }
+        }
+
     /** Every settings change goes to the journal, whichever screen made it. */
     private fun logChange(name: String, old: Any, new: Any) {
         if (old == new) return
@@ -133,5 +149,7 @@ class Settings(context: Context) {
         private const val KEY_HOST_LIST = "host_list"
         private const val KEY_AUTOHOST = "autohost"
         private const val KEY_COLLECT_APP = "collect_app"
+        private const val KEY_DNS_MODE = "dns_mode"
+        private const val KEY_DNS_PROVIDER = "dns_provider"
     }
 }

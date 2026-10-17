@@ -1,5 +1,7 @@
 package io.github.zapretdroid.test
 
+import io.github.zapretdroid.core.DnsMode
+import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.isIpLiteral
 import java.net.Inet4Address
@@ -19,7 +21,31 @@ object TestDns {
     private fun system(host: String): InetAddress? =
         runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
 
+    /** What the tests resolve with: the plain DNS setting, or "doh:<provider>" / "dot:<provider>". */
+    fun spec(settings: Settings): String = when (settings.dnsMode) {
+        DnsMode.PLAIN -> settings.dns
+        DnsMode.DOH -> "doh:${settings.dnsProvider}"
+        DnsMode.DOT -> "dot:${settings.dnsProvider}"
+    }
+
+    private val upstreams = mutableMapOf<String, SecureDns.Upstream>()
+
+    /** Through the encrypted resolver the VPN uses; the system answer if it fails. */
+    private fun secure(host: String, spec: String): Answer {
+        val mode = if (spec.startsWith("dot:")) DnsMode.DOT else DnsMode.DOH
+        val name = spec.substringAfter(':')
+        val result = runCatching {
+            val up = synchronized(upstreams) { upstreams.getOrPut(spec) { SecureDns.Upstream(SecureDns.provider(name), mode) } }
+            val id = kotlin.random.Random.nextInt(0x10000)
+            DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, host)), id)?.firstOrNull()
+        }
+        result.getOrNull()?.let { return Answer(it) }
+        val sys = system(host)
+        return Answer(sys, "encrypted DNS ($spec) failed for $host: ${result.exceptionOrNull()?.message ?: "no address"}" + (sys?.let { ", system DNS ${it.hostAddress}" } ?: ""))
+    }
+
     fun resolve(host: String, dns: String): Answer {
+        if (dns.startsWith("doh:") || dns.startsWith("dot:")) return secure(host, dns)
         val server = dns.trim().takeIf { it != Settings.SYSTEM_DNS && isIpLiteral(it) }
             ?: return Answer(system(host))
         val viaServer = runCatching { DnsClient.resolve(host, InetAddress.getByName(server)).firstOrNull() }

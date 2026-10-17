@@ -18,6 +18,7 @@
 /* Long-only options without a letter. */
 #define OPT_MSS 0x101
 #define OPT_NAMES_DNS 0x102
+#define OPT_DNS_REDIRECT 0x103
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -159,6 +160,7 @@ static const char help_text[] = {
     "    -a, --udp-fake <count>    UDP fakes count, default 0\n"
     "    --mss <n>                 TCP MSS of outgoing connections (tpws --mss)\n"
     "    --names-dns <ip[,ip]>     Only these DNS servers' answers name hosts for -H\n"
+    "    --dns-redirect <ip>=<ip:port>  UDP DNS to the first address goes to the second\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
@@ -200,6 +202,7 @@ const struct option options[] = {
     {"conn-log",      0, 0, 'k'},
     {"mss",           1, 0, OPT_MSS},
     {"names-dns",     1, 0, OPT_NAMES_DNS},
+    {"dns-redirect",  1, 0, OPT_DNS_REDIRECT},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -952,6 +955,35 @@ int parse_args(int argc, char **argv)
                 params.names_dns[params.names_dns_n++] = a;
             }
             free(list);
+            break;
+        }
+
+        case OPT_DNS_REDIRECT: {
+            char *copy = strdup(optarg);
+            char *eq = copy ? strchr(copy, '=') : 0;
+            union sockaddr_u from = {0}, to = {0};
+            if (!eq) {
+                invalid = 1;
+                free(copy);
+                break;
+            }
+            *eq = 0;
+            if (inet_pton(AF_INET, copy, &from.in.sin_addr) == 1) {
+                from.sa.sa_family = AF_INET;
+            }
+            else if (inet_pton(AF_INET6, copy, &from.in6.sin6_addr) == 1) {
+                from.sa.sa_family = AF_INET6;
+            }
+            if (!from.sa.sa_family || get_addr(eq + 1, &to) < 0 || !to.in.sin_port) {
+                invalid = 1;
+            }
+            else {
+                from.in.sin_port = htons(53);
+                params.dns_redir = 1;
+                params.dns_redir_from = from;
+                params.dns_redir_to = to;
+            }
+            free(copy);
             break;
         }
 

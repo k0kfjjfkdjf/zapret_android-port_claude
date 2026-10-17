@@ -50,6 +50,7 @@ import io.github.zapretdroid.test.DeepCheck
 import io.github.zapretdroid.test.DeepConfig
 import io.github.zapretdroid.test.DeepResult
 import io.github.zapretdroid.test.StrategySet
+import io.github.zapretdroid.test.TestDns
 import io.github.zapretdroid.test.StrategyTester
 import io.github.zapretdroid.test.TestPlan
 import io.github.zapretdroid.test.TlsMode
@@ -193,7 +194,7 @@ fun DeepCheckScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Uni
                                 DeepConfig(
                                     domains = domains, strategies = strategies, timeoutMs = timeoutS * 1000, attempts = attemptsN,
                                     parallel = parallelN, delayMs = delay.toIntOrNull()?.coerceIn(0, 60_000) ?: 0, tls = tls,
-                                    dns = settings.dns, sources = sources.sorted().joinToString() + ", sample ${domains.size} of ${all.size}",
+                                    dns = TestDns.spec(settings), sources = sources.sorted().joinToString() + ", sample ${domains.size} of ${all.size}",
                                 ),
                             )
                         },
