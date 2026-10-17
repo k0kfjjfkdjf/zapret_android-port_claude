@@ -133,9 +133,6 @@ JNIEXPORT jstring JNICALL
 Java_io_github_zapretdroid_core_NativeLog_start(JNIEnv *env, jobject thiz, jstring path, jlong limit)
 {
     static char hev_path[32];
-    if (log_fd >= 0) {
-        return (*env)->NewStringUTF(env, hev_path);
-    }
     const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
     if (!cpath) {
         return NULL;
@@ -143,7 +140,18 @@ Java_io_github_zapretdroid_core_NativeLog_start(JNIEnv *env, jobject thiz, jstri
     int fd = open(cpath, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     (*env)->ReleaseStringUTFChars(env, path, cpath);
     if (fd < 0) {
-        return NULL;
+        return log_fd >= 0 ? (*env)->NewStringUTF(env, hev_path) : NULL;
+    }
+    if (log_fd >= 0) {
+        // Capture already runs in this process (a later session or test). The journal may have
+        // been replaced or deleted since: point the descriptor at the current file (dup2 swaps
+        // it atomically under the reader thread) and count this session's output afresh.
+        dup2(fd, log_fd);
+        close(fd);
+        log_limit = limit;
+        log_written = 0;
+        limit_reached = 0;
+        return (*env)->NewStringUTF(env, hev_path);
     }
     int pipefd[2];
     if (pipe(pipefd) < 0) {

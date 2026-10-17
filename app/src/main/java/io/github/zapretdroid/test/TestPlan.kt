@@ -30,6 +30,7 @@ object TestPlan {
         SiteGroup(id, title, readLines(context, "sites/$id.sites"))
     }
 
+    // distinct(): the results list is keyed by strategy, a repeated line would crash it.
     fun strategies(context: Context, set: StrategySet, sni: String): List<String> = when (set) {
         StrategySet.QUICK -> quick
         StrategySet.FULL -> full
@@ -41,7 +42,7 @@ object TestPlan {
         // zapret-termux's generated candidates, where its auto_N strategies come from.
         StrategySet.TERMUX -> readLines(context, "strategies/termux_generated.list")
         StrategySet.UDP -> udp
-    }
+    }.distinct()
 
     /** STUN servers used by calls (Google Meet, WebRTC, Discord voice also talks STUN). */
     val stunServers = listOf(

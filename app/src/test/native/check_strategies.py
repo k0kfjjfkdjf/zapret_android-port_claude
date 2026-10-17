@@ -55,6 +55,17 @@ for i in range(3):
     shutil.copy(fake + "quic_initial_www_google_com.bin", os.path.join(quic_sni, "%02d.bin" % i))
 
 failed = 0
+# A repeated line in a list crashes the tester's result list (keyed by strategy).
+for name in ("zapretdroid.list", "termux_generated.list", "byebyedpi.list"):
+    seen = set()
+    for l in open(root + "/src/main/assets/strategies/" + name):
+        l = l.strip()
+        if not l or l.startswith("#"):
+            continue
+        if l in seen:
+            failed += 1
+            print("repeated in %s: %s" % (name, l))
+        seen.add(l)
 for line in strategies:
     line = line.replace("{fake:quic_sni}", quic_sni)
     args = shlex.split(re.sub(r"\{fake:([^}]+)\}", lambda m: fake + m.group(1), line))

@@ -9,6 +9,8 @@ build/
 .externalNativeBuild/
 .cxx/
 *.keystore
+# The debug key is public on purpose (see app/build.gradle.kts).
+!app/debug.keystore
 *.jks
 # Test-only self-signed certificate for SiteProbeTest
 !app/src/test/resources/probe-test.jks

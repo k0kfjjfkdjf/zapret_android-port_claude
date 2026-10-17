@@ -183,6 +183,10 @@ struct params {
     // --mss: TCP maximum segment size of outgoing connections (as tpws --mss): both sides then
     // send small segments
     int mss;
+    // ZapretDroid --names-dns: DNS servers whose answers name addresses for host lists (the
+    // VPN's DNS); without it, answers from any server to a query the engine relayed count.
+    union sockaddr_u names_dns[4];
+    int names_dns_n;
     bool daemonize;
     const char *pid_file;
     int pid_fd;

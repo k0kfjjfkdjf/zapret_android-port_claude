@@ -15,15 +15,16 @@ class ByeDpi {
     }
 }
 
-/** Redirects stdout/stderr of the native engines into a log file (see native-log.c). */
+/** Collects the output of the native engines (ByeDPI's log, hev's log file) into the journal (see native-log.c). */
 object NativeLog {
     init {
         System.loadLibrary("byedpi")
     }
 
     /**
-     * Starts capturing into [path], truncated when it grows beyond [limitBytes]. Returns the
-     * path that hev-socks5-tunnel should use as its log file, or null on failure.
+     * Starts capturing into [path], or points a running capture at the current [path] file. After
+     * [limitBytes] of engine output since this call, further lines go to logcat only. Returns
+     * the path that hev-socks5-tunnel should use as its log file, or null on failure.
      */
     @JvmStatic
     external fun start(path: String, limitBytes: Long): String?

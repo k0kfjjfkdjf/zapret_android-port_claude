@@ -146,7 +146,7 @@
     <string name="host_lists_format">Принимаются домены, ссылки, *.example.com, несколько в строке. Можно импортировать gzip.</string>
 
     <string name="autohost_toggle">Записывать заблокированные домены (autohostlist)</string>
-    <string name="autohost_toggle_desc">Движок отмечает домены, где всё ещё видит блокировку (сброс, таймаут, редирект, ошибка TLS), как autohostlist в zapret. После сбоя добавляется запасная попытка без обхода.</string>
+    <string name="autohost_toggle_desc">Движок отмечает домены, где всё ещё видит блокировку (сброс, таймаут, редирект, ошибка TLS), как autohostlist в zapret. Заблокированное соединение повторяется один раз с первой группой стратегии, а если в стратегии нет тайм-аута, добавляется тайм-аут 4 с.</string>
     <string name="title_autohost">Обнаруженные блокировки</string>
     <string name="autohost_open_desc">Домены, которые не открылись с текущей стратегией</string>
     <string name="autohost_intro">Домены, на которых блокировка обнаружена даже с применённой стратегией. Добавьте их в список, например чтобы применить к ним другую стратегию.</string>
@@ -232,7 +232,7 @@
     <string name="multi_result">%1$d стратегий вместе должны открыть %2$d из %3$d открываемых доменов (проверено %4$d)</string>
     <string name="multi_lists">Домены каждой дополнительной стратегии сохранены как списки хостов: %1$s</string>
     <string name="multi_verify">Перепроверить</string>
-    <string name="private_dns_warning">Включён частный DNS Android (%1$s): запросы DNS идут по TLS мимо ZapretDroid. Если сайты не открываются, выключите его в Настройки → Сеть → Частный DNS.</string>
+    <string name="private_dns_warning">Включён частный DNS Android (%1$s): запросы DNS идут через VPN, но зашифрованы (TLS), и ZapretDroid не видит имён: списки доменов не смогут выбрать группу для QUIC без SNI, звонков и TCP без SNI. Если сайты не открываются, выключите его в Настройки → Сеть → Частный DNS.</string>
     <string name="private_dns_auto">автоматически</string>
     <string name="strategy_tap_to_change">Нажмите, чтобы сменить</string>
     <string name="strategy_pick">Стратегия</string>

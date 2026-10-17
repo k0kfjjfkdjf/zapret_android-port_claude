@@ -49,11 +49,19 @@ object FakePayloads {
         return dir
     }
 
+    /**
+     * Replaces the files one by one with a rename, never emptying the directory: the VPN and the
+     * tester may install at the same time, and an engine starting meanwhile loads every file.
+     */
     fun generateQuic(out: File, count: Int = QUIC_SNI_COUNT) {
         out.mkdirs()
-        out.listFiles()?.forEach { it.delete() }
-        repeat(count) { i ->
-            File(out, "%02d.bin".format(i)).writeBytes(QuicInitial.build(QUIC_SNIS.random()))
+        val keep = (0 until count).map { "%02d.bin".format(it) }.toSet()
+        out.listFiles()?.filter { it.name !in keep }?.forEach { it.delete() }
+        keep.forEach { name ->
+            // Outside the directory until complete, so that it is never loaded half written.
+            val tmp = File(out.parentFile, ".quic_${android.os.Process.myPid()}_$name")
+            tmp.writeBytes(QuicInitial.build(QUIC_SNIS.random()))
+            if (!tmp.renameTo(File(out, name))) tmp.delete()
         }
     }
 }

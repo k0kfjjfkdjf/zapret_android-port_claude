@@ -22,6 +22,7 @@
 int main(int argc, char **argv);
 void engine_reset(void);
 extern int server_fd;
+extern int engine_stop_requested;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static int running;
@@ -43,6 +44,7 @@ Java_io_github_zapretdroid_core_ByeDpi_startProxy(JNIEnv *env, jobject thiz, job
     }
     running = 1;
     server_fd = -1;
+    engine_stop_requested = 0;
     engine_reset();
     pthread_mutex_unlock(&lock);
 
@@ -87,8 +89,13 @@ JNIEXPORT void JNICALL
 Java_io_github_zapretdroid_core_ByeDpi_stopProxy(JNIEnv *env, jobject thiz)
 {
     pthread_mutex_lock(&lock);
-    if (running && server_fd >= 0) {
-        shutdown(server_fd, SHUT_RDWR);
+    if (running) {
+        // Before listen() the flag stops the engine as soon as it would start serving.
+        __atomic_store_n(&engine_stop_requested, 1, __ATOMIC_SEQ_CST);
+        int fd = __atomic_load_n(&server_fd, __ATOMIC_SEQ_CST);
+        if (fd >= 0) {
+            shutdown(fd, SHUT_RDWR);
+        }
     }
     pthread_mutex_unlock(&lock);
 }

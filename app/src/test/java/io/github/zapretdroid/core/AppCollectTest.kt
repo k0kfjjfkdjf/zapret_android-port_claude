@@ -33,9 +33,10 @@ class AppCollectTest {
                 "10-16 18:01:00.000 vpn | collect mode: only com.discord",
                 "10-16 18:01:02.000 byedpi | udp 6: -> 66.22.196.10:50003, other, host c-fra06.discord.media (dns), group 2",
                 "10-16 18:01:03.000 byedpi | udp 7: -> 66.22.196.11:50004, other, host unknown (no SNI, not in DNS answers), group 2",
+                "10-16 18:01:04.000 byedpi | udp 8: -> 66.22.196.12:50005, discord, host discord.media (discord ip discovery), group 2",
             ),
         )
         assertEquals(mapOf("c-fra06.discord.media" to 1), r.domains)
-        assertEquals(mapOf("66.22.196.10:50003 other" to 1, "66.22.196.11:50004 other" to 1), r.udp)
+        assertEquals(mapOf("66.22.196.10:50003 other" to 1, "66.22.196.11:50004 other" to 1, "66.22.196.12:50005 discord" to 1), r.udp)
     }
 }

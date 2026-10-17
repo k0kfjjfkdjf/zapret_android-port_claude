@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: same as backup_rules.xml, for cloud backup and device transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="logs/" />
+        <exclude domain="file" path="deep/" />
+        <exclude domain="file" path="fake/" />
+        <exclude domain="file" path="selfcheck/" />
+        <exclude domain="file" path="hev.yml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="logs/" />
+        <exclude domain="file" path="deep/" />
+        <exclude domain="file" path="fake/" />
+        <exclude domain="file" path="selfcheck/" />
+        <exclude domain="file" path="hev.yml" />
+    </device-transfer>
+</data-extraction-rules>

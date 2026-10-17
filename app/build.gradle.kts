@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.zapretdroid"
         minSdk = 24
         targetSdk = 35
-        versionCode = 20
-        versionName = "0.9.2"
+        versionCode = 21
+        versionName = "0.9.3"
 
         ndk {
             abiFilters += abis
@@ -26,6 +26,14 @@ android {
     }
 
     signingConfigs {
+        // A fixed debug key in the repository: test builds from CI then update each other in
+        // place (a new key per CI run meant uninstalling, and losing settings, every time).
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         // Release signing is taken from the environment so that CI can sign with a secret keystore.
         val keystore = System.getenv("ZAPRETDROID_KEYSTORE")
         if (keystore != null) {

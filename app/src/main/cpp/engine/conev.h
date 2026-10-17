@@ -119,6 +119,15 @@ struct eval {
     // ZapretDroid: a QUIC flow whose first Initial had no SNI (the ClientHello goes on in the
     // next one), kept on the remote socket to choose the group again when it is complete.
     struct quic_crypto *udp_quic;
+    // ZapretDroid: datagram index where the current group of the first destination began
+    // (a group chosen again on the second QUIC Initial starts its --udp-desync count there).
+    unsigned int udp_dp_base;
+    // Other destinations of the same app socket, each with its own group and datagram count.
+    struct udp_dest *udp_dests;
+    int udp_dests_n;
+    // IDs of DNS queries relayed on this association: only answers to them name addresses.
+    uint16_t dns_ids[4];
+    uint8_t dns_ids_n;
 };
 
 struct poolhd {

@@ -7,6 +7,8 @@ file(GLOB BYEDPI_SRC ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c)
 
 add_library(byedpi SHARED ${BYEDPI_SRC} byedpi-jni.c native-log.c)
 target_include_directories(byedpi PRIVATE engine)
+# The engine runs inside the app process (see ZAPRETDROID_JNI in engine/proxy.c).
+target_compile_definitions(byedpi PRIVATE ZAPRETDROID_JNI)
 target_compile_options(byedpi PRIVATE -std=gnu99 -O2 -Wall -Wextra -Wno-unused -Wno-unused-parameter)
 # Without ANDROID_APP ByeDPI logs to stderr, honours --debug and skips per-packet logging at level 0.
 # native-log.c collects stderr into the session log.

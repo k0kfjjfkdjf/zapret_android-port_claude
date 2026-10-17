@@ -17,6 +17,7 @@
 
 /* Long-only options without a letter. */
 #define OPT_MSS 0x101
+#define OPT_NAMES_DNS 0x102
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -157,6 +158,7 @@ static const char help_text[] = {
     "    -m, --tlsminor <ver>      Change minor version of TLS\n"
     "    -a, --udp-fake <count>    UDP fakes count, default 0\n"
     "    --mss <n>                 TCP MSS of outgoing connections (tpws --mss)\n"
+    "    --names-dns <ip[,ip]>     Only these DNS servers' answers name hosts for -H\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
@@ -197,6 +199,7 @@ const struct option options[] = {
     {"autohost-log",  1, 0, 'J'},
     {"conn-log",      0, 0, 'k'},
     {"mss",           1, 0, OPT_MSS},
+    {"names-dns",     1, 0, OPT_NAMES_DNS},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -931,6 +934,27 @@ int parse_args(int argc, char **argv)
             params.autohost_log = optarg;
             break;
             
+        case OPT_NAMES_DNS: {
+            char *list = strdup(optarg), *save = 0;
+            params.names_dns_n = 0;
+            for (char *tok = list ? strtok_r(list, ",", &save) : 0; tok; tok = strtok_r(0, ",", &save)) {
+                union sockaddr_u a = {0};
+                if (inet_pton(AF_INET, tok, &a.in.sin_addr) == 1) {
+                    a.sa.sa_family = AF_INET;
+                }
+                else if (inet_pton(AF_INET6, tok, &a.in6.sin6_addr) == 1) {
+                    a.sa.sa_family = AF_INET6;
+                }
+                if (params.names_dns_n >= 4 || !a.sa.sa_family) {
+                    invalid = 1;
+                    break;
+                }
+                params.names_dns[params.names_dns_n++] = a;
+            }
+            free(list);
+            break;
+        }
+
         case OPT_MSS:
             val = strtol(optarg, &end, 0);
             if (val < 64 || val > 65535 || *end)

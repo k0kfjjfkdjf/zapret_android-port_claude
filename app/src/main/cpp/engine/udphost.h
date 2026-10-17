@@ -21,6 +21,10 @@
 struct quic_crypto {
     uint8_t data[QUIC_CRYPTO_MAX];
     uint8_t have[QUIC_CRYPTO_MAX];
+    // The DCID of the first Initial: later packets with another one (after the server's reply
+    // the client switches DCID but keeps the old keys) would decrypt to garbage.
+    uint8_t dcid[20];
+    uint8_t dcid_len;
 };
 
 /* Decrypts a client Initial and adds its CRYPTO frames; false if it is not one. */
@@ -32,8 +36,17 @@ int quic_crypto_sni(const struct quic_crypto *qc, char *out, size_t size);
 /* Remembers the addresses of a DNS response under the name that was asked for. */
 void dns_cache_feed(const uint8_t *msg, size_t len);
 
-/* The name the address was resolved from, or null. */
+/* The latest name the address was resolved from, or null. */
 const char *dns_cache_get(const union sockaddr_u *addr);
+
+#define DNS_NAMES 4
+
+/* All names (up to DNS_NAMES, latest first) the address was resolved from; their count. A CDN
+ * address serves many names. */
+int dns_cache_names(const union sockaddr_u *addr, const char *names[DNS_NAMES]);
+
+/* Whether a host name is plain enough to log and match: [a-z0-9._-] only. */
+bool host_name_ok(const char *name, size_t len);
 
 void dns_cache_reset(void);
 

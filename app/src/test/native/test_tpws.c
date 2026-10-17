@@ -278,6 +278,21 @@ static void test_dns_cache(void)
     dns_cache_reset();
 }
 
+int engine_main(int argc, char **argv);
+void engine_reset(void);
+extern int engine_stop_requested;
+
+/* A stop requested before the engine listens makes it return instead of serving forever. */
+static void test_early_stop(void)
+{
+    char *args[] = { "ciadpi", "-i", "127.0.0.1", "-p", "10997", 0 };
+    engine_reset();
+    engine_stop_requested = 1;
+    CHECK_EQ(engine_main(5, args), 0);
+    engine_stop_requested = 0;
+    engine_reset();
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -292,6 +307,7 @@ int main(int argc, char **argv)
     if (argc > 2) test_udp_proto(argv[2]);
     if (argc > 2) test_quic_sni(argv[2]);
     test_dns_cache();
+    test_early_stop();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

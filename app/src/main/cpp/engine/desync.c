@@ -747,7 +747,7 @@ ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst,
                 }
                 else pkt.size = 0;
             }
-            ssize_t len = send(sfd, pkt.data, pkt.size, 0);
+            ssize_t len = sendto(sfd, pkt.data, pkt.size, 0, dst, (dst->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in)));
             if (len < 0) {
                 uniperror("send");
                 return -1;
@@ -758,5 +758,5 @@ ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst,
             return -1;
         }
     }
-    return send(sfd, buffer, n, 0);
+    return sendto(sfd, buffer, n, 0, dst, (dst->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in)));
 }

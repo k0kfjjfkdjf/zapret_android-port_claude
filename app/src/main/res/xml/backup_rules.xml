@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older: the journal (every visited domain, by --conn-log), deep check runs and
+     generated fakes stay on the device. Settings, host lists and strategy history are backed up. -->
+<full-backup-content>
+    <exclude domain="file" path="logs/" />
+    <exclude domain="file" path="deep/" />
+    <exclude domain="file" path="fake/" />
+    <exclude domain="file" path="selfcheck/" />
+    <exclude domain="file" path="hev.yml" />
+</full-backup-content>

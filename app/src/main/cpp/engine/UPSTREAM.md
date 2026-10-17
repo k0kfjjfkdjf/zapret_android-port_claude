@@ -10,7 +10,8 @@ Changes in this fork:
 - Fix: `--pf` port ranges compared ports in network byte order, so most ranges matched the
   wrong ports.
 - zapret position markers in every position argument (`--split`, `--disorder`, `--oob`,
-  `--disoob`, `--fake`, `--tlsrec`, `--fake-offset`): `method`, `host`, `endhost`, `sld`,
+  `--disoob`, `--fake`, `--tlsrec`, `--fake-offset`; for UDP fakes `--fake-offset` takes
+  only the number): `method`, `host`, `endhost`, `sld`,
   `midsld`, `endsld`, `sniext`, with an optional `+N`/`-N` offset (`tpws.c`, ported from
   zapret `tpws/protocol.c`).
 - tpws HTTP modifications as `-M` tokens: `hostcase`, `hostspell=XXXX`, `hostdot`, `hosttab`,
@@ -51,5 +52,22 @@ Changes in this fork:
   ClientHello with Kyber continues in the next Initial, the group is chosen again on it), else
   the name the address was resolved from (kept from DNS answers relayed by the engine), else
   `discord.media` for Discord's IP discovery. Groups with `-H` take a UDP flow only when its
-  host is known and listed. TCP without SNI or Host (other protocols, ECH) is matched by the
-  DNS name too. `--conn-log` names the host and where it came from.
+  host is known and listed. TCP without SNI or Host (other protocols) is matched by the DNS
+  names too; a ClientHello with ECH has an outer SNI (`public_name`), which is what gets
+  matched. An address keeps up to four names (CDNs). Only answers to queries relayed on the
+  same association count, and with `--names-dns <ip[,ip]>` only those servers' answers (the
+  app passes the VPN's DNS). Names are limited to `[a-z0-9._-]`. A QUIC Initial with another
+  DCID than the first one is ignored (its keys would differ). After the group changes on the
+  second Initial, `--udp-desync` counts from that datagram. `--conn-log` names the host and
+  where it came from. Names from DNS need plain DNS: with Android's Private DNS (TLS) or a
+  browser's DNS-over-HTTPS there are none.
+- UDP associations are not `connect()`ed to their first destination: hev keeps one
+  association per UDP socket of an app (full cone), and upstream sent every datagram of it to
+  the first destination and dropped replies from others (WebRTC talks to STUN, TURN and media
+  servers from one socket). Every datagram now goes to its own destination; every destination
+  gets its own group and datagram count (up to 8 per association), statistics stay per
+  association.
+- Stop before listen: a stop requested while the engine still starts (large host lists) used
+  to be lost; `engine_stop_requested` (set by the JNI layer) makes the engine return right
+  after `listen`. Inside the app (`ZAPRETDROID_JNI`) no SIGINT/SIGTERM/SIGHUP handlers are
+  installed: they outlived the engine in the app process.

@@ -60,6 +60,13 @@ class ZapretVpnService : VpnService() {
     private var engine: ByeDpi? = null
     private var engineThread: Thread? = null
     private var startedAt = 0L
+
+    // A free port per session, not a fixed one: the SOCKS5 proxy has no password, and a known
+    // port lets any app on the device use it or detect ZapretDroid by probing local ports.
+    private val PROXY_PORT: Int by lazy {
+        runCatching { java.net.ServerSocket(0, 1, java.net.InetAddress.getByName(PROXY_HOST)).use { it.localPort } }
+            .getOrDefault(DEFAULT_PROXY_PORT)
+    }
     private var paused = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -79,6 +86,7 @@ class ZapretVpnService : VpnService() {
         startForegroundCompat()
         if (state == VpnState.STOPPED && !used) {
             used = true
+            sessionsStarted++
             AppLog.trimIfLarge()
             AppLog.i("===== VPN session start (${intent?.action ?: "restart"}) =====")
             setState(VpnState.STARTING)
@@ -113,6 +121,8 @@ class ZapretVpnService : VpnService() {
                 add("--port"); add(PROXY_PORT.toString())
                 // One line per connection (host, group, bytes) and per detected block at every level.
                 add("--conn-log")
+                // Only the VPN's DNS servers name addresses for host lists (see udp_reply_hook).
+                add("--names-dns"); add(dnsServers(settings).take(4).joinToString(","))
                 if (logLevel.byedpiDebug > 0) {
                     add("--debug"); add(logLevel.byedpiDebug.toString())
                 }
@@ -134,11 +144,14 @@ class ZapretVpnService : VpnService() {
                 throw IllegalStateException(withEngineOutput(getString(R.string.error_engine_start)))
             }
             AppLog.i("byedpi is listening on $PROXY_HOST:$PROXY_PORT")
-            if (state != VpnState.STARTING) return
-
-            val fd = buildTunnel(settings).establish()
-                ?: throw IllegalStateException(getString(R.string.error_vpn_permission))
-            tun = fd
+            // Under the lock with teardown(): a stop during the start must not leave a tun
+            // interface or hev running after teardown() has already run.
+            synchronized(sessionLock) {
+                if (state != VpnState.STARTING) return
+                val fd = buildTunnel(settings).establish()
+                    ?: throw IllegalStateException(getString(R.string.error_vpn_permission))
+                tun = fd
+            }
             AppLog.i("tun interface established")
 
             val config = File(filesDir, "hev.yml")
@@ -152,12 +165,19 @@ class ZapretVpnService : VpnService() {
                 |  udp: 'udp'
                 |misc:
                 |  task-stack-size: 81920
+                |  # 5 min instead of 60 s: an idle UDP session that hev closes comes back on a new
+                |  # engine socket and public port, while a call's server still sends to the old one.
+                |  udp-read-write-timeout: 300000
                 |  log-file: ${hevLog ?: "null"}
                 |  log-level: ${logLevel.hevLevel}
                 |""".trimMargin(),
             )
-            if (!TProxyService.TProxyStartService(config.absolutePath, fd.fd)) {
-                throw IllegalStateException(getString(R.string.error_tunnel_start))
+            synchronized(sessionLock) {
+                val fd = tun
+                if (state != VpnState.STARTING || fd == null) return
+                if (!TProxyService.TProxyStartService(config.absolutePath, fd.fd)) {
+                    throw IllegalStateException(getString(R.string.error_tunnel_start))
+                }
             }
             AppLog.i("tunnel started")
             handler.post {
@@ -190,6 +210,18 @@ class ZapretVpnService : VpnService() {
         return false
     }
 
+    /** The DNS servers the VPN hands to apps. */
+    private fun dnsServers(settings: Settings): List<String> = if (settings.dns.trim() == Settings.SYSTEM_DNS) {
+        // The network's own DNS (usually the router): some providers spoof answers of public
+        // resolvers such as 8.8.8.8 (NXDOMAIN for YouTube) but not of their own.
+        systemDnsServers().ifEmpty {
+            AppLog.w("no system DNS servers, using ${Settings.DEFAULT_DNS}")
+            listOf(Settings.DEFAULT_DNS)
+        }
+    } else {
+        listOf(settings.dns.trim().takeIf { isIpLiteral(it) } ?: Settings.DEFAULT_DNS)
+    }
+
     /** DNS servers of the network in use before the VPN is up. */
     private fun systemDnsServers(): List<String> = runCatching {
         val manager = getSystemService(ConnectivityManager::class.java)
@@ -208,16 +240,7 @@ class ZapretVpnService : VpnService() {
             builder.addAddress("fd00:10:10::10", 128).addRoute("::", 0)
         }
 
-        val servers = if (settings.dns.trim() == Settings.SYSTEM_DNS) {
-            // The network's own DNS (usually the router): some providers spoof answers of public
-            // resolvers such as 8.8.8.8 (NXDOMAIN for YouTube) but not of their own.
-            systemDnsServers().ifEmpty {
-                AppLog.w("no system DNS servers, using ${Settings.DEFAULT_DNS}")
-                listOf(Settings.DEFAULT_DNS)
-            }
-        } else {
-            listOf(settings.dns.trim().takeIf { isIpLiteral(it) } ?: Settings.DEFAULT_DNS)
-        }
+        val servers = dnsServers(settings)
         if (servers.first() != settings.dns.trim()) AppLog.i("DNS '${settings.dns}': using ${servers.joinToString()}")
         val dns = servers.joinToString()
         servers.forEach { server ->
@@ -265,6 +288,12 @@ class ZapretVpnService : VpnService() {
     private val statsTick = object : Runnable {
         override fun run() {
             if (state != VpnState.RUNNING) return
+            // TProxyStartService() only starts hev's thread: a tunnel that exits later (bad
+            // config, error) would leave a VPN that drops all traffic.
+            if (runCatching { TProxyService.TProxyIsRunning() }.getOrDefault(true) == false) {
+                stop(getString(R.string.error_tunnel_start))
+                return
+            }
             val stats = runCatching { TProxyService.TProxyGetStats() }.getOrNull()
             if (stats != null && ++ticks % 60 == 0) {
                 val tx = stats.getOrNull(1) ?: 0
@@ -302,8 +331,13 @@ class ZapretVpnService : VpnService() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 if (paused) showPausedNotification()
                 stopSelf()
-                // Native state is per process: exit so the next session starts clean.
-                handler.postDelayed({ Process.killProcess(Process.myPid()) }, EXIT_DELAY_MS)
+                // Native state is per process: exit so the next session starts clean. Not through
+                // [handler]: onDestroy() clears it, usually before the delay is over. A session
+                // started in the meantime (a new service instance) keeps the process.
+                val sessions = sessionsStarted
+                exitHandler.postDelayed({
+                    if (sessionsStarted == sessions) Process.killProcess(Process.myPid())
+                }, EXIT_DELAY_MS)
             }
         }
     }
@@ -340,7 +374,9 @@ class ZapretVpnService : VpnService() {
             .onFailure { AppLog.w("cannot watch network changes", it) }
     }
 
-    private fun teardown() {
+    private val sessionLock = Any()
+
+    private fun teardown() = synchronized(sessionLock) {
         networkCallback?.let { cb ->
             runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) }
         }
@@ -466,6 +502,11 @@ class ZapretVpnService : VpnService() {
     }
 
     companion object {
+        private val exitHandler = Handler(Looper.getMainLooper())
+
+        @Volatile
+        private var sessionsStarted = 0
+
         const val ACTION_START = "io.github.zapretdroid.START"
         const val ACTION_STOP = "io.github.zapretdroid.STOP"
         const val ACTION_PAUSE = "io.github.zapretdroid.PAUSE"
@@ -475,7 +516,8 @@ class ZapretVpnService : VpnService() {
         private const val CHANNEL_ID = "vpn"
         private const val NOTIFICATION_ID = 1
         private const val PROXY_HOST = "127.0.0.1"
-        private const val PROXY_PORT = 10808
+        /** Fallback when no free port can be picked. */
+        private const val DEFAULT_PROXY_PORT = 10808
         private const val MTU = 8500
         private const val START_TIMEOUT_MS = 5_000L
         private const val STOP_TIMEOUT_MS = 2_000L

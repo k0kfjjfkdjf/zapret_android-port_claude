@@ -57,18 +57,20 @@ object AppLog {
         runCatching {
             val tail = readTailBytes(f, KEEP)
             val start = tail.indexOf('\n'.code.toByte()) + 1
-            val tmp = File(dir, "app.log.tmp")
-            tmp.outputStream().use {
+            // In place, not through a new file: the native capture keeps its descriptor (opened
+            // with O_APPEND), which would go on writing into a replaced file.
+            RandomAccessFile(f, "rw").use {
+                it.setLength(0)
                 it.write("--- older entries removed ---\n".toByteArray())
                 it.write(tail, start, tail.size - start)
             }
-            tmp.renameTo(f)
         }
     }
 
     @Synchronized
     fun clear() {
-        file.delete()
+        // Truncated, not deleted, for the same reason as in trimIfLarge().
+        runCatching { RandomAccessFile(file, "rw").use { it.setLength(0) } }
     }
 
     fun i(message: String, source: String? = null) = write(Log.INFO, message, null, source)

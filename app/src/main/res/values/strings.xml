@@ -148,7 +148,7 @@
     <string name="host_lists_format">Accepted: domains, URLs, *.example.com, several per line. Gzip files can be imported.</string>
 
     <string name="autohost_toggle">Record blocked domains (autohostlist)</string>
-    <string name="autohost_toggle_desc">The engine notes domains where it still sees a block (reset, timeout, redirect, TLS error), as zapret autohostlist does. Adds a fallback attempt without bypass after a failure.</string>
+    <string name="autohost_toggle_desc">The engine notes domains where it still sees a block (reset, timeout, redirect, TLS error), as zapret autohostlist does. A blocked connection is tried once more with the first group of the strategy, and a 4 s timeout is added if the strategy has none.</string>
     <string name="title_autohost">Detected blocks</string>
     <string name="autohost_open_desc">Domains that failed with the current strategy</string>
     <string name="autohost_intro">Domains where a block was detected even with the strategy applied. Add them to a list, e.g. to try another strategy only for them.</string>
@@ -234,7 +234,7 @@
     <string name="multi_result">%1$d strategies together should open %2$d of %3$d openable domains (%4$d tested)</string>
     <string name="multi_lists">Domains of each extra strategy are saved as host lists: %1$s</string>
     <string name="multi_verify">Re-check</string>
-    <string name="private_dns_warning">Android\'s Private DNS is on (%1$s): DNS goes over TLS past ZapretDroid. If sites do not open, turn it off in Settings → Network → Private DNS.</string>
+    <string name="private_dns_warning">Android Private DNS is on (%1$s): DNS goes encrypted (TLS), so ZapretDroid cannot see names: host lists cannot pick groups for QUIC without SNI, voice calls and TCP without SNI. If sites do not open, turn it off in Settings → Network → Private DNS.</string>
     <string name="private_dns_auto">automatic</string>
     <string name="strategy_tap_to_change">Tap to change</string>
     <string name="strategy_pick">Strategy</string>

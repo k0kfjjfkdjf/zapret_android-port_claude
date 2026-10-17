@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -280,7 +281,8 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
                     )
                 }
             }
-            items(StrategyTester.results, key = { it.args }) { result ->
+            // Keyed by position too: a candidate list may repeat a strategy.
+            itemsIndexed(StrategyTester.results, key = { index, result -> "$index ${result.args}" }) { _, result ->
                 ResultCard(
                     result = result,
                     onApply = {

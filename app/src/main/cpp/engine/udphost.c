@@ -255,6 +255,7 @@ bool quic_add_initial(struct quic_crypto *qc, const uint8_t *pkt, size_t len)
     uint8_t dcid_len = pkt[pos++];
     if (dcid_len > 20 || pos + dcid_len + 1 > len) return 0;
     const uint8_t *dcid = pkt + pos;
+    if (qc->dcid_len && (qc->dcid_len != dcid_len || memcmp(qc->dcid, dcid, dcid_len))) return 0;
     pos += dcid_len;
     uint8_t scid_len = pkt[pos++];
     if (scid_len > 20 || pos + scid_len > len) return 0;
@@ -329,6 +330,10 @@ bool quic_add_initial(struct quic_crypto *qc, const uint8_t *pkt, size_t len)
             put_crypto(qc, a, plain + pos, b);
             pos += b;
             any = 1;
+            if (!qc->dcid_len) {
+                memcpy(qc->dcid, dcid, dcid_len);
+                qc->dcid_len = dcid_len;
+            }
             continue;
         }
         break; // CONNECTION_CLOSE or not a client Initial
@@ -369,7 +374,7 @@ int quic_crypto_sni(const struct quic_crypto *qc, char *out, size_t size)
                 out[i] = ch >= 'A' && ch <= 'Z' ? ch + 32 : ch;
             }
             out[nlen] = 0;
-            return (int) nlen;
+            return host_name_ok(out, nlen) ? (int) nlen : 0;
         }
         pos += elen;
     }
@@ -381,11 +386,22 @@ int quic_crypto_sni(const struct quic_crypto *qc, char *out, size_t size)
 #define DNS_CACHE_SIZE 2048
 #define DNS_NAME_MAX 254
 
+bool host_name_ok(const char *name, size_t len)
+{
+    if (!len) return 0;
+    for (size_t i = 0; i < len; i++) {
+        char c = name[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_')) return 0;
+    }
+    return 1;
+}
+
 struct dns_entry {
     uint8_t family; // 0: free, 4 or 6
     uint8_t addr[16];
     uint32_t stamp;
-    char name[DNS_NAME_MAX];
+    uint8_t names_n;
+    char names[DNS_NAMES][DNS_NAME_MAX]; // latest first
 };
 
 static struct dns_entry dns_cache[DNS_CACHE_SIZE];
@@ -418,15 +434,29 @@ static void dns_cache_put(uint8_t family, const uint8_t *addr, const char *name)
         }
         if (!slot || (slot->family && (!e->family || e->stamp < slot->stamp))) slot = e;
     }
-    slot->family = family;
-    memset(slot->addr, 0, sizeof(slot->addr));
-    memcpy(slot->addr, addr, alen);
+    bool same = slot->family == family && !memcmp(slot->addr, addr, alen);
+    if (!same) {
+        slot->family = family;
+        memset(slot->addr, 0, sizeof(slot->addr));
+        memcpy(slot->addr, addr, alen);
+        slot->names_n = 0;
+    }
     slot->stamp = ++dns_stamp;
-    strncpy(slot->name, name, DNS_NAME_MAX - 1);
-    slot->name[DNS_NAME_MAX - 1] = 0;
+    // The name moves to the front; others shift, the oldest beyond DNS_NAMES drops.
+    int at = slot->names_n < DNS_NAMES ? slot->names_n : DNS_NAMES - 1;
+    for (int i = 0; i < slot->names_n; i++) {
+        if (!strcmp(slot->names[i], name)) {
+            at = i;
+            break;
+        }
+    }
+    if (at == slot->names_n) slot->names_n++;
+    memmove(slot->names[1], slot->names[0], (size_t) at * DNS_NAME_MAX);
+    strncpy(slot->names[0], name, DNS_NAME_MAX - 1);
+    slot->names[0][DNS_NAME_MAX - 1] = 0;
 }
 
-const char *dns_cache_get(const union sockaddr_u *dst)
+static struct dns_entry *dns_cache_find(const union sockaddr_u *dst)
 {
     uint8_t family;
     const uint8_t *addr;
@@ -452,10 +482,24 @@ const char *dns_cache_get(const union sockaddr_u *dst)
     for (int i = 0; i < 4; i++) {
         struct dns_entry *e = &dns_cache[(h + i) % DNS_CACHE_SIZE];
         if (e->family == family && !memcmp(e->addr, addr, family == 4 ? 4 : 16)) {
-            return e->name;
+            return e;
         }
     }
     return 0;
+}
+
+const char *dns_cache_get(const union sockaddr_u *dst)
+{
+    struct dns_entry *e = dns_cache_find(dst);
+    return e && e->names_n ? e->names[0] : 0;
+}
+
+int dns_cache_names(const union sockaddr_u *dst, const char *names[DNS_NAMES])
+{
+    struct dns_entry *e = dns_cache_find(dst);
+    if (!e) return 0;
+    for (int i = 0; i < e->names_n; i++) names[i] = e->names[i];
+    return e->names_n;
 }
 
 /* Skips a possibly compressed name; false if it runs past the message. */
@@ -491,7 +535,7 @@ void dns_cache_feed(const uint8_t *m, size_t len)
         }
         pos += l;
     }
-    if (!n || pos >= len) return;
+    if (!n || pos >= len || !host_name_ok(name, n)) return;
     name[n] = 0;
     pos += 1 + 4; // root label, type, class
     for (unsigned i = 0; i < an && pos < len; i++) {

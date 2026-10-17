@@ -43,6 +43,9 @@
 
 
 int server_fd;
+// ZapretDroid: set by the JNI layer when a stop comes before the engine listens (server_fd is
+// still -1 then); checked right after server_fd is set, so that the stop is not lost.
+int engine_stop_requested;
 
 static void on_cancel(int sig) {
     shutdown(server_fd, SHUT_RDWR);
@@ -799,30 +802,29 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                 LOG(LOG_E, "udp parse error\n");
                 return -1;
             }
+            if (params.baddr.sa.sa_family == AF_INET6) {
+                map_fix(&addr, 6);
+            }
+            if (params.baddr.sa.sa_family != addr.sa.sa_family) {
+                return -1;
+            }
+            // ZapretDroid: the remote socket is not connect()ed to the first destination. hev
+            // keeps one association per UDP socket of an app (full cone), and a socket may talk
+            // to several hosts (WebRTC: STUN, TURN, media servers); every datagram goes to its
+            // own destination and replies from any of them come back.
             if (!pair->addr.in.sin_port) {
-                if (params.baddr.sa.sa_family == AF_INET6) {
-                    map_fix(&addr, 6);
-                }
-                if (params.baddr.sa.sa_family != addr.sa.sa_family) {
-                    return -1;
-                }
                 INIT_ADDR_STR((addr));
                 LOG(LOG_S, "udp addr: fd=%d, addr=%s:%d\n", 
                     val->fd, ADDR_STR, ntohs(addr.in.sin_port));
-                    
-                if (connect(pair->fd, &addr.sa, SA_SIZE(&addr)) < 0) {
-                    uniperror("connect");
-                    return -1;
-                }
                 pair->addr = addr;
             }
-            ns = udp_hook(pair, data + offs, n - offs, &pair->addr);
+            ns = udp_hook(pair, data + offs, n - offs, &addr);
         }
         else {
             if (params.conn_log) {
                 udp_stat_in(val, n);
             }
-            udp_reply_hook(data, n, &addr);
+            udp_reply_hook(val, data, n, &addr);
             map_fix(&addr, 0);
             memset(buff->data, 0, S_SIZE_I6);
             
@@ -1040,7 +1042,12 @@ int on_ignore(struct poolhd *pool, struct eval *val, int etype)
 
 int start_event_loop(int srvfd)
 {
-    server_fd = srvfd;
+    __atomic_store_n(&server_fd, srvfd, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&engine_stop_requested, __ATOMIC_SEQ_CST)) {
+        __atomic_store_n(&server_fd, -1, __ATOMIC_SEQ_CST);
+        close(srvfd);
+        return 0;
+    }
     
     struct poolhd *pool = init_pool(params.max_open * 2 + 1);
     if (!pool) {
@@ -1094,10 +1101,14 @@ int run(const union sockaddr_u *srv)
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
         uniperror("signal SIGPIPE!");
     #endif
+    #ifndef ZAPRETDROID_JNI
+    // Not in the app: handlers would stay in the app process after the engine returns and
+    // shut down whatever socket later gets the old server_fd number.
     signal(SIGINT, on_cancel);
     signal(SIGTERM, on_cancel);
     #ifdef SIGHUP
     signal(SIGHUP, on_hup);
+    #endif
     #endif
     
     int fd = listen_socket(srv);

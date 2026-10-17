@@ -20,6 +20,7 @@ import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.isIpLiteral
+import io.github.zapretdroid.core.splitArgs
 import io.github.zapretdroid.service.VpnStatus
 import java.io.File
 import java.net.DatagramPacket
@@ -527,6 +528,7 @@ object SelfCheck {
         }
         val pool = java.util.concurrent.Executors.newFixedThreadPool(discordTargets.size)
         val scores = mutableListOf<Pair<String, Int>>()
+        val outcomes = mutableMapOf<String, Outcome>()
         try {
             discordStrategies.forEach { strategy ->
                 check(g, strategy) {
@@ -538,6 +540,14 @@ object SelfCheck {
                     // loaded counts double: the freeze is what breaks the app
                     val score = results.sumOf { (if (it.ok) 2 else 0) + (if (it.responded) 1 else 0) }
                     synchronized(scores) { scores += strategy to score }
+                    synchronized(outcomes) {
+                        outcomes[strategy] = when {
+                            results.any { it.ok || it.responded } -> Outcome.PASSES
+                            // TLS refused at once on every target: the server got bytes it rejects.
+                            results.all { it.reason == 'x' } -> Outcome.BROKEN
+                            else -> Outcome.BLOCKED
+                        }
+                    }
                     val text = results.joinToString("; ") { r ->
                         val name = ProbeTarget.parse(r.host).host
                         val state = when {
@@ -553,12 +563,54 @@ object SelfCheck {
         } finally {
             pool.shutdownNow()
         }
+        check(g, "fakes on this phone") { fakeVerdict(outcomes) }
         check(g, "best for Discord") {
             val best = scores.maxByOrNull { it.second } ?: return@check CheckStatus.WARN to "no results"
             val top = scores.maxOf { it.second }
             val max = discordTargets.size * 3
             (if (top == max) CheckStatus.OK else CheckStatus.INFO) to "${best.first} (score ${best.second} of $max: loaded 2, answered 1 per target)" +
                 if (top < max) "; none loads every target: the freeze is not beaten by these strategies" else ""
+        }
+    }
+
+    private enum class Outcome { PASSES, BROKEN, BLOCKED }
+
+    private fun isFake(strategy: String) = splitArgs(strategy).any { it == "--fake" || (it.startsWith("-f") && !it.startsWith("--")) }
+
+    private fun ttlOf(strategy: String): Int? {
+        val a = splitArgs(strategy)
+        val i = a.indexOf("--ttl")
+        return (if (i >= 0) a.getOrNull(i + 1) else a.firstOrNull { it.startsWith("-t") && !it.startsWith("--") }?.drop(2))?.toIntOrNull()
+    }
+
+    /**
+     * Whether fakes work on this device: the same network can need opposite strategies on two
+     * phones. A fake that reaches the server (a TTL above the hop count, or a kernel that sends
+     * the fake again with the normal TTL when it retransmits) breaks the TLS handshake at once.
+     */
+    private fun fakeVerdict(outcomes: Map<String, Outcome>): Pair<CheckStatus, String> {
+        val fakes = outcomes.filterKeys { isFake(it) }
+        val plain = outcomes.filterKeys { !isFake(it) }
+        if (fakes.isEmpty()) return CheckStatus.INFO to "no fake strategies compared"
+        val fakesPass = fakes.filterValues { it == Outcome.PASSES }.keys
+        val fakesBroken = fakes.filterValues { it == Outcome.BROKEN }.keys
+        val plainPass = plain.any { it.value == Outcome.PASSES }
+        return when {
+            fakesPass.isEmpty() && fakesBroken.size == fakes.size && plainPass ->
+                CheckStatus.WARN to "every --fake strategy breaks the TLS handshake while strategies without fakes get answers: " +
+                    "on this phone the fake reaches the server, also at TTL 4, so it is not the distance but how this " +
+                    "phone's kernel sends the fake (it goes out again with the normal TTL on retransmission); use " +
+                    "strategies without --fake here (disorder, oob, tlsrec), even if fakes work on another phone"
+            fakesPass.isNotEmpty() && fakesBroken.isNotEmpty() -> {
+                val okTtl = fakesPass.mapNotNull { ttlOf(it) }.maxOrNull()
+                val badTtl = fakesBroken.mapNotNull { ttlOf(it) }.filter { okTtl == null || it > okTtl }.minOrNull()
+                CheckStatus.INFO to "fakes work" + (okTtl?.let { " with TTL up to $it" } ?: "") +
+                    (badTtl?.let { "; at TTL $it the fake already reaches the server (it is fewer hops away): keep the TTL lower" } ?: "")
+            }
+            fakesPass.isNotEmpty() && !plainPass ->
+                CheckStatus.INFO to "only strategies with fakes get through on this network: splitting alone does not help here"
+            fakesPass.isNotEmpty() -> CheckStatus.OK to "fakes work on this phone"
+            else -> CheckStatus.INFO to "no fake strategy got through (blocked, not broken): the fakes do not reach the server"
         }
     }
 

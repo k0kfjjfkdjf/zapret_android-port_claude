@@ -367,6 +367,12 @@ object SiteProbe {
             }
             if (total >= bodyTarget) break
         }
+        // Out of time (slow network, not a stall): the same 64 KB rule as for a read timeout.
+        if (stalledAt == null && !eof && total < bodyTarget && total >= OPENED_BYTES && headerEnd >= 0 &&
+            System.currentTimeMillis() - start >= deadline
+        ) {
+            stalledAt = total
+        }
         val statusLine = head.lineSequence().firstOrNull().orEmpty().trim()
         if (!statusLine.startsWith("HTTP/")) throw EOFException("no HTTP response ($total B received)")
         if (stalledAt == null && declared != null && headerEnd >= 0 && total < bodyTarget) {

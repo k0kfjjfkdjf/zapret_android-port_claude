@@ -280,13 +280,14 @@ object DeepCheck {
 
     /**
      * Builds the multi-strategy from the current results and saves the domains of every
-     * supplement as host lists multi_1, multi_2… Null if no strategy opened anything.
+     * supplement as host lists multi_<time>_1, _2… Null if no strategy opened anything.
      */
     fun buildMulti(context: Context): Multi? {
         val tested = domains
         val plan = MultiStrategy.plan(results) ?: return null
-        val names = plan.supplements.indices.map { "multi_${it + 1}" }
-        HostLists.names(context).filter { it.startsWith("multi_") }.forEach { HostLists.delete(context, it) }
+        // A name per build: saved multi-strategies keep pointing at their own lists ({list:...}).
+        val stamp = java.text.SimpleDateFormat("yyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+        val names = plan.supplements.indices.map { "multi_${stamp}_${it + 1}" }
         plan.supplements.forEachIndexed { i, sup ->
             val hosts = mutableListOf<String>()
             var bit = sup.domains.nextSetBit(0)
