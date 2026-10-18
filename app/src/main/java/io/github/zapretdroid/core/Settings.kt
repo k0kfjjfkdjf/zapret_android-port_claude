@@ -118,6 +118,14 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putString(KEY_DNS_PROVIDER, value) }
         }
 
+    /** DNS filter categories (DnsFilter.Category ids) blocked by the app's resolver. */
+    var dnsBlock: Set<String>
+        get() = prefs.getStringSet(KEY_DNS_BLOCK, emptySet())!!.toSet()
+        set(value) {
+            logChange("dnsBlock", dnsBlock.sorted(), value.sorted())
+            prefs.edit(commit = true) { putStringSet(KEY_DNS_BLOCK, value) }
+        }
+
     /** Listed domains (host list [proxyList]) through a SOCKS5 proxy, e.g. Tor from Orbot (see TorProxy). */
     var proxyEnabled: Boolean
         get() = prefs.getBoolean(KEY_PROXY_ENABLED, false)
@@ -185,5 +193,6 @@ class Settings(context: Context) {
         private const val KEY_PROXY_ADDRESS = "proxy_address"
         private const val KEY_PROXY_LIST = "proxy_list"
         private const val KEY_PROXY_UDP = "proxy_udp"
+        private const val KEY_DNS_BLOCK = "dns_block"
     }
 }

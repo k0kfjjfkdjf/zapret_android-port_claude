@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.Backup
+import io.github.zapretdroid.core.DnsFilter
 import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
@@ -70,7 +72,10 @@ import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.Updater
 import io.github.zapretdroid.core.isIpLiteral
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +102,7 @@ fun SettingsScreen(
     var proxyEnabled by remember { mutableStateOf(settings.proxyEnabled) }
     var proxyAddress by remember { mutableStateOf(settings.proxyAddress) }
     var proxyUdp by remember { mutableStateOf(settings.proxyUdp) }
+    var dnsBlock by remember { mutableStateOf(settings.dnsBlock) }
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
     var logLevel by remember { mutableStateOf(settings.logLevel) }
@@ -106,6 +112,10 @@ fun SettingsScreen(
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var dnsListsVersion by remember { mutableStateOf(0) }
+    var dnsUpdating by remember { mutableStateOf(false) }
+    var dnsUpdateStatus by remember { mutableStateOf<String?>(null) }
     DisposableEffect(Unit) {
         val argsBefore = settings.customArgs
         val dnsBefore = settings.dns
@@ -426,6 +436,79 @@ fun SettingsScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
+                SecureDns.providers.firstOrNull { it.id == dnsProvider }?.filters?.takeIf { it.isNotEmpty() }?.let { filters ->
+                    item {
+                        val names = DnsFilter.Category.entries.filter { it.id in filters }.map { stringResource(categoryTitle(it)) }
+                        Text(
+                            stringResource(R.string.dns_server_blocks, names.joinToString()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.dns_block_title)) },
+                        supportingContent = { Text(stringResource(R.string.dns_block_desc)) },
+                    )
+                }
+                items(DnsFilter.Category.entries.toList(), key = { "dnsblock-" + it.id }) { category ->
+                    val on = category.id in dnsBlock
+                    val count = remember(dnsListsVersion) { DnsFilter.count(context, category) }
+                    val updated = remember(dnsListsVersion) { DnsFilter.updatedAt(context, category) }
+                    ListItem(
+                        headlineContent = { Text(stringResource(categoryTitle(category))) },
+                        supportingContent = {
+                            Text(
+                                if (count != null && updated != null) {
+                                    stringResource(R.string.dns_block_count, count, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(updated)))
+                                } else {
+                                    stringResource(R.string.dns_block_missing)
+                                },
+                            )
+                        },
+                        trailingContent = { Switch(checked = on, onCheckedChange = null) },
+                        modifier = Modifier.toggleable(value = on, role = Role.Switch) {
+                            dnsBlock = if (it) dnsBlock + category.id else dnsBlock - category.id
+                            settings.dnsBlock = dnsBlock
+                        },
+                    )
+                }
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            TextButton(
+                                enabled = !dnsUpdating && dnsBlock.isNotEmpty(),
+                                onClick = {
+                                    dnsUpdating = true
+                                    dnsUpdateStatus = null
+                                    scope.launch {
+                                        val errors = withContext(Dispatchers.IO) {
+                                            DnsFilter.Category.entries.filter { it.id in dnsBlock }.mapNotNull { c ->
+                                                runCatching { DnsFilter.update(context, c) }.exceptionOrNull()?.let { "${c.id}: ${it.message ?: it.javaClass.simpleName}" }
+                                            }
+                                        }
+                                        dnsUpdating = false
+                                        dnsListsVersion++
+                                        dnsUpdateStatus = if (errors.isEmpty()) context.getString(R.string.dns_block_updated)
+                                        else context.getString(R.string.dns_block_failed, errors.joinToString("; "))
+                                    }
+                                },
+                            ) { Text(stringResource(if (dnsUpdating) R.string.dns_block_updating else R.string.dns_block_update)) }
+                            TextButton(onClick = {
+                                // Created empty, so that both show up on the Lists screen.
+                                listOf(DnsFilter.OWN_BLOCK, DnsFilter.OWN_ALLOW).forEach { name ->
+                                    if (!HostLists.file(context, name).exists()) runCatching { HostLists.save(context, name, "") }
+                                }
+                                onOpenLists()
+                            }) { Text(stringResource(R.string.dns_block_own)) }
+                        }
+                        dnsUpdateStatus?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
             item {
                 ListItem(
@@ -693,6 +776,12 @@ private fun FakePickerDialog(names: List<String>, onPick: (String) -> Unit, onDi
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
     )
+}
+
+private fun categoryTitle(category: DnsFilter.Category) = when (category) {
+    DnsFilter.Category.ADS -> R.string.dns_cat_ads
+    DnsFilter.Category.MALWARE -> R.string.dns_cat_malware
+    DnsFilter.Category.ADULT -> R.string.dns_cat_adult
 }
 
 @Composable

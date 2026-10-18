@@ -25,6 +25,7 @@ import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.Diagnostics
+import io.github.zapretdroid.core.DnsFilter
 import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.TorProxy
@@ -404,10 +405,29 @@ class ZapretVpnService : VpnService() {
         if (mode == DnsMode.PLAIN) return null
         return runCatching {
             val provider = SecureDns.provider(settings.dnsProvider)
-            SecureDns.Server(provider, mode).also {
+            val enabled = settings.dnsBlock
+            val filter = DnsFilter.load(this, enabled)
+            SecureDns.Server(provider, mode, filter).also {
                 AppLog.i("secure DNS: ${if (mode == DnsMode.DOH) "DNS over HTTPS" else "DNS over TLS"} via ${provider.title} (${provider.ip}), resolver on 127.0.0.1:${it.port}")
+                filter?.let { f -> AppLog.i("DNS filter: ${f.categories.joinToString()} (${f.size} domains)") }
+                refreshFilterLists(it, enabled)
             }
         }.onFailure { AppLog.e("secure DNS not started, plain DNS instead: ${it.message}", it) }.getOrNull()
+    }
+
+    /** Lists of enabled categories missing or older than DnsFilter.MAX_AGE_MS: updated in the background, then swapped in. */
+    private fun refreshFilterLists(server: SecureDns.Server, enabled: Set<String>) {
+        val stale = DnsFilter.stale(this, enabled)
+        if (stale.isEmpty()) return
+        thread(name = "dns-filter-update", isDaemon = true) {
+            var changed = false
+            for (c in stale) {
+                runCatching { DnsFilter.update(this, c) }
+                    .onSuccess { changed = true }
+                    .onFailure { AppLog.w("DNS filter: ${c.id} not updated: ${it.message}") }
+            }
+            if (changed && secureDns === server) server.filter = DnsFilter.load(this, enabled)
+        }
     }
 
     private fun teardown() = synchronized(sessionLock) {

@@ -34,6 +34,8 @@ class DnsProvider(
     val dohPath: String = "/dns-query",
     val dohPort: Int = 443,
     val dotPort: Int = 853,
+    /** What the server itself blocks (DnsFilter.Category ids); presets fall back only to the same kind. */
+    val filters: Set<String> = emptySet(),
 )
 
 /**
@@ -51,8 +53,11 @@ object SecureDns {
     val providers = listOf(
         DnsProvider("cloudflare", "Cloudflare", "1.1.1.1", "cloudflare-dns.com"),
         DnsProvider("google", "Google", "8.8.8.8", "dns.google"),
-        DnsProvider("quad9", "Quad9", "9.9.9.9", "dns.quad9.net"),
-        DnsProvider("adguard", "AdGuard", "94.140.14.14", "dns.adguard-dns.com"),
+        DnsProvider("quad9", "Quad9", "9.9.9.9", "dns.quad9.net", filters = setOf("malware")),
+        DnsProvider("adguard", "AdGuard", "94.140.14.14", "dns.adguard-dns.com", filters = setOf("ads")),
+        DnsProvider("adguard-family", "AdGuard Family", "94.140.14.15", "family.adguard-dns.com", filters = setOf("ads", "adult")),
+        DnsProvider("cloudflare-security", "Cloudflare Security", "1.1.1.2", "security.cloudflare-dns.com", filters = setOf("malware")),
+        DnsProvider("cloudflare-family", "Cloudflare Family", "1.1.1.3", "family.cloudflare-dns.com", filters = setOf("malware", "adult")),
     )
 
     /** A preset by id, or a custom server: "https://host/path", "tls://host" or a host name. */
@@ -193,8 +198,13 @@ object SecureDns {
      * The resolver the engine redirects the VPN's DNS to: UDP on 127.0.0.1, answers from the
      * provider (the other presets if it fails), cached for their TTL.
      */
-    class Server(provider: DnsProvider, mode: DnsMode) {
-        private val upstreams = (listOf(provider) + providers.filter { it.id != provider.id && providers.contains(provider) })
+    class Server(provider: DnsProvider, mode: DnsMode, filter: DnsFilter.Matcher? = null) {
+        /** Replaced when the lists are updated while the VPN runs. */
+        @Volatile
+        var filter: DnsFilter.Matcher? = filter
+
+        // A preset falls back to the other presets that block the same (a family filter never to an unfiltered one).
+        private val upstreams = (listOf(provider) + providers.filter { it.id != provider.id && providers.contains(provider) && it.filters == provider.filters })
             .map { Upstream(it, mode) }
         private val socket = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
         private val workers: ExecutorService = Executors.newFixedThreadPool(4)
@@ -202,6 +212,7 @@ object SecureDns {
         private val queries = AtomicInteger()
         private val hits = AtomicInteger()
         private val failures = AtomicInteger()
+        private val blocked = AtomicInteger()
 
         @Volatile
         private var running = true
@@ -229,6 +240,10 @@ object SecureDns {
             if (query.size < 12) return null
             queries.incrementAndGet()
             val key = Cache.key(query) ?: return null
+            filter?.blocked(key.substringBefore('/'))?.let { category ->
+                if (blocked.incrementAndGet() <= 200) AppLog.i("DNS filter: ${key.substringBefore('/').trimEnd('.')} blocked ($category)")
+                return blockedAnswer(query, key.split('/').let { it[1].toInt() shl 8 or it[2].toInt() })
+            }
             cache.get(key)?.let {
                 hits.incrementAndGet()
                 return it.withId(query)
@@ -258,8 +273,31 @@ object SecureDns {
             socket.close()
             workers.shutdownNow()
             upstreams.forEach { it.close() }
-            AppLog.i("secure DNS: ${queries.get()} queries, ${hits.get()} from cache, ${failures.get()} failed exchanges")
+            AppLog.i("secure DNS: ${queries.get()} queries, ${hits.get()} from cache, ${blocked.get()} blocked, ${failures.get()} failed exchanges")
         }
+    }
+
+    /**
+     * The answer to a blocked name: 0.0.0.0 for A, :: for AAAA (apps give up at once, no retries
+     * elsewhere), NXDOMAIN for other types. Only the question is kept (no EDNS).
+     */
+    fun blockedAnswer(query: ByteArray, type: Int): ByteArray {
+        var end = 12
+        while (query[end].toInt() != 0) end += 1 + (query[end].toInt() and 0xff)
+        end += 5
+        val address = when (type) {
+            1 -> ByteArray(4)
+            28 -> ByteArray(16)
+            else -> null
+        }
+        val header = byteArrayOf(
+            query[0], query[1], (0x80 or (query[2].toInt() and 0x01)).toByte(), if (address != null) 0x80.toByte() else 0x83.toByte(),
+            0, 1, 0, if (address != null) 1 else 0, 0, 0, 0, 0,
+        )
+        val answer = address?.let {
+            byteArrayOf(0xc0.toByte(), 0x0c, 0, type.toByte(), 0, 1, 0, 0, 1, 0x2c, 0, it.size.toByte()) + it
+        } ?: ByteArray(0)
+        return header + query.copyOfRange(12, end) + answer
     }
 
     /** Answers by question (name, type, class), until their smallest TTL runs out. */
