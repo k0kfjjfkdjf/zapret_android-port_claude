@@ -290,12 +290,17 @@ class ZapretVpnService : VpnService() {
             if (mode == AppFilterMode.EXCEPT_SELECTED) {
                 selected.forEach { builder.addDisallowedApplication(it) }
             }
-            // The Tor app's own connections (relays, bridges) go around the VPN: the strategy's
-            // desync is meant for sites, not for Tor's handshakes.
-            if (settings.proxyEnabled) {
+            // The proxy apps' own connections (Tor relays and bridges, tpws of zapret-termux,
+            // sing-box…) go around the VPN: through it they would loop back into the engine.
+            val proxyInUse = settings.proxyEnabled || settings.proxyTelegram ||
+                settings.appRoutes.containsValue(AppRoutes.Route.PROXY)
+            if (proxyInUse) {
                 TorProxy.installed(this).forEach { (provider, pkg) ->
                     if (pkg !in selected) runCatching { builder.addDisallowedApplication(pkg) }
-                        .onSuccess { AppLog.i("${provider.title} ($pkg) left outside the VPN for the proxy group") }
+                        .onSuccess { AppLog.i("${provider.title} ($pkg) left outside the VPN for the proxy") }
+                }
+                TorProxy.LOCAL_PROXY_APPS.filter { it !in selected && isInstalled(it) }.forEach { pkg ->
+                    runCatching { builder.addDisallowedApplication(pkg) }.onSuccess { AppLog.i("$pkg left outside the VPN (local proxy app)") }
                 }
             }
         }

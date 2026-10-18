@@ -387,11 +387,12 @@
     <string name="strategy_mine_empty">Nothing saved yet: \"Save strategy\" keeps the current arguments here; strategies applied from the tester and the deep check land here too. ★ shows one on the home screen.</string>
     <string name="strategy_unnamed">No name</string>
     <string name="proxies_title">Other proxies</string>
-    <string name="proxies_desc">Besides the main proxy above: Tor, your own sing-box, Xray and the like. Apps (on the Apps screen) and Telegram can each go through any of them.</string>
+    <string name="proxies_desc">Besides the main proxy above: Tor, zapret-termux (tpws in Termux, the termux-zapret-udp-script branch of this repository), your own sing-box, Xray and the like. Termux and these proxy apps are left outside the VPN. Apps (on the Apps screen) and Telegram can each go through any of them.</string>
     <string name="proxies_add">Add proxy</string>
     <string name="proxies_name">Name</string>
     <string name="proxies_main">Main</string>
     <string name="proxies_telegram">Telegram goes through</string>
+    <string name="proxies_add_termux">+ zapret-termux (127.0.0.1:1080, UDP)</string>
     <string name="app_routes_title">Apps</string>
     <string name="app_routes_none">All apps follow the strategy and the lists</string>
     <string name="app_routes_summary">Through the proxy: %1$d, direct: %2$d</string>

@@ -789,8 +789,19 @@ fun SettingsScreen(
                         )
                     }
                     item {
-                        FilledTonalButton(onClick = { addProxy = true }, modifier = Modifier.padding(horizontal = 16.dp)) {
-                            Text(stringResource(R.string.proxies_add))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .horizontalScroll(rememberScrollState()),
+                        ) {
+                            FilledTonalButton(onClick = { addProxy = true }) { Text(stringResource(R.string.proxies_add)) }
+                            if (extraProxies.none { it.address == TorProxy.ZAPRET_TERMUX.address }) {
+                                FilledTonalButton(onClick = {
+                                    extraProxies = extraProxies + TorProxy.ZAPRET_TERMUX
+                                    settings.extraProxies = extraProxies
+                                }) { Text(stringResource(R.string.proxies_add_termux)) }
+                            }
                         }
                     }
                     if (extraProxies.isNotEmpty()) {

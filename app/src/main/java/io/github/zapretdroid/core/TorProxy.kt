@@ -26,6 +26,18 @@ object TorProxy {
         INVIZIBLE("InviZible Pro", listOf("pan.alexander.tordnscrypt.stable", "pan.alexander.tordnscrypt", "pan.alexander.tordnscrypt.gp")),
     }
 
+    /**
+     * Apps that run a local SOCKS5 proxy for us: Termux (zapret-termux: tpws on 127.0.0.1:1080 with
+     * UDP), sing-box, NekoBox, v2rayNG, Hiddify. Their own connections must go around our VPN, or
+     * they would loop back into the engine.
+     */
+    val LOCAL_PROXY_APPS = listOf(
+        "com.termux", "io.nekohasekai.sfa", "moe.nb4a", "io.nekohasekai.sagernet", "com.v2ray.ang", "app.hiddify.com",
+    )
+
+    /** zapret-termux (branch termux-zapret-udp-script of this repository): its tpws SOCKS5. */
+    val ZAPRET_TERMUX = ProxyEntry("zapret-termux", "127.0.0.1:1080", true)
+
     /** Installed providers with the package found. */
     fun installed(context: Context): List<Pair<Provider, String>> = Provider.entries.mapNotNull { p ->
         p.packages.firstOrNull { pkg -> context.packageManager.getLaunchIntentForPackage(pkg) != null }?.let { p to it }

@@ -385,11 +385,12 @@
     <string name="strategy_mine_empty">Пока пусто: «Сохранить стратегию» запоминает текущие аргументы здесь; сюда же попадают стратегии, применённые из тестера и глубокой проверки. ★ показывает стратегию на главном экране.</string>
     <string name="strategy_unnamed">Без названия</string>
     <string name="proxies_title">Другие прокси</string>
-    <string name="proxies_desc">Кроме основного прокси выше: Tor, свой sing-box, Xray и подобные. Приложения (на экране «Приложения») и Telegram могут идти каждый через любой из них.</string>
+    <string name="proxies_desc">Кроме основного прокси выше: Tor, zapret-termux (tpws в Termux, ветка termux-zapret-udp-script этого репозитория), свой sing-box, Xray и подобные. Termux и эти прокси-приложения идут мимо VPN. Приложения (на экране «Приложения») и Telegram могут идти каждый через любой из них.</string>
     <string name="proxies_add">Добавить прокси</string>
     <string name="proxies_name">Название</string>
     <string name="proxies_main">Основной</string>
     <string name="proxies_telegram">Telegram идёт через</string>
+    <string name="proxies_add_termux">+ zapret-termux (127.0.0.1:1080, UDP)</string>
     <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>
