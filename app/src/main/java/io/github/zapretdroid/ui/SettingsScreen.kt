@@ -264,6 +264,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.test_open)) },
                             supportingContent = { Text(stringResource(R.string.test_open_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
                         )
                     }
@@ -271,6 +272,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.deep_title)) },
                             supportingContent = { Text(stringResource(R.string.deep_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
                         )
                     }
@@ -323,6 +325,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.collect_title)) },
                             supportingContent = { Text(stringResource(R.string.collect_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenCollect),
                         )
                     }
@@ -354,6 +357,7 @@ fun SettingsScreen(
                                         else stringResource(R.string.hosts_list_value, hostList, HostLists.count(context, hostList)),
                                     )
                                 },
+                                trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                                 modifier = Modifier.selectable(selected = false, onClick = { listPicker = true }),
                             )
                         }
@@ -362,6 +366,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.title_host_lists)) },
                             supportingContent = { Text(stringResource(R.string.host_lists_open_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenLists),
                         )
                     }
@@ -380,6 +385,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.title_autohost)) },
                             supportingContent = { Text(stringResource(R.string.autohost_open_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenAutoHost),
                         )
                     }
@@ -473,6 +479,7 @@ fun SettingsScreen(
                                             color = if (chosen.isEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     },
+                                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                                     modifier = Modifier.selectable(selected = false, onClick = onOpenDnsServers),
                                 )
                             }
@@ -637,6 +644,7 @@ fun SettingsScreen(
                                     else stringResource(R.string.app_routes_summary, proxied, direct),
                                 )
                             },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenAppRoutes),
                         )
                     }
@@ -723,6 +731,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.selfcheck_title)) },
                             supportingContent = { Text(stringResource(R.string.selfcheck_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenSelfCheck),
                         )
                     }
@@ -730,6 +739,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.deep_title)) },
                             supportingContent = { Text(stringResource(R.string.deep_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
                         )
                     }
@@ -760,6 +770,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.title_logs)) },
                             supportingContent = { Text(stringResource(R.string.logs_open_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenLogs),
                         )
                     }
@@ -783,6 +794,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.classic_title)) },
                             supportingContent = { Text(stringResource(R.string.classic_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenClassic),
                         )
                     }
@@ -790,6 +802,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.backup_export)) },
                             supportingContent = { Text(stringResource(R.string.backup_export_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = {
                                 val stamp = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
                                 exportLauncher.launch("zapretdroid-settings-$stamp.json")
@@ -800,6 +813,7 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.backup_import)) },
                             supportingContent = { Text(stringResource(R.string.backup_import_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }),
                         )
                     }
@@ -1026,6 +1040,7 @@ private fun LazyListScope.settingsIndex(
                         supportingContent = {
                             Text(stringResource(R.string.index_found_in, stringResource(e.section?.title ?: R.string.title_settings)))
                         },
+                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                         modifier = Modifier.selectable(selected = false, onClick = {
                             if (e.action != null) onAction(e.action) else e.section?.let(onOpen)
                         }),
