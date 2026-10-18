@@ -391,6 +391,8 @@
     <string name="proxies_main">Основной</string>
     <string name="proxies_telegram">Telegram идёт через</string>
     <string name="proxies_add_termux">+ zapret-termux (127.0.0.1:1080, UDP)</string>
+    <string name="proxies_edit">Изменить прокси</string>
+    <string name="proxies_save">Сохранить</string>
     <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>

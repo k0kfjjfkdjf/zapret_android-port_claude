@@ -130,6 +130,8 @@ fun SettingsScreen(
     var extraProxies by remember { mutableStateOf(settings.extraProxies) }
     var telegramProxy by remember { mutableStateOf(settings.telegramProxy) }
     var addProxy by remember { mutableStateOf(false) }
+    // The proxy being edited in the same dialog (null: adding a new one).
+    var editProxy by remember { mutableStateOf<ProxyEntry?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // The settings index (null) or one of its sections; system back returns to the index.
@@ -776,6 +778,11 @@ fun SettingsScreen(
                         ListItem(
                             headlineContent = { Text(p.name) },
                             supportingContent = { Text(p.address + if (p.udp) ", UDP" else ", TCP") },
+                            leadingContent = { Icon(painterResource(R.drawable.bb_ic_tune), contentDescription = stringResource(R.string.proxies_edit), tint = MaterialTheme.colorScheme.primary) },
+                            modifier = Modifier.selectable(selected = false, onClick = {
+                                editProxy = p
+                                addProxy = true
+                            }),
                             trailingContent = {
                                 IconButton(onClick = {
                                     extraProxies = extraProxies - p
@@ -795,7 +802,10 @@ fun SettingsScreen(
                                 .padding(horizontal = 16.dp)
                                 .horizontalScroll(rememberScrollState()),
                         ) {
-                            FilledTonalButton(onClick = { addProxy = true }) { Text(stringResource(R.string.proxies_add)) }
+                            FilledTonalButton(onClick = {
+                                editProxy = null
+                                addProxy = true
+                            }) { Text(stringResource(R.string.proxies_add)) }
                             if (extraProxies.none { it.address == TorProxy.ZAPRET_TERMUX.address }) {
                                 FilledTonalButton(onClick = {
                                     extraProxies = extraProxies + TorProxy.ZAPRET_TERMUX
@@ -953,13 +963,14 @@ fun SettingsScreen(
     }
 
     if (addProxy) {
-        var name by remember { mutableStateOf("") }
-        var address by remember { mutableStateOf("") }
-        var udp by remember { mutableStateOf(false) }
-        val ok = name.isNotBlank() && TorProxy.isValid(address) && extraProxies.none { it.name == name.trim() }
+        val editing = editProxy
+        var name by remember(editing) { mutableStateOf(editing?.name.orEmpty()) }
+        var address by remember(editing) { mutableStateOf(editing?.address.orEmpty()) }
+        var udp by remember(editing) { mutableStateOf(editing?.udp ?: false) }
+        val ok = name.isNotBlank() && TorProxy.isValid(address) && extraProxies.none { it.name == name.trim() && it != editing }
         AlertDialog(
             onDismissRequest = { addProxy = false },
-            title = { Text(stringResource(R.string.proxies_add)) },
+            title = { Text(stringResource(if (editing == null) R.string.proxies_add else R.string.proxies_edit)) },
             text = {
                 Column {
                     OutlinedTextField(
@@ -987,10 +998,19 @@ fun SettingsScreen(
             },
             confirmButton = {
                 Button(enabled = ok, onClick = {
-                    extraProxies = extraProxies + ProxyEntry(name.trim(), address.trim(), udp)
+                    val entry = ProxyEntry(name.trim(), address.trim(), udp)
+                    extraProxies = if (editing == null) extraProxies + entry else extraProxies.map { if (it == editing) entry else it }
                     settings.extraProxies = extraProxies
+                    // A renamed proxy keeps its apps and Telegram.
+                    if (editing != null && editing.name != entry.name) {
+                        settings.appProxies = settings.appProxies.mapValues { (_, v) -> if (v == editing.name) entry.name else v }
+                        if (telegramProxy == editing.name) {
+                            telegramProxy = entry.name
+                            settings.telegramProxy = entry.name
+                        }
+                    }
                     addProxy = false
-                }) { Text(stringResource(R.string.proxies_add)) }
+                }) { Text(stringResource(if (editing == null) R.string.proxies_add else R.string.proxies_save)) }
             },
             dismissButton = { TextButton(onClick = { addProxy = false }) { Text(stringResource(android.R.string.cancel)) } },
         )
