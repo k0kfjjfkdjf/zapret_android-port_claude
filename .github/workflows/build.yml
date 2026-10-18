@@ -87,9 +87,29 @@ jobs:
             cp "$apk" "release/byezapret-tor-$torver-$abi.apk"
           done
           (cd release && sha256sum *.apk > SHA256SUMS.txt)
+          sh .github/notes.sh "$version" > release-notes.md
           # Creates the tag at the built commit if it does not exist yet.
           gh release create "$tag" release/* \
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "ByeZapret $version" \
-            --notes-file .github/release-notes.md
+            --notes-file release-notes.md
+
+  # Keeps the descriptions of published releases in step with CHANGELOG.md.
+  release-notes:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/zapret-android-no-root-632xp0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Update release notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for v in $(grep -E '^## [0-9]+\.[0-9]+\.[0-9]+$' CHANGELOG.md | cut -c4-); do
+            if gh release view "v$v" > /dev/null 2>&1; then
+              sh .github/notes.sh "$v" > notes.md
+              gh release edit "v$v" --notes-file notes.md && echo "v$v updated"
+            fi
+          done
