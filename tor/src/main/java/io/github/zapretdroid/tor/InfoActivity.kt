@@ -14,7 +14,7 @@ class InfoActivity : Activity() {
         super.onCreate(savedInstanceState)
         val pad = (16 * resources.displayMetrics.density).toInt()
         val status = "${TorModuleService.state} ${TorModuleService.progress}% ${TorModuleService.message}".trim()
-        val text = TextView(this).apply {
+        val info = TextView(this).apply {
             text = getString(
                 R.string.info, TorService.VERSION_NAME,
                 runCatching { IPtProxy.lyrebirdVersion() }.getOrDefault("?"),
@@ -35,7 +35,7 @@ class InfoActivity : Activity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
-            addView(text)
+            addView(info)
             addView(open)
         })
     }
