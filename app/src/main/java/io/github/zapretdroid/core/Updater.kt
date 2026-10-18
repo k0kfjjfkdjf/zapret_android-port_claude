@@ -56,11 +56,13 @@ object Updater {
     /** The newest release above the installed version, or null. Network: call off the main thread. */
     fun check(context: Context): Release? {
         prefs(context).edit { putLong(KEY_LAST_CHECK, System.currentTimeMillis()) }
-        val json = get(API).toString(Charsets.UTF_8)
-        val releases = parseReleases(json)
+        val releases = releases()
         val best = releases.maxWithOrNull { a, b -> if (newer(a.version, b.version)) 1 else if (newer(b.version, a.version)) -1 else 0 }
         return best?.takeIf { newer(it.version, BuildConfig.VERSION_NAME) }
     }
+
+    /** The project's latest releases, newest first as GitHub lists them. Network. */
+    fun releases(): List<Release> = parseReleases(get(API).toString(Charsets.UTF_8))
 
     fun parseReleases(json: String): List<Release> {
         val arr = JSONArray(json)
@@ -99,6 +101,11 @@ object Updater {
     /** Downloads the APK and checks it against SHA256SUMS.txt; the file, ready to install. */
     fun download(context: Context, release: Release, progress: (Int) -> Unit = {}): File {
         val (name, url) = apkFor(release) ?: throw IOException("no APK for this device in release ${release.tag}")
+        return downloadAsset(context, release, name, url, progress)
+    }
+
+    /** Downloads one asset of [release] into the cache and checks it against the release's SHA256SUMS.txt. */
+    fun downloadAsset(context: Context, release: Release, name: String, url: String, progress: (Int) -> Unit = {}): File {
         val sums = release.assets["SHA256SUMS.txt"]?.let { get(it).toString(Charsets.UTF_8) }
             ?: throw IOException("release ${release.tag} has no SHA256SUMS.txt")
         val expected = sums.lineSequence().map { it.trim().split(Regex("\\s+")) }

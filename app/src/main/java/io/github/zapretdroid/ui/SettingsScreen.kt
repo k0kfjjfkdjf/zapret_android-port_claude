@@ -591,6 +591,7 @@ fun SettingsScreen(
                         }
                     }
                 }
+                item { TorModuleCard(settings) }
                 item {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.proxy_udp)) },

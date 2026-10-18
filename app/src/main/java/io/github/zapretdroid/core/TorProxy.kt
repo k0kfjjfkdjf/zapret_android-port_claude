@@ -21,6 +21,7 @@ object TorProxy {
     enum class Provider(val title: String, val packages: List<String>) {
         ORBOT("Orbot", listOf("org.torproject.android")),
         INVIZIBLE("InviZible Pro", listOf("pan.alexander.tordnscrypt.stable", "pan.alexander.tordnscrypt", "pan.alexander.tordnscrypt.gp")),
+        MODULE("ByeZapret Tor", listOf("io.github.zapretdroid.tor.debug", "io.github.zapretdroid.tor")),
     }
 
     /** Installed providers with the package found. */
@@ -48,6 +49,16 @@ object TorProxy {
         val v6 = ':' in host && host.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' || it == ':' || it == '.' }
         port in 1..65535 && (v4 || v6)
     }.getOrDefault(false)
+
+    /** Whether the proxy group goes to the Tor module: chosen, installed with our key, and a local address. */
+    fun usesModule(context: Context, settings: Settings): Boolean =
+        settings.useTorModule && TorModule.isTrusted(context) &&
+            runCatching { socketAddress(settings.proxyAddress).address?.isLoopbackAddress == true }.getOrDefault(false)
+
+    /** Starts Tor where it lives: the module (with the chosen bridges), else Orbot. */
+    fun requestStart(context: Context, settings: Settings) {
+        if (usesModule(context, settings)) TorModule.start(context, settings) else requestStart(context)
+    }
 
     /** Asks Orbot to start Tor (its public intent); InviZible has none, it is started by hand. */
     fun requestStart(context: Context) {

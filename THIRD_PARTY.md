@@ -11,5 +11,8 @@
 | [TweetNaCl](https://tweetnacl.cr.yp.to/) (Bernstein, Lange, Schwabe et al.) | `app/src/main/java/io/github/zapretdroid/core/crypto/NaCl.kt` (X25519 ported to Kotlin) | Public domain | DNSCrypt key exchange |
 | [dnscrypt-resolvers](https://github.com/DNSCrypt/dnscrypt-resolvers) `v3/public-resolvers.md` | downloaded at run time (`dnscrypt/`), checked with its minisign key | see the repository (list maintained by Frank Denis) | DNSCrypt and DoH server list |
 | [InviZible Pro](https://github.com/Gedsh/InviZible) | design reference only, no code copied | GPLv3 | Server search and filters (DNSCrypt servers screen) |
+| [tor-android](https://github.com/guardianproject/tor-android) 0.4.9.14 (Maven Central) | dependency of the Tor module (`tor/`) | BSD-3-Clause (Tor: BSD-3-Clause) | Tor as a library with TorService |
+| [IPtProxy](https://github.com/tladesignz/IPtProxy) 5.7.0 (Maven Central) | dependency of the Tor module (`tor/`) | MIT (Lyrebird, Snowflake: BSD-3-Clause) | Bridge transports: obfs4, meek_lite, webtunnel, snowflake |
+| Tor Browser default bridges (via InviZible Pro's `bridges_default.lst`) | `tor/src/main/assets/bridges_default.txt` | public bridge lines | Built-in bridges of the Tor module; Snowflake rendezvous and STUN defaults as in InviZible Pro (GPLv3) |
 | [HaGeZi DNS blocklists](https://github.com/hagezi/dns-blocklists) (Multi NORMAL, Threat Intelligence mini, NSFW) | downloaded at run time into the app's files (`dnsfilter/`), not in the repository | GPLv3 | DNS blocking of ads and trackers, malware and phishing, adult sites |
 | Material icon "power_settings_new" | `app/src/main/res/drawable/ic_power.xml` | Apache 2.0 | Power button |

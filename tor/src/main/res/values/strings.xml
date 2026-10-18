@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ByeZapret Tor</string>
+    <string name="channel">Tor</string>
+    <string name="notification_starting">Tor is starting…</string>
+    <string name="notification_bootstrap">Tor: connecting, %1$d%%</string>
+    <string name="notification_on">Tor is on: SOCKS5 %1$s</string>
+    <string name="info">This is the Tor module of ByeZapret: it has no settings of its own. ByeZapret starts and stops it (Settings → Sites through a proxy) and sends the bridges to use.\n\nTor %1$s, Lyrebird %2$s, Snowflake %3$s.\n\nStatus: %4$s</string>
+    <string name="open_app">Open ByeZapret</string>
+</resources>

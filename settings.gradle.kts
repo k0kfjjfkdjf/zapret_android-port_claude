@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ZapretDroid"
 include(":app")
+include(":tor")

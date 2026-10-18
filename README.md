@@ -96,6 +96,16 @@ zapret на Android без root не воспроизвести.
   Свои списки `dns-block` и `dns-allow` действуют всегда, `dns-allow` главнее. Плюс готовые
   фильтрующие серверы: AdGuard, AdGuard Family, Quad9, Cloudflare Security и Family; при сбое
   сервер заменяется только таким же по фильтрации.
+- **Модуль Tor** (*Настройки → Сайты через прокси → Модуль Tor*) — Tor без второго
+  приложения. Модуль — отдельный APK «ByeZapret Tor» (Tor от Guardian Project и транспорты
+  мостов IPtProxy: obfs4, meek, WebTunnel, Snowflake), около 15 МБ под архитектуру
+  устройства. Скачивается из релизов проекта по кнопке, сверяется с `SHA256SUMS.txt` и
+  ставится установщиком Android; используется, только если подписан тем же ключом, что и
+  приложение, а управлять им может только приложение с тем же ключом (разрешение уровня
+  signature). Tor модуля запускается и останавливается вместе с VPN и слушает SOCKS5 по
+  адресу прокси; модуль не входит в VPN. Мосты: без мостов, встроенные Tor Browser
+  (Snowflake, obfs4, WebTunnel, meek) или свои строки (bridges.torproject.org,
+  @GetBridgesBot). Состояние подключения (проценты, ошибки) видно в настройках и в журнале.
 - **Свой локальный прокси, в том числе с UDP** — вместо Tor можно указать свой SOCKS5
   (`IP:порт`, например sing-box, Xray или NekoBox в режиме SOCKS). Переключатель «UDP тоже
   через прокси» отправляет через него и UDP сайтов из списка (QUIC, звонки) по SOCKS5 UDP
@@ -183,9 +193,9 @@ zapret на Android без root не воспроизвести.
 - [ ] **Поиск мостов Tor** в приложении (как в InviZible Pro).
 - [ ] **Редактор конфигов** — открыть существующие файлы настроек для ручной правки, с
   проверкой и выводом ошибок на экран.
-- [ ] **Скачиваемый модуль Tor** — для тех, кто не хочет второе приложение: Tor и транспорты
-  мостов (obfs4, webtunnel, snowflake) скачиваются отдельно от APK, с проверкой подписи, и
-  обновляются независимо.
+- [x] **Скачиваемый модуль Tor** — для тех, кто не хочет второе приложение: Tor и транспорты
+  мостов (obfs4, webtunnel, snowflake, meek) скачиваются отдельно от APK, с проверкой подписи, и
+  обновляются независимо (0.11.0).
 - [x] **Обновление из приложения** (0.9.6).
 - [ ] Обновление списков стратегий, сайтов и доменов без обновления приложения.
 
@@ -265,6 +275,10 @@ ByeZapret стоит на чужой работе. Спасибо авторам
   приложением по запросу.
 - Стратегии с группами по сервисам — от участников
   [Telegram-группы ByeByeDPI](https://t.me/byebyedpi_group).
+- Модуль Tor (`tor/`) — [tor-android](https://github.com/guardianproject/tor-android)
+  (Guardian Project, BSD-3-Clause) и [IPtProxy](https://github.com/tladesignz/IPtProxy)
+  (Benjamin Erhart, MIT: Lyrebird и Snowflake от Tor Project); встроенные мосты — стандартные
+  мосты Tor Browser, параметры Snowflake — как в InviZible Pro.
 - Работа через Tor — с помощью [Orbot](https://github.com/guardianproject/orbot)
   (Guardian Project) или [InviZible Pro](https://github.com/Gedsh/InviZible) (Gedsh),
   запущенных отдельно; их код в приложение не входит.
