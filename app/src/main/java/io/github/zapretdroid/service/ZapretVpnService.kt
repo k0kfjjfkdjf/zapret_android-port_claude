@@ -403,7 +403,7 @@ class ZapretVpnService : VpnService() {
 
     @Volatile
     private var secureDns: SecureDns.Server? = null
-    @Volatile
+
     /** Routing by app is on in this session: hev passes source addresses, the engine asks for owners. */
     @Volatile
     private var appRouting = false
