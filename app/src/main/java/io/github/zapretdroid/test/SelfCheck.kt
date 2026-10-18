@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.Diagnostics
 import io.github.zapretdroid.core.DnsMode
+import io.github.zapretdroid.core.DnsServers
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.NativeLog
@@ -401,11 +402,32 @@ object SelfCheck {
                 }
             }
         }
+        if (settings.dnsMode == DnsMode.DNSCRYPT) {
+            // Each chosen server on its own: certificate (DNSCrypt) or TLS (DoH), then an answer.
+            for (provider in DnsServers.providers(settings.dnsServers)) {
+                check(g, "DNS server ${provider.title}") {
+                    val up = SecureDns.Upstream(provider, DnsMode.DNSCRYPT)
+                    try {
+                        val start = System.currentTimeMillis()
+                        val id = kotlin.random.Random.nextInt(0x10000)
+                        val a = DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, "www.youtube.com")), id)?.firstOrNull()
+                        CheckStatus.OK to "${up.mode}: www.youtube.com=${a?.hostAddress ?: "empty"} ${System.currentTimeMillis() - start}ms"
+                    } catch (e: Exception) {
+                        CheckStatus.WARN to "${up.mode}: does not answer: ${e.javaClass.simpleName}: ${e.message}"
+                    } finally {
+                        up.close()
+                    }
+                }
+            }
+            if (settings.dnsServers.isEmpty()) check(g, "DNS servers") { CheckStatus.FAIL to "DNSCrypt mode with no servers chosen: plain DNS is used" }
+        }
         if (settings.dnsMode != DnsMode.PLAIN) {
             // The chain of the VPN: query to the VPN's DNS address -> engine (--dns-redirect) ->
             // the app's resolver -> provider; the answer must come back from the VPN's address.
-            check(g, "encrypted DNS through the engine (${settings.dnsMode} via ${settings.dnsProvider})") {
-                val server = SecureDns.Server(SecureDns.provider(settings.dnsProvider), settings.dnsMode)
+            val via = if (settings.dnsMode == DnsMode.DNSCRYPT) settings.dnsServers.joinToString { it.first } else settings.dnsProvider
+            check(g, "encrypted DNS through the engine (${settings.dnsMode} via $via)") {
+                val server = if (settings.dnsMode == DnsMode.DNSCRYPT) SecureDns.Server(DnsServers.providers(settings.dnsServers), DnsMode.DNSCRYPT)
+                else SecureDns.Server(SecureDns.provider(settings.dnsProvider), settings.dnsMode)
                 try {
                     val redirect = "--dns-redirect ${SecureDns.VPN_DNS}=127.0.0.1:${server.port}"
                     val id = kotlin.random.Random.nextInt(0x10000)

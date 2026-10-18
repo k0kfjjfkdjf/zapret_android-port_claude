@@ -21,11 +21,12 @@ object TestDns {
     private fun system(host: String): InetAddress? =
         runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } }.getOrNull()
 
-    /** What the tests resolve with: the plain DNS setting, or "doh:<provider>" / "dot:<provider>". */
+    /** What the tests resolve with: the plain DNS setting, "doh:<provider>" / "dot:<provider>", or "stamp:<name>|<sdns>" (the first DNSCrypt-mode server). */
     fun spec(settings: Settings): String = when (settings.dnsMode) {
         DnsMode.PLAIN -> settings.dns
         DnsMode.DOH -> "doh:${settings.dnsProvider}"
         DnsMode.DOT -> "dot:${settings.dnsProvider}"
+        DnsMode.DNSCRYPT -> settings.dnsServers.firstOrNull()?.let { "stamp:${it.first}|${it.second}" } ?: settings.dns
     }
 
     private val upstreams = mutableMapOf<String, SecureDns.Upstream>()
@@ -35,7 +36,12 @@ object TestDns {
         val mode = if (spec.startsWith("dot:")) DnsMode.DOT else DnsMode.DOH
         val name = spec.substringAfter(':')
         val result = runCatching {
-            val up = synchronized(upstreams) { upstreams.getOrPut(spec) { SecureDns.Upstream(SecureDns.provider(name), mode) } }
+            val up = synchronized(upstreams) {
+                upstreams.getOrPut(spec) {
+                    if (spec.startsWith("stamp:")) SecureDns.Upstream(SecureDns.fromStamp(name.substringBefore('|'), name.substringAfter('|')), mode)
+                    else SecureDns.Upstream(SecureDns.provider(name), mode)
+                }
+            }
             val id = kotlin.random.Random.nextInt(0x10000)
             DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, host)), id)?.firstOrNull()
         }
@@ -45,7 +51,7 @@ object TestDns {
     }
 
     fun resolve(host: String, dns: String): Answer {
-        if (dns.startsWith("doh:") || dns.startsWith("dot:")) return secure(host, dns)
+        if (dns.startsWith("doh:") || dns.startsWith("dot:") || dns.startsWith("stamp:")) return secure(host, dns)
         val server = dns.trim().takeIf { it != Settings.SYSTEM_DNS && isIpLiteral(it) }
             ?: return Answer(system(host))
         val viaServer = runCatching { DnsClient.resolve(host, InetAddress.getByName(server)).firstOrNull() }

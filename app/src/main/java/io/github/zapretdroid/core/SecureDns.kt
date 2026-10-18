@@ -22,8 +22,11 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.thread
 
-/** How the VPN resolves names for apps: plain DNS through the engine, or encrypted by the app. */
-enum class DnsMode { PLAIN, DOH, DOT }
+/**
+ * How the VPN resolves names for apps: plain DNS through the engine, or encrypted by the app:
+ * DoH or DoT with a preset, or DNSCRYPT: servers chosen from the public DNSCrypt / DoH list.
+ */
+enum class DnsMode { PLAIN, DOH, DOT, DNSCRYPT }
 
 /** An encrypted DNS server: reached at [ip], its certificate is checked for [tlsName]. */
 class DnsProvider(
@@ -36,6 +39,8 @@ class DnsProvider(
     val dotPort: Int = 853,
     /** What the server itself blocks (DnsFilter.Category ids); presets fall back only to the same kind. */
     val filters: Set<String> = emptySet(),
+    /** sdns:// stamp of a server from the public list or added by hand (DnsServers). */
+    val stamp: String? = null,
 )
 
 /**
@@ -74,8 +79,32 @@ object SecureDns {
         return DnsProvider(text, host, ip, host, path, dohPort = port ?: 443, dotPort = port ?: 853)
     }
 
-    /** One encrypted exchange: a DNS message in, the answer out. Connections are reused. */
-    class Upstream(val provider: DnsProvider, val mode: DnsMode) {
+    /** A server of a DNS stamp: DNSCrypt (by its address) or DoH (address, else its host name resolved now). */
+    fun fromStamp(name: String, stamp: String): DnsProvider {
+        val s = DnsStamp.parse(stamp)
+        return when (s.protocol) {
+            DnsStamp.Protocol.DNSCRYPT -> DnsProvider(name, name, s.host, s.hostname, stamp = stamp)
+            DnsStamp.Protocol.DOH -> {
+                val ip = s.host.ifEmpty { InetAddress.getByName(s.hostname).hostAddress ?: throw IOException("cannot resolve ${s.hostname}") }
+                DnsProvider(name, name, ip, s.hostname, s.path, dohPort = s.port, stamp = stamp)
+            }
+        }
+    }
+
+    /**
+     * One encrypted exchange: a DNS message in, the answer out. Connections are reused. A
+     * provider with a DNSCrypt stamp is asked over DNSCrypt whatever [mode] says; one with a DoH
+     * stamp over DoH.
+     */
+    class Upstream(val provider: DnsProvider, mode: DnsMode) {
+        private val stamp = provider.stamp?.let { DnsStamp.parse(it) }
+        val mode: DnsMode = when (stamp?.protocol) {
+            DnsStamp.Protocol.DNSCRYPT -> DnsMode.DNSCRYPT
+            DnsStamp.Protocol.DOH -> DnsMode.DOH
+            null -> mode
+        }
+        private val dnscrypt by lazy { DnsCryptClient(stamp!!, TIMEOUT_MS) }
+
         private class Conn(val socket: SSLSocket, val input: InputStream, val output: OutputStream) {
             var uses = 0
         }
@@ -83,6 +112,7 @@ object SecureDns {
         private val idle = ArrayBlockingQueue<Conn>(4)
 
         fun exchange(query: ByteArray): ByteArray {
+            if (mode == DnsMode.DNSCRYPT) return dnscrypt.exchange(query)
             var last: Exception? = null
             // A reused connection may have been closed by the server: one retry on a new one.
             repeat(2) { attempt ->
@@ -196,16 +226,25 @@ object SecureDns {
 
     /**
      * The resolver the engine redirects the VPN's DNS to: UDP on 127.0.0.1, answers from the
-     * provider (the other presets if it fails), cached for their TTL.
+     * provider (the other presets if it fails), cached for their TTL. With several servers
+     * (DNSCrypt mode) the fastest of those that answer is asked first.
      */
-    class Server(provider: DnsProvider, mode: DnsMode, filter: DnsFilter.Matcher? = null) {
+    class Server(servers: List<DnsProvider>, mode: DnsMode, filter: DnsFilter.Matcher? = null) {
+        constructor(provider: DnsProvider, mode: DnsMode, filter: DnsFilter.Matcher? = null) : this(withFallbacks(provider), mode, filter)
+
         /** Replaced when the lists are updated while the VPN runs. */
         @Volatile
         var filter: DnsFilter.Matcher? = filter
 
-        // A preset falls back to the other presets that block the same (a family filter never to an unfiltered one).
-        private val upstreams = (listOf(provider) + providers.filter { it.id != provider.id && providers.contains(provider) && it.filters == provider.filters })
-            .map { Upstream(it, mode) }
+        private class Stat(var ms: Double, var failedUntil: Long = 0)
+
+        init {
+            require(servers.isNotEmpty()) { "no DNS servers" }
+        }
+
+        private val upstreams = servers.map { Upstream(it, mode) }
+        // Initial scores keep the chosen order until real answer times are known.
+        private val stats = upstreams.indices.map { Stat(it.toDouble()) }
         private val socket = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
         private val workers: ExecutorService = Executors.newFixedThreadPool(4)
         private val cache = Cache()
@@ -248,14 +287,19 @@ object SecureDns {
                 hits.incrementAndGet()
                 return it.withId(query)
             }
-            for (upstream in upstreams) {
+            for (i in order()) {
+                val upstream = upstreams[i]
+                val start = System.nanoTime()
                 try {
                     val answer = upstream.exchange(query)
                     if (answer.size >= 12) {
+                        val ms = (System.nanoTime() - start) / 1e6
+                        synchronized(stats) { stats[i].ms = stats[i].ms * 0.7 + ms * 0.3; stats[i].failedUntil = 0 }
                         cache.put(key, answer)
                         return answer.withId(query)
                     }
                 } catch (e: Exception) {
+                    synchronized(stats) { stats[i].failedUntil = System.currentTimeMillis() + 60_000 }
                     if (failures.incrementAndGet() <= 20) {
                         AppLog.w("secure DNS: ${upstream.provider.title} (${upstream.mode}) failed: ${e.message ?: e.javaClass.simpleName}")
                     }
@@ -268,6 +312,12 @@ object SecureDns {
             }
         }
 
+        /** Servers that did not fail in the last minute first, each group by its answer time. */
+        private fun order(): List<Int> = synchronized(stats) {
+            val now = System.currentTimeMillis()
+            upstreams.indices.sortedWith(compareBy<Int> { stats[it].failedUntil > now }.thenBy { stats[it].ms })
+        }
+
         fun stop() {
             running = false
             socket.close()
@@ -276,6 +326,10 @@ object SecureDns {
             AppLog.i("secure DNS: ${queries.get()} queries, ${hits.get()} from cache, ${blocked.get()} blocked, ${failures.get()} failed exchanges")
         }
     }
+
+    /** A preset and the other presets that block the same (a family filter never falls back to an unfiltered one). */
+    fun withFallbacks(provider: DnsProvider): List<DnsProvider> =
+        listOf(provider) + providers.filter { it.id != provider.id && providers.contains(provider) && it.filters == provider.filters }
 
     /**
      * The answer to a blocked name: 0.0.0.0 for A, :: for AAAA (apps give up at once, no retries

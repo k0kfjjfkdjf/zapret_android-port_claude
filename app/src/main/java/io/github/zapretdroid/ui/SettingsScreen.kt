@@ -89,6 +89,7 @@ fun SettingsScreen(
     onOpenSelfCheck: () -> Unit,
     onOpenDeep: () -> Unit,
     onOpenCollect: () -> Unit,
+    onOpenDnsServers: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
     onOpenClassic: () -> Unit,
@@ -330,7 +331,9 @@ fun SettingsScreen(
             item {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+                    modifier = Modifier
+                        .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                        .horizontalScroll(rememberScrollState()),
                 ) {
                     DnsMode.entries.forEach { mode ->
                         FilterChip(
@@ -346,6 +349,7 @@ fun SettingsScreen(
                                             DnsMode.PLAIN -> R.string.dns_mode_plain
                                             DnsMode.DOH -> R.string.dns_mode_doh
                                             DnsMode.DOT -> R.string.dns_mode_dot
+                                            DnsMode.DNSCRYPT -> R.string.dns_mode_dnscrypt
                                         },
                                     ),
                                 )
@@ -400,51 +404,68 @@ fun SettingsScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
-                item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .padding(start = 16.dp, end = 16.dp, top = 4.dp)
-                            .horizontalScroll(rememberScrollState()),
-                    ) {
-                        SecureDns.providers.forEach { provider ->
-                            FilterChip(
-                                selected = dnsProvider == provider.id,
-                                onClick = {
-                                    dnsProvider = provider.id
-                                    settings.dnsProvider = provider.id
-                                },
-                                label = { Text(provider.title) },
-                            )
+                if (dnsMode == DnsMode.DNSCRYPT) {
+                    item {
+                        val chosen = remember(dnsMode) { settings.dnsServers }
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dns_servers_title)) },
+                            supportingContent = {
+                                Text(
+                                    if (chosen.isEmpty()) stringResource(R.string.dns_servers_none_chosen)
+                                    else stringResource(R.string.dns_servers_chosen, chosen.joinToString { it.first }),
+                                    color = if (chosen.isEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenDnsServers),
+                        )
+                    }
+                } else {
+                    item {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                                .horizontalScroll(rememberScrollState()),
+                        ) {
+                            SecureDns.providers.forEach { provider ->
+                                FilterChip(
+                                    selected = dnsProvider == provider.id,
+                                    onClick = {
+                                        dnsProvider = provider.id
+                                        settings.dnsProvider = provider.id
+                                    },
+                                    label = { Text(provider.title) },
+                                )
+                            }
                         }
                     }
-                }
-                item {
-                    val custom = SecureDns.providers.none { it.id == dnsProvider }
-                    OutlinedTextField(
-                        value = if (custom) dnsProvider else "",
-                        onValueChange = {
-                            dnsProvider = it.trim()
-                            if (it.trim().isNotEmpty()) settings.dnsProvider = it.trim()
-                        },
-                        label = { Text(stringResource(R.string.dns_provider_custom)) },
-                        supportingText = { Text(stringResource(R.string.dns_provider_custom_hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-                SecureDns.providers.firstOrNull { it.id == dnsProvider }?.filters?.takeIf { it.isNotEmpty() }?.let { filters ->
                     item {
-                        val names = DnsFilter.Category.entries.filter { it.id in filters }.map { stringResource(categoryTitle(it)) }
-                        Text(
-                            stringResource(R.string.dns_server_blocks, names.joinToString()),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        val custom = SecureDns.providers.none { it.id == dnsProvider }
+                        OutlinedTextField(
+                            value = if (custom) dnsProvider else "",
+                            onValueChange = {
+                                dnsProvider = it.trim()
+                                if (it.trim().isNotEmpty()) settings.dnsProvider = it.trim()
+                            },
+                            label = { Text(stringResource(R.string.dns_provider_custom)) },
+                            supportingText = { Text(stringResource(R.string.dns_provider_custom_hint)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                         )
+                    }
+                    SecureDns.providers.firstOrNull { it.id == dnsProvider }?.filters?.takeIf { it.isNotEmpty() }?.let { filters ->
+                        item {
+                            val names = DnsFilter.Category.entries.filter { it.id in filters }.map { stringResource(categoryTitle(it)) }
+                            Text(
+                                stringResource(R.string.dns_server_blocks, names.joinToString()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
+                        }
                     }
                 }
                 item {

@@ -118,6 +118,16 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putString(KEY_DNS_PROVIDER, value) }
         }
 
+    /** DNSCrypt mode: the chosen servers (name to sdns:// stamp), in the order chosen. */
+    var dnsServers: List<Pair<String, String>>
+        get() = prefs.getString(KEY_DNS_SERVERS, "")!!.lines().mapNotNull { line ->
+            line.trim().split(' ', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        }
+        set(value) {
+            logChange("dnsServers", dnsServers.map { it.first }, value.map { it.first })
+            prefs.edit(commit = true) { putString(KEY_DNS_SERVERS, value.joinToString("\n") { "${it.first} ${it.second}" }) }
+        }
+
     /** DNS filter categories (DnsFilter.Category ids) blocked by the app's resolver. */
     var dnsBlock: Set<String>
         get() = prefs.getStringSet(KEY_DNS_BLOCK, emptySet())!!.toSet()
@@ -194,5 +204,6 @@ class Settings(context: Context) {
         private const val KEY_PROXY_LIST = "proxy_list"
         private const val KEY_PROXY_UDP = "proxy_udp"
         private const val KEY_DNS_BLOCK = "dns_block"
+        private const val KEY_DNS_SERVERS = "dns_servers"
     }
 }

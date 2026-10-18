@@ -27,6 +27,7 @@ import io.github.zapretdroid.core.ByeDpi
 import io.github.zapretdroid.core.Diagnostics
 import io.github.zapretdroid.core.DnsFilter
 import io.github.zapretdroid.core.DnsMode
+import io.github.zapretdroid.core.DnsServers
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.FakePayloads
@@ -404,13 +405,24 @@ class ZapretVpnService : VpnService() {
         val mode = settings.dnsMode
         if (mode == DnsMode.PLAIN) return null
         return runCatching {
-            val provider = SecureDns.provider(settings.dnsProvider)
             val enabled = settings.dnsBlock
             val filter = DnsFilter.load(this, enabled)
-            SecureDns.Server(provider, mode, filter).also {
-                AppLog.i("secure DNS: ${if (mode == DnsMode.DOH) "DNS over HTTPS" else "DNS over TLS"} via ${provider.title} (${provider.ip}), resolver on 127.0.0.1:${it.port}")
+            val server = if (mode == DnsMode.DNSCRYPT) {
+                val servers = DnsServers.providers(settings.dnsServers)
+                if (servers.isEmpty()) throw IllegalStateException("no DNSCrypt servers chosen (Settings -> DNS -> servers)")
+                SecureDns.Server(servers, mode, filter).also {
+                    AppLog.i("secure DNS: DNSCrypt/DoH servers ${servers.joinToString { s -> s.title }}, resolver on 127.0.0.1:${it.port}")
+                }
+            } else {
+                val provider = SecureDns.provider(settings.dnsProvider)
+                SecureDns.Server(provider, mode, filter).also {
+                    AppLog.i("secure DNS: ${if (mode == DnsMode.DOH) "DNS over HTTPS" else "DNS over TLS"} via ${provider.title} (${provider.ip}), resolver on 127.0.0.1:${it.port}")
+                }
+            }
+            server.also {
                 filter?.let { f -> AppLog.i("DNS filter: ${f.categories.joinToString()} (${f.size} domains)") }
                 refreshFilterLists(it, enabled)
+                if (mode == DnsMode.DNSCRYPT) refreshServerList()
             }
         }.onFailure { AppLog.e("secure DNS not started, plain DNS instead: ${it.message}", it) }.getOrNull()
     }
@@ -427,6 +439,14 @@ class ZapretVpnService : VpnService() {
                     .onFailure { AppLog.w("DNS filter: ${c.id} not updated: ${it.message}") }
             }
             if (changed && secureDns === server) server.filter = DnsFilter.load(this, enabled)
+        }
+    }
+
+    /** The public server list, if older than DnsServers.MAX_AGE_MS: updated in the background for the next start. */
+    private fun refreshServerList() {
+        if ((DnsServers.updatedAt(this) ?: 0) > System.currentTimeMillis() - DnsServers.MAX_AGE_MS) return
+        thread(name = "dns-servers-update", isDaemon = true) {
+            runCatching { DnsServers.update(this) }.onFailure { AppLog.w("DNS servers: list not updated: ${it.message}") }
         }
     }
 

@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -228,7 +228,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
-            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP, Screen.COLLECT -> Screen.SETTINGS
+            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP, Screen.COLLECT, Screen.DNS_SERVERS -> Screen.SETTINGS
             Screen.LIST_EDIT -> Screen.LISTS
             Screen.LOGS -> logsReturn
             Screen.MONITOR -> Screen.HOME
@@ -290,6 +290,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenSelfCheck = { screen = Screen.SELFCHECK },
             onOpenDeep = { screen = Screen.DEEP },
             onOpenCollect = { screen = Screen.COLLECT },
+            onOpenDnsServers = { screen = Screen.DNS_SERVERS },
             onOpenClassic = { ClassicBridge.open(context) },
             onCheckUpdates = checkUpdates,
         )
@@ -298,6 +299,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onBack = { screen = Screen.SETTINGS },
         )
         Screen.LOGS -> LogsScreen(onBack = { screen = logsReturn })
+        Screen.DNS_SERVERS -> DnsServersScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.LISTS -> HostListsScreen(
             onBack = { screen = Screen.SETTINGS },
             onEdit = { name ->
