@@ -7,6 +7,19 @@ class StrategyArgsTest {
     private val strategy = listOf("--disorder", "1")
 
     @Test
+    fun forAppsLimitsEveryGroupAndClosesIt() {
+        assertEquals(
+            listOf(
+                "--apps", "10100,10200", "--disorder", "1",
+                "--auto=torst", "--apps", "10100,10200", "--tlsrec", "1+s",
+                "-A", "none", "--apps", "10100,10200", "--proto", "u",
+                "--auto=none",
+            ),
+            StrategyArgs.forApps(listOf("--disorder", "1", "--auto=torst", "--tlsrec", "1+s", "-A", "none", "--proto", "u"), listOf(10100, 10200)),
+        )
+    }
+
+    @Test
     fun allHosts() {
         assertEquals(strategy, StrategyArgs.build(strategy, HostScope.ALL, null, null))
     }

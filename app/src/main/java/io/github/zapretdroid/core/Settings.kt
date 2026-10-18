@@ -173,6 +173,16 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putStringSet(KEY_APP_ROUTES, value.map { "${it.key}=${it.value.id}" }.toSet()) }
         }
 
+    /** The own strategy (engine arguments) of apps with the STRATEGY route. */
+    var appStrategies: Map<String, String>
+        get() = prefs.getStringSet(KEY_APP_STRATEGIES, emptySet())!!.mapNotNull { e ->
+            e.split('\t', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        }.toMap()
+        set(value) {
+            logChange("appStrategies", appStrategies, value)
+            prefs.edit(commit = true) { putStringSet(KEY_APP_STRATEGIES, value.map { "${it.key}\t${it.value}" }.toSet()) }
+        }
+
     /** Telegram (its sites and its address ranges) through the proxy too. */
     var proxyTelegram: Boolean
         get() = prefs.getBoolean(KEY_PROXY_TELEGRAM, false)
@@ -251,6 +261,7 @@ class Settings(context: Context) {
         private const val KEY_PROXY_UDP = "proxy_udp"
         private const val KEY_PROXY_TELEGRAM = "proxy_telegram"
         private const val KEY_APP_ROUTES = "app_routes"
+        private const val KEY_APP_STRATEGIES = "app_strategies"
         private const val KEY_USE_TOR_MODULE = "use_tor_module"
         private const val KEY_TOR_BRIDGES = "tor_bridges"
         private const val KEY_TOR_BRIDGES_CUSTOM = "tor_bridges_custom"

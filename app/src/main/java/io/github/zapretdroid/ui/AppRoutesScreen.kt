@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -37,8 +38,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.zapretdroid.R
+import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppRoutes
 import io.github.zapretdroid.core.Settings
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import io.github.zapretdroid.core.SavedStrategies
+import io.github.zapretdroid.core.Strategies
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -49,8 +61,13 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
     val context = LocalContext.current
     val packageManager = context.packageManager
     var routes by remember { mutableStateOf(settings.appRoutes) }
+    var mode by remember { mutableStateOf(settings.appFilterMode) }
+    var selected by remember { mutableStateOf(settings.selectedApps) }
+    var strategies by remember { mutableStateOf(settings.appStrategies) }
+    // The app whose own strategy is being chosen.
+    var picking by remember { mutableStateOf<String?>(null) }
     // Apps with a route when the screen opened are listed first; changing one does not reorder.
-    val pinned = remember { settings.appRoutes.keys }
+    val pinned = remember { settings.appRoutes.keys + settings.selectedApps }
     var query by remember { mutableStateOf("") }
     val apps by produceState<List<AppEntry>?>(null) {
         value = withContext(Dispatchers.IO) { loadApps(packageManager, context.packageName) }
@@ -59,6 +76,23 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
     fun set(pkg: String, route: AppRoutes.Route?) {
         routes = if (route == null) routes - pkg else routes + (pkg to route)
         settings.appRoutes = routes
+    }
+
+    fun setStrategy(pkg: String, args: String) {
+        strategies = strategies + (pkg to args.trim())
+        settings.appStrategies = strategies
+        set(pkg, AppRoutes.Route.STRATEGY)
+    }
+
+    picking?.let { pkg ->
+        AppStrategyDialog(
+            current = strategies[pkg] ?: settings.strategyArgs,
+            onPick = { args ->
+                picking = null
+                if (args.isNotBlank()) setStrategy(pkg, args)
+            },
+            onDismiss = { picking = null },
+        )
     }
 
     Scaffold(
@@ -74,6 +108,40 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
         },
     ) { padding ->
         Column(Modifier.padding(padding)) {
+            // Which apps go through the VPN at all (the ticks below make the list).
+            Text(
+                stringResource(R.string.app_vpn_mode),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .horizontalScroll(rememberScrollState()),
+            ) {
+                AppFilterMode.entries.forEach { m ->
+                    FilterChip(
+                        selected = mode == m,
+                        onClick = {
+                            mode = m
+                            settings.appFilterMode = m
+                        },
+                        label = {
+                            Text(
+                                stringResource(
+                                    when (m) {
+                                        AppFilterMode.ALL -> R.string.apps_all
+                                        AppFilterMode.ONLY_SELECTED -> R.string.apps_only_selected
+                                        AppFilterMode.EXCEPT_SELECTED -> R.string.apps_except_selected
+                                    },
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
             Text(
                 stringResource(R.string.app_routes_desc),
                 style = MaterialTheme.typography.bodySmall,
@@ -102,8 +170,17 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
                 LazyColumn {
                     items(filtered, key = { it.packageName }) { app ->
                         val route = routes[app.packageName]
+                        val ticked = app.packageName in selected
                         ListItem(
                             leadingContent = { AppIcon(packageManager, app.packageName) },
+                            trailingContent = if (mode == AppFilterMode.ALL) null else {
+                                {
+                                    Checkbox(checked = ticked, onCheckedChange = {
+                                        selected = if (it) selected + app.packageName else selected - app.packageName
+                                        settings.selectedApps = selected
+                                    })
+                                }
+                            },
                             headlineContent = { Text(app.label) },
                             supportingContent = {
                                 Column {
@@ -127,6 +204,19 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
                                             onClick = { set(app.packageName, AppRoutes.Route.DIRECT) },
                                             label = { Text(stringResource(R.string.app_route_direct)) },
                                         )
+                                        FilterChip(
+                                            selected = route == AppRoutes.Route.STRATEGY,
+                                            onClick = { picking = app.packageName },
+                                            label = { Text(stringResource(R.string.app_route_strategy)) },
+                                        )
+                                    }
+                                    if (route == AppRoutes.Route.STRATEGY) {
+                                        Text(
+                                            strategies[app.packageName].orEmpty(),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 2,
+                                        )
                                     }
                                 }
                             },
@@ -136,4 +226,53 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
             }
         }
     }
+}
+
+/** Chooses an app's own strategy: a preset, a saved strategy or arguments typed in. */
+@Composable
+private fun AppStrategyDialog(current: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var args by remember { mutableStateOf(current) }
+    val saved = remember { SavedStrategies.all(context).sortedByDescending { it.pinned }.take(15) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.app_route_strategy_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = args,
+                    onValueChange = { args = it },
+                    label = { Text(stringResource(R.string.strategy_args)) },
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LazyColumn(Modifier.heightIn(max = 320.dp).padding(top = 8.dp)) {
+                    items(Strategies.presets, key = { "p-" + it.id }) { preset ->
+                        Text(
+                            stringResource(preset.title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(selected = false, onClick = { args = preset.args })
+                                .padding(vertical = 8.dp),
+                        )
+                    }
+                    items(saved, key = { "s-" + it.args }) { s ->
+                        Text(
+                            s.name.ifBlank { s.args },
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            maxLines = 2,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(selected = false, onClick = { args = s.args })
+                                .padding(vertical = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onPick(args) }) { Text(stringResource(android.R.string.ok)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+    )
 }

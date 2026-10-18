@@ -569,7 +569,23 @@ class ZapretVpnService : VpnService() {
                 ?: throw IllegalStateException(getString(R.string.error_unknown_list, settings.hostList))
         }
         val autohostLog = if (settings.autohost) AutoHost.file(this).absolutePath else null
-        return appGroups(settings) + proxyGroup(settings) + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+        // Apps with a strategy of their own come after the proxy lists (listed sites still go
+        // to the proxy) and before the general strategy.
+        val appStrategy = AppRoutes.strategyGroups(this, settings.appRoutes, settings.appStrategies) { args ->
+            try {
+                ArgTemplates.resolve(splitArgs(args), FakePayloads.install(this), HostLists.dir(this))
+            } catch (e: ArgTemplates.UnknownReference) {
+                val res = if (e.kind == "fake") R.string.error_unknown_fake else R.string.error_unknown_list
+                throw IllegalStateException(getString(res, e.name))
+            }
+        }
+        if (appStrategy.isNotEmpty()) {
+            appRouting = true
+            ByeDpi.ownerLookup = { proto, local, remote -> AppRoutes.ownerUid(this, proto, local, remote) }
+            val pkgs = settings.appRoutes.filterValues { it == AppRoutes.Route.STRATEGY }.keys
+            AppLog.i("apps with their own strategy: ${pkgs.sorted()}")
+        }
+        return appGroups(settings) + proxyGroup(settings) + appStrategy + StrategyArgs.build(strategy, scope, listPath, autohostLog)
     }
 
     /** Apps routed wholly through the proxy or direct, in front of every other group (see AppRoutes). */

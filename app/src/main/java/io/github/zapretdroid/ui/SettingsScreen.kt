@@ -718,36 +718,6 @@ fun SettingsScreen(
                         }
                     }
                 }
-                Section.APPS -> {
-                    items(AppFilterMode.entries.toList(), key = { it.name }) { mode ->
-                        RadioRow(
-                            title = stringResource(
-                                when (mode) {
-                                    AppFilterMode.ALL -> R.string.apps_all
-                                    AppFilterMode.ONLY_SELECTED -> R.string.apps_only_selected
-                                    AppFilterMode.EXCEPT_SELECTED -> R.string.apps_except_selected
-                                },
-                            ),
-                            subtitle = null,
-                            selected = appMode == mode,
-                            onSelect = {
-                                appMode = mode
-                                settings.appFilterMode = mode
-                            },
-                        )
-                    }
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.apps_choose)) },
-                            supportingContent = { Text(stringResource(R.string.apps_selected_count, selectedCount)) },
-                            modifier = Modifier.selectable(
-                                selected = false,
-                                enabled = appMode != AppFilterMode.ALL,
-                                onClick = onOpenApps,
-                            ),
-                        )
-                    }
-                }
                 Section.CHECKS -> {
                     item {
                         ListItem(
@@ -958,7 +928,6 @@ internal enum class Section(val title: Int) {
     DNS(R.string.index_dns),
     BLOCK(R.string.index_block),
     PROXY(R.string.index_proxy),
-    APPS(R.string.index_apps),
     CHECKS(R.string.index_checks),
     GENERAL(R.string.index_general),
 }
@@ -1003,7 +972,7 @@ private val SEARCH = listOf(
     SearchEntry(R.string.tor_module_title, R.string.tor_module_desc, Section.PROXY),
     SearchEntry(R.string.tor_bridges_title, R.string.tor_bridges_desc, Section.PROXY),
     SearchEntry(R.string.app_routes_title, R.string.app_routes_desc, null, IndexAction.APP_ROUTES),
-    SearchEntry(R.string.apps_choose, null, Section.APPS),
+    SearchEntry(R.string.apps_choose, null, null, IndexAction.APP_ROUTES),
     SearchEntry(R.string.log_level_verbose, R.string.log_level_verbose_desc, Section.CHECKS),
     SearchEntry(R.string.title_logs, R.string.logs_open_desc, null, IndexAction.LOGS),
     SearchEntry(R.string.update_check, null, Section.GENERAL),
@@ -1075,7 +1044,7 @@ private fun LazyListScope.settingsIndex(
     item { IndexRow(R.drawable.bb_ic_filter_list, R.string.index_block, summaries.block) { onOpen(Section.BLOCK) } }
     item { IndexHeader(R.string.index_cat_proxy) }
     item { IndexRow(R.drawable.bb_ic_vpn_key, R.string.index_proxy, summaries.proxy) { onOpen(Section.PROXY) } }
-    item { IndexRow(R.drawable.bb_ic_apps, R.string.app_routes_title, summaries.appRoutes) { onAction(IndexAction.APP_ROUTES) } }
+    item { IndexRow(R.drawable.bb_ic_apps, R.string.app_routes_title, summaries.apps + "; " + summaries.appRoutes) { onAction(IndexAction.APP_ROUTES) } }
     item {
         ListItem(
             leadingContent = { IndexIcon(R.drawable.bb_ic_telegram) },
@@ -1085,8 +1054,6 @@ private fun LazyListScope.settingsIndex(
             modifier = Modifier.toggleable(value = telegram, role = Role.Switch, onValueChange = onTelegram),
         )
     }
-    item { IndexHeader(R.string.index_cat_vpn) }
-    item { IndexRow(R.drawable.bb_ic_filter_list, R.string.index_apps, summaries.apps) { onOpen(Section.APPS) } }
     item { IndexHeader(R.string.index_cat_checks) }
     item { IndexRow(R.drawable.bb_ic_check, R.string.selfcheck_title, stringResource(R.string.index_selfcheck_desc)) { onAction(IndexAction.SELFCHECK) } }
     item { IndexRow(R.drawable.bb_ic_documentation, R.string.title_logs, stringResource(R.string.index_logs_desc)) { onAction(IndexAction.LOGS) } }

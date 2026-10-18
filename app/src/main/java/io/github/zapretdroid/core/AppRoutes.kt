@@ -14,7 +14,7 @@ import java.net.InetSocketAddress
  * per connection and picks the group of the app (--apps).
  */
 object AppRoutes {
-    enum class Route(val id: String) { PROXY("proxy"), DIRECT("direct") }
+    enum class Route(val id: String) { PROXY("proxy"), DIRECT("direct"), STRATEGY("strategy") }
 
     /** Engine groups in front of all others: direct apps first, then apps through the proxy. */
     fun groups(context: Context, routes: Map<String, Route>, proxyAddress: String, udp: Boolean): List<String> {
@@ -32,6 +32,19 @@ object AppRoutes {
             }
         }
     }
+
+    /**
+     * Groups for apps with a strategy of their own ([strategies]: package to arguments, templates
+     * already resolved by [resolve]); apps with the same strategy share its groups.
+     */
+    fun strategyGroups(context: Context, routes: Map<String, Route>, strategies: Map<String, String>, resolve: (String) -> List<String>): List<String> =
+        routes.filterValues { it == Route.STRATEGY }.keys
+            .mapNotNull { pkg -> strategies[pkg]?.takeIf { it.isNotBlank() }?.let { pkg to it.trim() } }
+            .groupBy({ it.second }, { it.first })
+            .flatMap { (args, pkgs) ->
+                val uids = pkgs.mapNotNull { runCatching { context.packageManager.getApplicationInfo(it, 0).uid }.getOrNull() }.distinct()
+                if (uids.isEmpty()) emptyList() else StrategyArgs.forApps(resolve(args), uids)
+            }
 
     /** The owner of a connection from [local] (the app's side on the tun) to [remote]; -1 if unknown. */
     fun ownerUid(context: Context, proto: Int, local: InetSocketAddress, remote: InetSocketAddress): Int =

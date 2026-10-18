@@ -372,10 +372,13 @@
     <string name="index_off">Выключено</string>
     <string name="index_proxy_on">Включено, %1$s</string>
     <string name="dns_block_needs_secure">Блокировка работает только с зашифрованным DNS: выберите DoH, DoT или DNSCrypt в разделе «DNS и DNSCrypt».</string>
-    <string name="app_routes_title">Приложения: через прокси или напрямую</string>
+    <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>
-    <string name="app_routes_desc">Через прокси: весь трафик приложения идёт в прокси (Tor или ваш: адрес в разделе «Сайты через прокси»), что бы ни было в списках; его UDP — только с «UDP тоже через прокси». Напрямую: приложение идёт без обхода и без прокси (банки и подобные). Действует после перезапуска VPN.</string>
+    <string name="app_routes_desc">Через прокси: весь трафик приложения идёт в прокси (Tor или ваш: адрес в разделе «Сайты через прокси»), что бы ни было в списках; его UDP — только с «UDP тоже через прокси». Напрямую: приложение идёт без обхода и без прокси (банки и подобные). Своя стратегия: у приложения свои аргументы обхода, сайты из списка прокси по-прежнему идут в прокси. Действует после перезапуска VPN.</string>
+    <string name="app_route_strategy">Своя стратегия</string>
+    <string name="app_route_strategy_title">Своя стратегия приложения</string>
+    <string name="app_vpn_mode">Через VPN идут</string>
     <string name="app_route_default">Обычно</string>
     <string name="app_route_proxy">Через прокси</string>
     <string name="app_route_direct">Напрямую</string>

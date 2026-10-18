@@ -52,6 +52,26 @@ object StrategyArgs {
         }
     }
 
+    /**
+     * A strategy for some apps only: every group gets "--apps <uids>" (the engine matches the app
+     * per connection), and a closing "--auto=none" so that the groups after it start afresh.
+     */
+    fun forApps(strategy: List<String>, uids: List<Int>): List<String> = buildList {
+        val apps = listOf("--apps", uids.joinToString(","))
+        groups(strategy).filter { it.isNotEmpty() }.forEach { group ->
+            if (isGroupStart(group[0])) {
+                val head = if (group[0] == "-A" || group[0] == "--auto") 2 else 1
+                addAll(group.take(head))
+                addAll(apps)
+                addAll(group.drop(head))
+            } else {
+                addAll(apps)
+                addAll(group)
+            }
+        }
+        add("--auto=none")
+    }
+
     /** Whether [arg] starts a new group (-A/--auto, with its value attached or next). */
     fun isGroupStart(arg: String) = arg == "-A" || arg == "--auto" || arg.startsWith("--auto=") || (arg.startsWith("-A") && arg.length > 2)
 
