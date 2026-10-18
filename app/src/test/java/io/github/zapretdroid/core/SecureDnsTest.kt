@@ -155,6 +155,31 @@ class SecureDnsTest {
     }
 
     @Test
+    fun slowFirstServerDoesNotDelayTheAnswer() {
+        // Accepts and then says nothing: the TLS handshake hangs until the upstream's timeout.
+        val silent = java.net.ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        thread(isDaemon = true) { while (!silent.isClosed) runCatching { silent.accept() } }
+        val hanging = DnsProvider("silent", "Silent", "127.0.0.1", "localhost", dohPort = silent.localPort)
+        val server = SecureDns.Server(listOf(hanging, provider()), DnsMode.DOH)
+        try {
+            DatagramSocket().use { s ->
+                s.soTimeout = 5000
+                val start = System.currentTimeMillis()
+                val q = DnsClient.buildQuery(0x3333, "slow.example")
+                s.send(DatagramPacket(q, q.size, InetSocketAddress(InetAddress.getLoopbackAddress(), server.port)))
+                val buf = ByteArray(2048)
+                val p = DatagramPacket(buf, buf.size)
+                s.receive(p)
+                assertEquals(listOf(InetAddress.getByName("127.0.0.2")), DnsClient.parseResponse(buf.copyOf(p.length), 0x3333))
+                assertTrue("answered in ${System.currentTimeMillis() - start} ms", System.currentTimeMillis() - start < 2500)
+            }
+        } finally {
+            server.stop()
+            silent.close()
+        }
+    }
+
+    @Test
     fun customProviders() {
         val p = SecureDns.provider("https://localhost:8443/q")
         assertEquals("localhost", p.tlsName)

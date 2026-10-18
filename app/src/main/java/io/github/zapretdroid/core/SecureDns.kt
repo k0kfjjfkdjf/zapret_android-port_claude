@@ -127,6 +127,8 @@ object SecureDns {
                     return answer
                 } catch (e: Exception) {
                     runCatching { conn.socket.close() }
+                    // The server answered with an error status: another try gets the same answer.
+                    if (e is HttpStatusException) throw e
                     last = e
                 }
             }
@@ -220,9 +222,9 @@ object SecureDns {
             }
             if (code == 505 || code == 400) {
                 // Servers that speak only HTTP/2 answer an HTTP/1.1 request like this.
-                throw IOException("HTTP $code from ${provider.title}: probably HTTP/2 only (not supported yet), use DoT or another server")
+                throw HttpStatusException("HTTP $code from ${provider.title}: probably HTTP/2 only (not supported yet), use DoT or another server")
             }
-            if (code != 200) throw IOException("HTTP $code from ${provider.title}")
+            if (code != 200) throw HttpStatusException("HTTP $code from ${provider.title}")
             return body
         }
 
@@ -274,6 +276,7 @@ object SecureDns {
         private val stats = upstreams.indices.map { Stat(it.toDouble()) }
         private val socket = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
         private val workers: ExecutorService = Executors.newFixedThreadPool(4)
+        private val racers: ExecutorService = Executors.newCachedThreadPool()
         private val cache = Cache()
         private val queries = AtomicInteger()
         private val hits = AtomicInteger()
@@ -314,28 +317,61 @@ object SecureDns {
                 hits.incrementAndGet()
                 return it.withId(query)
             }
-            for (i in order()) {
-                val upstream = upstreams[i]
-                val start = System.nanoTime()
-                try {
-                    val answer = upstream.exchange(query)
-                    if (answer.size >= 12) {
-                        val ms = (System.nanoTime() - start) / 1e6
-                        synchronized(stats) { stats[i].ms = stats[i].ms * 0.7 + ms * 0.3; stats[i].failedUntil = 0 }
-                        cache.put(key, answer)
-                        return answer.withId(query)
-                    }
-                } catch (e: Exception) {
-                    synchronized(stats) { stats[i].failedUntil = System.currentTimeMillis() + 60_000 }
-                    if (failures.incrementAndGet() <= 20) {
-                        AppLog.w("secure DNS: ${upstream.provider.title} (${upstream.mode}) failed: ${e.message ?: e.javaClass.simpleName}")
-                    }
-                }
+            race(query)?.let { answer ->
+                cache.put(key, answer)
+                return answer.withId(query)
             }
             // SERVFAIL: the app tries again instead of waiting for a timeout.
             return query.copyOf().also {
                 it[2] = (it[2].toInt() or 0x80).toByte()
                 it[3] = 0x82.toByte()
+            }
+        }
+
+        /**
+         * Asks the servers in [order]: the next one joins when the ones asked so far have not
+         * answered within [HEDGE_MS] (or have failed); the first answer wins. A slow or broken
+         * server first in the list then costs under a second, not its whole timeout.
+         */
+        private fun race(query: ByteArray): ByteArray? {
+            val ids = order()
+            val done = java.util.concurrent.ExecutorCompletionService<ByteArray?>(racers)
+            var launched = 0
+            var pending = 0
+            fun launch() {
+                val i = ids[launched++]
+                pending++
+                done.submit(java.util.concurrent.Callable { ask(i, query) })
+            }
+            launch()
+            while (pending > 0) {
+                val f = done.poll(if (launched < ids.size) HEDGE_MS else TIMEOUT_MS.toLong() * 3, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (f == null) {
+                    if (launched < ids.size) launch() else break
+                    continue
+                }
+                pending--
+                runCatching { f.get() }.getOrNull()?.let { return it }
+                if (launched < ids.size) launch()
+            }
+            return null
+        }
+
+        /** One server's answer, or null; its answer time or failure goes into its score. */
+        private fun ask(i: Int, query: ByteArray): ByteArray? {
+            val upstream = upstreams[i]
+            val start = System.nanoTime()
+            return try {
+                upstream.exchange(query).takeIf { it.size >= 12 }?.also {
+                    val ms = (System.nanoTime() - start) / 1e6
+                    synchronized(stats) { stats[i].ms = stats[i].ms * 0.7 + ms * 0.3; stats[i].failedUntil = 0 }
+                }
+            } catch (e: Exception) {
+                synchronized(stats) { stats[i].failedUntil = System.currentTimeMillis() + 60_000 }
+                if (failures.incrementAndGet() <= 20) {
+                    AppLog.w("secure DNS: ${upstream.provider.title} (${upstream.mode}) failed: ${e.message ?: e.javaClass.simpleName}")
+                }
+                null
             }
         }
 
@@ -349,10 +385,16 @@ object SecureDns {
             running = false
             socket.close()
             workers.shutdownNow()
+            racers.shutdownNow()
             upstreams.forEach { it.close() }
             AppLog.i("secure DNS: ${queries.get()} queries, ${hits.get()} from cache, ${blocked.get()} blocked, ${failures.get()} failed exchanges")
         }
     }
+
+    /** An error status from a DoH server: retrying on a new connection would not change it. */
+    class HttpStatusException(message: String) : IOException(message)
+
+    private const val HEDGE_MS = 800L
 
     /** A preset and the other presets that block the same (a family filter never falls back to an unfiltered one). */
     fun withFallbacks(provider: DnsProvider): List<DnsProvider> =
