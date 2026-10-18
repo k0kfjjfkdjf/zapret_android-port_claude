@@ -40,6 +40,7 @@ import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppsScreen
 import io.github.zapretdroid.ui.AutoHostScreen
 import io.github.zapretdroid.ui.CollectScreen
+import io.github.zapretdroid.ui.DnsServersScreen
 import io.github.zapretdroid.ui.DeepCheckScreen
 import io.github.zapretdroid.ui.HomeScreen
 import io.github.zapretdroid.ui.HostListEditorScreen
