@@ -14,7 +14,7 @@ object Diagnostics {
         add("strategy: ${settings.strategyId}")
         add("args: ${settings.strategyArgs}")
         if (settings.proxyEnabled) add("proxy: list ${settings.proxyList} through socks5://${settings.proxyAddress}, " + if (settings.proxyUdp) "UDP too" else "TCP only")
-        add("dns: ${settings.dns}, mode: ${settings.dnsMode}" + (when (settings.dnsMode) { DnsMode.PLAIN -> ""; DnsMode.DNSCRYPT -> " via " + settings.dnsServers.joinToString { it.first }; else -> " via ${settings.dnsProvider}" }) + ", ipv6: ${settings.ipv6}, log level: ${settings.logLevel}")
+        add("dns: ${settings.dns}, mode: ${settings.dnsMode}" + (when (settings.dnsMode) { DnsMode.PLAIN -> ""; DnsMode.DNSCRYPT -> " via " + settings.dnsServers.size + " servers: " + settings.dnsServers.take(5).joinToString { it.first } + if (settings.dnsServers.size > 5) ", …" else ""; else -> " via ${settings.dnsProvider}" }) + ", ipv6: ${settings.ipv6}, log level: ${settings.logLevel}")
         add("hosts: ${settings.hostScope}" + (if (settings.hostScope != HostScope.ALL) " list '${settings.hostList}'" else "") + ", autohost: ${settings.autohost}")
         add("apps: ${settings.appFilterMode}" + if (settings.appFilterMode != AppFilterMode.ALL) " ${settings.selectedApps.sorted()}" else "")
         addAll(network(context))

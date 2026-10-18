@@ -136,8 +136,12 @@ object SecureDns {
             while (true) runCatching { (idle.poll() ?: return).socket.close() }
         }
 
+        @Volatile
+        private var sniOnly = false
+
         private fun open(): Conn {
             val port = if (mode == DnsMode.DOT) provider.dotPort else provider.dohPort
+            if (sniOnly) return openWithSni(port)
             val raw = Socket()
             raw.connect(InetSocketAddress(InetAddress.getByName(provider.ip), port), TIMEOUT_MS)
             raw.soTimeout = TIMEOUT_MS
@@ -203,11 +207,29 @@ object SecureDns {
             val body = when {
                 chunked -> readChunked(conn.input)
                 length >= 0 -> readFully(conn.input, length)
-                else -> throw IOException("HTTP answer without length")
+                // HTTP/1.0 style: the body ends with the connection.
+                else -> readToEnd(conn.input).also { close = true }
             }
             if (close) conn.uses = MAX_USES
+            // 421: the server wants the name in SNI (Cloudflare without SNI): from now on with SNI.
+            if (code == 421 && !sniOnly) {
+                sniOnly = true
+                conn.uses = MAX_USES
+                throw IOException("HTTP 421 from ${provider.title}, retrying with SNI")
+            }
             if (code != 200) throw IOException("HTTP $code from ${provider.title}")
             return body
+        }
+
+        private fun readToEnd(input: InputStream): ByteArray {
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(4096)
+            while (out.size() < 65_536) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+            }
+            return out.toByteArray()
         }
 
         private fun readChunked(input: InputStream): ByteArray {

@@ -2,6 +2,7 @@
 #define PROXY_H
 
 #include <stdint.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <ws2tcpip.h>
@@ -85,6 +86,24 @@ struct s5_rep {
 #define S_SIZE_ID 7
 
 void map_fix(union sockaddr_u *addr, char f6);
+
+/*
+ * ZapretDroid: whether [a] and [b] are the same address (and port, if [port]), an IPv4 address
+ * and its IPv4-mapped IPv6 form alike: with a dual-stack bind address the engine keeps UDP
+ * destinations as ::ffff:a.b.c.d while --dns-redirect is given in IPv4.
+ */
+static inline int same_addr(const union sockaddr_u *a, const union sockaddr_u *b, int port)
+{
+    union sockaddr_u x = *a, y = *b;
+    map_fix(&x, 0);
+    map_fix(&y, 0);
+    if (x.sa.sa_family != y.sa.sa_family || (port && x.in.sin_port != y.in.sin_port)) {
+        return 0;
+    }
+    return x.sa.sa_family == AF_INET
+        ? !memcmp(&x.in.sin_addr, &y.in.sin_addr, 4)
+        : !memcmp(&x.in6.sin6_addr, &y.in6.sin6_addr, 16);
+}
 
 int resp_error(int fd, int e, int flag);
 

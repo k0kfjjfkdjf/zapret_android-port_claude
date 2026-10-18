@@ -26,7 +26,7 @@ object TestDns {
         DnsMode.PLAIN -> settings.dns
         DnsMode.DOH -> "doh:${settings.dnsProvider}"
         DnsMode.DOT -> "dot:${settings.dnsProvider}"
-        DnsMode.DNSCRYPT -> settings.dnsServers.firstOrNull()?.let { "stamp:${it.first}|${it.second}" } ?: settings.dns
+        DnsMode.DNSCRYPT -> settings.dnsServers.takeIf { it.isNotEmpty() }?.joinToString(" ", prefix = "stamp:") { "${it.first}|${it.second}" } ?: settings.dns
     }
 
     private val upstreams = mutableMapOf<String, SecureDns.Upstream>()
@@ -35,15 +35,21 @@ object TestDns {
     private fun secure(host: String, spec: String): Answer {
         val mode = if (spec.startsWith("dot:")) DnsMode.DOT else DnsMode.DOH
         val name = spec.substringAfter(':')
-        val result = runCatching {
-            val up = synchronized(upstreams) {
-                upstreams.getOrPut(spec) {
-                    if (spec.startsWith("stamp:")) SecureDns.Upstream(SecureDns.fromStamp(name.substringBefore('|'), name.substringAfter('|')), mode)
-                    else SecureDns.Upstream(SecureDns.provider(name), mode)
+        // "stamp:" carries all DNSCrypt-mode servers ("name|sdns" separated by spaces): the first that answers.
+        val entries = if (spec.startsWith("stamp:")) name.split(' ').filter { it.contains('|') } else listOf(name)
+        var result: Result<java.net.InetAddress?> = Result.failure(java.io.IOException("no server"))
+        for (entry in entries) {
+            result = runCatching {
+                val up = synchronized(upstreams) {
+                    upstreams.getOrPut(entry) {
+                        if (spec.startsWith("stamp:")) SecureDns.Upstream(SecureDns.fromStamp(entry.substringBefore('|'), entry.substringAfter('|')), mode)
+                        else SecureDns.Upstream(SecureDns.provider(entry), mode)
+                    }
                 }
+                val id = kotlin.random.Random.nextInt(0x10000)
+                DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, host)), id)?.firstOrNull()
             }
-            val id = kotlin.random.Random.nextInt(0x10000)
-            DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, host)), id)?.firstOrNull()
+            if (result.getOrNull() != null) break
         }
         result.getOrNull()?.let { return Answer(it) }
         val sys = system(host)

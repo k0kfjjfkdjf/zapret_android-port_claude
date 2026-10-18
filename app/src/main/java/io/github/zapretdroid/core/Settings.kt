@@ -124,7 +124,10 @@ class Settings(context: Context) {
             line.trim().split(' ', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
         }
         set(value) {
-            logChange("dnsServers", dnsServers.map { it.first }, value.map { it.first })
+            // Only what changed: the whole list grows long when many servers are ticked.
+            val old = dnsServers.map { it.first }
+            val new = value.map { it.first }
+            if (old != new) AppLog.i("setting dnsServers: +${(new - old.toSet()).ifEmpty { listOf("-") }} -${(old - new.toSet()).ifEmpty { listOf("-") }} (${new.size} chosen)")
             prefs.edit(commit = true) { putString(KEY_DNS_SERVERS, value.joinToString("\n") { "${it.first} ${it.second}" }) }
         }
 

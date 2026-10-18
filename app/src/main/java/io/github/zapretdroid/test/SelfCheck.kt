@@ -402,6 +402,7 @@ object SelfCheck {
                 }
             }
         }
+        val serversOk = mutableListOf<String>()
         if (settings.dnsMode == DnsMode.DNSCRYPT) {
             // Each chosen server on its own: certificate (DNSCrypt) or TLS (DoH), then an answer.
             for (provider in DnsServers.providers(settings.dnsServers)) {
@@ -411,6 +412,7 @@ object SelfCheck {
                         val start = System.currentTimeMillis()
                         val id = kotlin.random.Random.nextInt(0x10000)
                         val a = DnsClient.parseResponse(up.exchange(DnsClient.buildQuery(id, "www.youtube.com")), id)?.firstOrNull()
+                        serversOk += provider.title
                         CheckStatus.OK to "${up.mode}: www.youtube.com=${a?.hostAddress ?: "empty"} ${System.currentTimeMillis() - start}ms"
                     } catch (e: Exception) {
                         CheckStatus.WARN to "${up.mode}: does not answer: ${e.javaClass.simpleName}: ${e.message}"
@@ -424,7 +426,7 @@ object SelfCheck {
         if (settings.dnsMode != DnsMode.PLAIN) {
             // The chain of the VPN: query to the VPN's DNS address -> engine (--dns-redirect) ->
             // the app's resolver -> provider; the answer must come back from the VPN's address.
-            val via = if (settings.dnsMode == DnsMode.DNSCRYPT) settings.dnsServers.joinToString { it.first } else settings.dnsProvider
+            val via = if (settings.dnsMode == DnsMode.DNSCRYPT) "${settings.dnsServers.size} servers" else settings.dnsProvider
             check(g, "encrypted DNS through the engine (${settings.dnsMode} via $via)") {
                 val server = if (settings.dnsMode == DnsMode.DNSCRYPT) SecureDns.Server(DnsServers.providers(settings.dnsServers), DnsMode.DNSCRYPT)
                 else SecureDns.Server(SecureDns.provider(settings.dnsProvider), settings.dnsMode)
@@ -446,9 +448,13 @@ object SelfCheck {
         }
         check(g, "encrypted DNS recommendation") {
             when {
+                settings.dnsMode == DnsMode.DNSCRYPT && serversOk.isNotEmpty() ->
+                    CheckStatus.OK to "in use: DNSCrypt mode, ${serversOk.size} of ${settings.dnsServers.size} chosen servers answer here" +
+                        (if (serversOk.size < settings.dnsServers.size) " (the others are skipped for a minute after each failure; better untick them)" else "")
+                settings.dnsMode == DnsMode.DNSCRYPT -> CheckStatus.WARN to "DNSCrypt mode, but none of the chosen servers answers here"
                 settings.dnsMode != DnsMode.PLAIN && secureOk.any { it.endsWith(settings.dnsMode.name) } ->
                     CheckStatus.OK to "in use: ${settings.dnsMode} via ${settings.dnsProvider}; working here: ${secureOk.joinToString()}"
-                secureOk.isNotEmpty() -> CheckStatus.INFO to "working here: ${secureOk.joinToString()}: turn it on in Settings -> DNS " +
+                secureOk.isNotEmpty() -> CheckStatus.INFO to "working here: ${secureOk.joinToString()}: turn it on in Settings -> Network " +
                     "(answers cannot be spoofed, names for host lists always known)"
                 else -> CheckStatus.WARN to "neither DoH nor DoT gets through on this network"
             }

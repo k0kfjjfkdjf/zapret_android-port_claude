@@ -1325,8 +1325,11 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
     }
     // ZapretDroid: DNS for the VPN's own DNS address goes to the app's encrypted resolver,
     // untouched by any group (see --dns-redirect).
-    if (params.dns_redir && dest_equ(dst, &params.dns_redir_from)) {
-        ssize_t sent = sendto(val->fd, buffer, n, 0, &params.dns_redir_to.sa, SA_SIZE(&params.dns_redir_to));
+    if (params.dns_redir && same_addr(dst, &params.dns_redir_from, 1)) {
+        // The resolver's address in the form of this socket (IPv4-mapped on a dual-stack one).
+        union sockaddr_u to = params.dns_redir_to;
+        map_fix(&to, dst->sa.sa_family == AF_INET6 ? 6 : 0);
+        ssize_t sent = sendto(val->fd, buffer, n, 0, &to.sa, SA_SIZE(&to));
         udp_maybe_report(val, now);
         return sent;
     }

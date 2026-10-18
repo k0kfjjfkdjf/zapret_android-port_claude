@@ -436,10 +436,7 @@ int create_conn(struct poolhd *pool,
     
     // ZapretDroid: the VPN's DNS address exists only for UDP (--dns-redirect). Refused at once,
     // so that Android's DNS over TLS probe (port 853) falls back to plain DNS without waiting.
-    if (params.dns_redir && addr.sa.sa_family == params.dns_redir_from.sa.sa_family
-            && (addr.sa.sa_family == AF_INET
-                ? !memcmp(&addr.in.sin_addr, &params.dns_redir_from.in.sin_addr, 4)
-                : !memcmp(&addr.in6.sin6_addr, &params.dns_redir_from.in6.sin6_addr, 16))) {
+    if (params.dns_redir && same_addr(&addr, &params.dns_redir_from, 0)) {
         return -1;
     }
     int sfd = remote_sock(&addr, SOCK_STREAM);
@@ -848,11 +845,7 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                 udp_stat_in(val, pn);
             }
             // Answers of the app's resolver look like they come from the VPN's DNS address.
-            if (params.dns_redir && addr.sa.sa_family == params.dns_redir_to.sa.sa_family
-                    && addr.in.sin_port == params.dns_redir_to.in.sin_port
-                    && (addr.sa.sa_family == AF_INET
-                        ? !memcmp(&addr.in.sin_addr, &params.dns_redir_to.in.sin_addr, 4)
-                        : !memcmp(&addr.in6.sin6_addr, &params.dns_redir_to.in6.sin6_addr, 16))) {
+            if (params.dns_redir && same_addr(&addr, &params.dns_redir_to, 1)) {
                 addr = params.dns_redir_from;
             }
             udp_reply_hook(val, pl, pn, &addr);
