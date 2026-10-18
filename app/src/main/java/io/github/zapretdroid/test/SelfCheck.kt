@@ -495,7 +495,8 @@ object SelfCheck {
                 }
             }
         }
-        check(g, "DNS as the tester resolves (${TestDns.spec(settings)})") {
+        val testerDns = TestDns.spec(settings).let { if (it.startsWith("stamp:")) "${settings.dnsServers.size} DNSCrypt-mode servers" else it }
+        check(g, "DNS as the tester resolves ($testerDns)") {
             val notes = names.mapNotNull { TestDns.resolve(it, TestDns.spec(settings)).note }
             if (notes.isEmpty()) CheckStatus.OK to "no spoofing seen" else CheckStatus.WARN to notes.joinToString("; ")
         }

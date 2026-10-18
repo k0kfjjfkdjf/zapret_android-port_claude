@@ -114,8 +114,9 @@ object SecureDns {
         fun exchange(query: ByteArray): ByteArray {
             if (mode == DnsMode.DNSCRYPT) return dnscrypt.exchange(query)
             var last: Exception? = null
-            // A reused connection may have been closed by the server: one retry on a new one.
-            repeat(2) { attempt ->
+            // A reused connection may have been closed by the server, or the server wants SNI
+            // (HTTP 421): up to two more tries on new connections.
+            repeat(3) { attempt ->
                 val conn = (if (attempt == 0) idle.poll() else null) ?: open()
                 try {
                     val answer = if (mode == DnsMode.DOT) dot(conn, query) else doh(conn, query)
@@ -216,6 +217,10 @@ object SecureDns {
                 sniOnly = true
                 conn.uses = MAX_USES
                 throw IOException("HTTP 421 from ${provider.title}, retrying with SNI")
+            }
+            if (code == 505 || code == 400) {
+                // Servers that speak only HTTP/2 answer an HTTP/1.1 request like this.
+                throw IOException("HTTP $code from ${provider.title}: probably HTTP/2 only (not supported yet), use DoT or another server")
             }
             if (code != 200) throw IOException("HTTP $code from ${provider.title}")
             return body
