@@ -577,28 +577,28 @@ class ZapretVpnService : VpnService() {
             val pkgs = settings.appRoutes.filterValues { it == AppRoutes.Route.STRATEGY }.keys
             AppLog.i("apps with their own strategy: ${pkgs.sorted()}")
         }
-        return appGroups(settings) + proxyGroup(settings) + appStrategy + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+        return appGroups(settings) + proxyGroup(settings) + telegramGroup(settings) + appStrategy + StrategyArgs.build(strategy, scope, listPath, autohostLog)
     }
 
     /** Apps routed wholly through the proxy or direct, in front of every other group (see AppRoutes). */
     private fun appGroups(settings: Settings): List<String> {
         val routes = settings.appRoutes
         if (routes.isEmpty()) return emptyList()
-        val address = settings.proxyAddress.trim()
-        val groups = AppRoutes.groups(this, routes, address, settings.proxyUdp)
+        val appProxies = settings.appProxies
+        val proxyOf = { pkg: String -> settings.proxyByName(appProxies[pkg].orEmpty()) }
+        val groups = AppRoutes.groups(this, routes, proxyOf)
         if (groups.isEmpty()) return emptyList()
         appRouting = true
         ByeDpi.ownerLookup = { proto, local, remote -> AppRoutes.ownerUid(this, proto, local, remote) }
         val proxied = routes.filterValues { it == AppRoutes.Route.PROXY }.keys
         val direct = routes.filterValues { it == AppRoutes.Route.DIRECT }.keys
-        if (proxied.isNotEmpty()) {
-            if (TorProxy.isValid(address)) {
-                TorProxy.requestStart(this)
-            } else {
-                AppLog.w("apps through the proxy skipped: bad proxy address '$address'")
-            }
+        if (proxied.isNotEmpty()) TorProxy.requestStart(this)
+        proxied.sorted().forEach { pkg ->
+            val p = proxyOf(pkg)
+            if (TorProxy.isValid(p.address)) AppLog.i("app $pkg through socks5://${p.address}" + if (p.name.isNotEmpty()) " (${p.name})" else "")
+            else AppLog.w("app $pkg through the proxy skipped: bad proxy address '${p.address}'")
         }
-        AppLog.i("apps: ${proxied.size} through socks5://$address ${proxied.sorted()}, ${direct.size} direct ${direct.sorted()}")
+        AppLog.i("apps: ${proxied.size} through a proxy, ${direct.size} direct ${direct.sorted()}")
         return groups
     }
 
@@ -620,10 +620,21 @@ class ZapretVpnService : VpnService() {
         }
         AppLog.i("proxy group: ${HostLists.count(this, settings.proxyList)} domains of list '${settings.proxyList}' through socks5://$address" +
             if (settings.proxyUdp) ", UDP too" else ", TCP only")
-        val telegram = if (settings.proxyTelegram) TorProxy.telegramGroups(this, address, settings.proxyUdp).also {
-            AppLog.i("proxy group: Telegram (its address ranges and list '${TorProxy.TELEGRAM_LIST}') through socks5://$address")
-        } else emptyList()
-        return TorProxy.group(list.absolutePath, address, settings.proxyUdp) + telegram
+        return TorProxy.group(list.absolutePath, address, settings.proxyUdp)
+    }
+
+    /** Telegram (its address ranges and sites) through its proxy; independent of the proxy list. */
+    private fun telegramGroup(settings: Settings): List<String> {
+        if (!settings.proxyTelegram) return emptyList()
+        val proxy = settings.proxyByName(settings.telegramProxy)
+        if (!TorProxy.isValid(proxy.address)) {
+            AppLog.w("Telegram group skipped: bad proxy address '${proxy.address}'")
+            return emptyList()
+        }
+        TorProxy.requestStart(this)
+        AppLog.i("proxy group: Telegram (its address ranges and list '${TorProxy.TELEGRAM_LIST}') through socks5://${proxy.address.trim()}" +
+            if (proxy.name.isNotEmpty()) " (${proxy.name})" else "")
+        return TorProxy.telegramGroups(this, proxy.address.trim(), proxy.udp)
     }
 
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */

@@ -13,6 +13,9 @@ import java.net.Socket
  * (Tor carries TCP only), so apps fall back from QUIC to TCP; with the user's own proxy that
  * relays UDP (sing-box, Xray, NekoBox… in SOCKS mode) the UDP goes through it too ([udp]).
  */
+/** A named SOCKS5 proxy besides the main one (Settings.proxyAddress): Tor, the user's sing-box… */
+data class ProxyEntry(val name: String, val address: String, val udp: Boolean)
+
 object TorProxy {
     const val DEFAULT_PROXY = "127.0.0.1:9050"
     const val LIST = "proxy"

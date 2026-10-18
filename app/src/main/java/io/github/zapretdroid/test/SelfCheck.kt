@@ -489,29 +489,6 @@ object SelfCheck {
                 val r = TestEngine.with(group, PORT, fakeDir, listDir) { SiteProbe.probe(PORT, "chatgpt.com", addr, TIMEOUT_MS * 3) }
                 (if (r.responded) CheckStatus.OK else CheckStatus.WARN) to r.summary()
             }
-            if (settings.proxyTelegram) {
-                // The Telegram group matches by address. The engine accepts a proxy group's
-                // connection at once and connects to the proxy only on the client's first data,
-                // so a connect alone proves nothing: an HTTP request to a Telegram server (port 80,
-                // its HTTP transport) must get an answer back through the proxy.
-                check(g, "Telegram through the proxy") {
-                    val group = TorProxy.telegramGroups(context, address, settings.proxyUdp).joinToString(" ")
-                    TestEngine.with(group, PORT, fakeDir, listDir) {
-                        val start = System.nanoTime()
-                        runCatching {
-                            Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", PORT))).use { s ->
-                                s.soTimeout = TIMEOUT_MS * 4
-                                s.connect(InetSocketAddress(InetAddress.getByName(TorProxy.TELEGRAM_CHECK_IP), 80), TIMEOUT_MS * 3)
-                                s.getOutputStream().write("GET / HTTP/1.1\r\nHost: ${TorProxy.TELEGRAM_CHECK_IP}\r\nConnection: close\r\n\r\n".toByteArray())
-                                s.getInputStream().bufferedReader().readLine() ?: throw java.io.IOException("closed without an answer")
-                            }
-                        }.fold(
-                            onSuccess = { CheckStatus.OK to "${TorProxy.TELEGRAM_CHECK_IP} answered through the proxy in ${(System.nanoTime() - start) / 1_000_000} ms: ${it.take(60)}" },
-                            onFailure = { CheckStatus.WARN to "${TorProxy.TELEGRAM_CHECK_IP} did not answer through the proxy: ${it.message ?: it.javaClass.simpleName}" },
-                        )
-                    }
-                }
-            }
             if (settings.proxyUdp) {
                 // The proxy's own UDP ASSOCIATE: a DNS query to 8.8.8.8 through its relay.
                 check(g, "UDP through the proxy $address") {
@@ -527,6 +504,37 @@ object SelfCheck {
                             else CheckStatus.WARN to "no answer through the relay: the proxy may not carry UDP, turn \"UDP too\" off"
                         },
                         onFailure = { CheckStatus.WARN to "UDP ASSOCIATE failed (${it.message}): Tor and many proxies carry TCP only, turn \"UDP too\" off" },
+                    )
+                }
+            }
+        }
+        // Extra proxies (apps and Telegram can use them): does each accept connections?
+        settings.extraProxies.forEach { p ->
+            check(g, "proxy ${p.name} ${p.address}") {
+                if (TorProxy.isValid(p.address) && TorProxy.reachable(p.address.trim(), 1500)) CheckStatus.OK to "answers" + if (p.udp) ", UDP on" else ""
+                else CheckStatus.WARN to "does not answer"
+            }
+        }
+        if (settings.proxyTelegram) {
+            val tgProxy = settings.proxyByName(settings.telegramProxy)
+            // The Telegram group matches by address. The engine accepts a proxy group's
+            // connection at once and connects to the proxy only on the client's first data,
+            // so a connect alone proves nothing: an HTTP request to a Telegram server (port 80,
+            // its HTTP transport) must get an answer back through the proxy.
+            check(g, "Telegram through the proxy") {
+                val group = TorProxy.telegramGroups(context, tgProxy.address.trim(), tgProxy.udp).joinToString(" ")
+                TestEngine.with(group, PORT, fakeDir, listDir) {
+                    val start = System.nanoTime()
+                    runCatching {
+                        Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", PORT))).use { s ->
+                            s.soTimeout = TIMEOUT_MS * 4
+                            s.connect(InetSocketAddress(InetAddress.getByName(TorProxy.TELEGRAM_CHECK_IP), 80), TIMEOUT_MS * 3)
+                            s.getOutputStream().write("GET / HTTP/1.1\r\nHost: ${TorProxy.TELEGRAM_CHECK_IP}\r\nConnection: close\r\n\r\n".toByteArray())
+                            s.getInputStream().bufferedReader().readLine() ?: throw java.io.IOException("closed without an answer")
+                        }
+                    }.fold(
+                        onSuccess = { CheckStatus.OK to "${TorProxy.TELEGRAM_CHECK_IP} answered through the proxy in ${(System.nanoTime() - start) / 1_000_000} ms: ${it.take(60)}" },
+                        onFailure = { CheckStatus.WARN to "${TorProxy.TELEGRAM_CHECK_IP} did not answer through the proxy: ${it.message ?: it.javaClass.simpleName}" },
                     )
                 }
             }

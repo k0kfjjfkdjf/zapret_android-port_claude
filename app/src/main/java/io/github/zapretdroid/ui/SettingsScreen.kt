@@ -78,6 +78,7 @@ import io.github.zapretdroid.core.SavedStrategy
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.AppRoutes
 import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.core.ProxyEntry
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.Updater
@@ -126,6 +127,9 @@ fun SettingsScreen(
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
     var saveDialog by remember { mutableStateOf(false) }
+    var extraProxies by remember { mutableStateOf(settings.extraProxies) }
+    var telegramProxy by remember { mutableStateOf(settings.telegramProxy) }
+    var addProxy by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // The settings index (null) or one of its sections; system back returns to the index.
@@ -760,6 +764,57 @@ fun SettingsScreen(
                             )
                         }
                     }
+                    item { SectionHeader(R.string.proxies_title) }
+                    item {
+                        Text(
+                            stringResource(R.string.proxies_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                    }
+                    items(extraProxies, key = { "proxy-" + it.name }) { p ->
+                        ListItem(
+                            headlineContent = { Text(p.name) },
+                            supportingContent = { Text(p.address + if (p.udp) ", UDP" else ", TCP") },
+                            trailingContent = {
+                                IconButton(onClick = {
+                                    extraProxies = extraProxies - p
+                                    settings.extraProxies = extraProxies
+                                    if (telegramProxy == p.name) {
+                                        telegramProxy = ""
+                                        settings.telegramProxy = ""
+                                    }
+                                }) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.host_lists_delete)) }
+                            },
+                        )
+                    }
+                    item {
+                        FilledTonalButton(onClick = { addProxy = true }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(stringResource(R.string.proxies_add))
+                        }
+                    }
+                    if (extraProxies.isNotEmpty()) {
+                        item { SectionHeader(R.string.proxies_telegram) }
+                        item {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp)
+                                    .horizontalScroll(rememberScrollState()),
+                            ) {
+                                (listOf("") + extraProxies.map { it.name }).forEach { name ->
+                                    FilterChip(
+                                        selected = telegramProxy == name,
+                                        onClick = {
+                                            telegramProxy = name
+                                            settings.telegramProxy = name
+                                        },
+                                        label = { Text(name.ifEmpty { stringResource(R.string.proxies_main) }) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 Section.CHECKS -> {
                     item {
@@ -883,6 +938,50 @@ fun SettingsScreen(
                 hostList = name
                 settings.hostList = name
             },
+        )
+    }
+
+    if (addProxy) {
+        var name by remember { mutableStateOf("") }
+        var address by remember { mutableStateOf("") }
+        var udp by remember { mutableStateOf(false) }
+        val ok = name.isNotBlank() && TorProxy.isValid(address) && extraProxies.none { it.name == name.trim() }
+        AlertDialog(
+            onDismissRequest = { addProxy = false },
+            title = { Text(stringResource(R.string.proxies_add)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(stringResource(R.string.proxies_name)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text(stringResource(R.string.proxy_address)) },
+                        supportingText = { Text(stringResource(R.string.proxy_address_hint)) },
+                        isError = address.isNotBlank() && !TorProxy.isValid(address),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.toggleable(value = udp, role = Role.Switch) { udp = it }) {
+                        Switch(checked = udp, onCheckedChange = null)
+                        Text(stringResource(R.string.proxy_udp), modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(enabled = ok, onClick = {
+                    extraProxies = extraProxies + ProxyEntry(name.trim(), address.trim(), udp)
+                    settings.extraProxies = extraProxies
+                    addProxy = false
+                }) { Text(stringResource(R.string.proxies_add)) }
+            },
+            dismissButton = { TextButton(onClick = { addProxy = false }) { Text(stringResource(android.R.string.cancel)) } },
         )
     }
 
@@ -1049,6 +1148,7 @@ private val SEARCH = listOf(
     SearchEntry(R.string.proxy_toggle, R.string.proxy_toggle_desc, Section.PROXY),
     SearchEntry(R.string.proxy_address, R.string.proxy_address_hint, Section.PROXY),
     SearchEntry(R.string.proxy_udp, R.string.proxy_udp_desc, Section.PROXY),
+    SearchEntry(R.string.proxies_title, R.string.proxies_desc, Section.PROXY),
     SearchEntry(R.string.proxy_telegram, R.string.proxy_telegram_desc, Section.PROXY),
     SearchEntry(R.string.invizible_title, R.string.invizible_desc, Section.PROXY),
     SearchEntry(R.string.app_routes_title, R.string.app_routes_desc, null, IndexAction.APP_ROUTES),

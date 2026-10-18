@@ -16,18 +16,24 @@ import java.net.InetSocketAddress
 object AppRoutes {
     enum class Route(val id: String) { PROXY("proxy"), DIRECT("direct"), STRATEGY("strategy") }
 
-    /** Engine groups in front of all others: direct apps first, then apps through the proxy. */
-    fun groups(context: Context, routes: Map<String, Route>, proxyAddress: String, udp: Boolean): List<String> {
-        fun uids(route: Route) = routes.filterValues { it == route }.keys.mapNotNull { pkg ->
-            runCatching { context.packageManager.getApplicationInfo(pkg, 0).uid }.getOrNull()
-        }.distinct()
-        val direct = uids(Route.DIRECT)
-        val proxied = if (TorProxy.isValid(proxyAddress)) uids(Route.PROXY) else emptyList()
+    /**
+     * Engine groups in front of all others: direct apps first, then apps through a proxy, one group
+     * per proxy ([proxyOf]: the proxy of an app, the main one unless it picked another).
+     */
+    fun groups(context: Context, routes: Map<String, Route>, proxyOf: (String) -> ProxyEntry): List<String> {
+        fun uid(pkg: String) = runCatching { context.packageManager.getApplicationInfo(pkg, 0).uid }.getOrNull()
+        val direct = routes.filterValues { it == Route.DIRECT }.keys.mapNotNull(::uid).distinct()
+        val byProxy = routes.filterValues { it == Route.PROXY }.keys
+            .map { it to proxyOf(it) }
+            .filter { TorProxy.isValid(it.second.address) }
+            .groupBy({ it.second }, { it.first })
         return buildList {
             if (direct.isNotEmpty()) addAll(listOf("--apps", direct.joinToString(","), "--auto=none"))
-            if (proxied.isNotEmpty()) {
-                addAll(listOf("--apps", proxied.joinToString(","), "-C", "socks5://$proxyAddress"))
-                if (udp) add("--udp-proxy")
+            byProxy.forEach { (proxy, pkgs) ->
+                val uids = pkgs.mapNotNull(::uid).distinct()
+                if (uids.isEmpty()) return@forEach
+                addAll(listOf("--apps", uids.joinToString(","), "-C", "socks5://${proxy.address.trim()}"))
+                if (proxy.udp) add("--udp-proxy")
                 add("--auto=none")
             }
         }

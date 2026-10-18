@@ -162,6 +162,38 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putBoolean(KEY_PROXY_UDP, value) }
         }
 
+    /** More proxies besides the main one; apps and Telegram can pick one by name. */
+    var extraProxies: List<ProxyEntry>
+        get() = prefs.getString(KEY_EXTRA_PROXIES, "")!!.lines().mapNotNull { line ->
+            line.split('\t').takeIf { it.size >= 2 && it[0].isNotBlank() }?.let { ProxyEntry(it[0], it[1], it.getOrNull(2) == "1") }
+        }
+        set(value) {
+            logChange("extraProxies", extraProxies.map { "${it.name}=${it.address}" }, value.map { "${it.name}=${it.address}" })
+            prefs.edit(commit = true) { putString(KEY_EXTRA_PROXIES, value.joinToString("\n") { "${it.name}\t${it.address}\t${if (it.udp) 1 else 0}" }) }
+        }
+
+    /** Which proxy an app with the PROXY route uses: an extra proxy's name; absent = the main one. */
+    var appProxies: Map<String, String>
+        get() = prefs.getStringSet(KEY_APP_PROXIES, emptySet())!!.mapNotNull { e ->
+            e.split('\t', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        }.toMap()
+        set(value) {
+            logChange("appProxies", appProxies, value)
+            prefs.edit(commit = true) { putStringSet(KEY_APP_PROXIES, value.map { "${it.key}\t${it.value}" }.toSet()) }
+        }
+
+    /** The proxy Telegram goes through: an extra proxy's name, empty = the main one. */
+    var telegramProxy: String
+        get() = prefs.getString(KEY_TELEGRAM_PROXY, "")!!
+        set(value) {
+            logChange("telegramProxy", telegramProxy, value)
+            prefs.edit(commit = true) { putString(KEY_TELEGRAM_PROXY, value) }
+        }
+
+    /** The main proxy and the extra ones by name ("" is the main one), with their UDP setting. */
+    fun proxyByName(name: String): ProxyEntry =
+        extraProxies.firstOrNull { it.name == name && name.isNotEmpty() } ?: ProxyEntry("", proxyAddress.trim(), proxyUdp)
+
     /** Apps routed wholly through the proxy or wholly direct (see AppRoutes). */
     var appRoutes: Map<String, AppRoutes.Route>
         get() = prefs.getStringSet(KEY_APP_ROUTES, emptySet())!!.mapNotNull { e ->
@@ -237,6 +269,9 @@ class Settings(context: Context) {
         private const val KEY_PROXY_UDP = "proxy_udp"
         private const val KEY_PROXY_TELEGRAM = "proxy_telegram"
         private const val KEY_APP_ROUTES = "app_routes"
+        private const val KEY_EXTRA_PROXIES = "extra_proxies"
+        private const val KEY_APP_PROXIES = "app_proxies"
+        private const val KEY_TELEGRAM_PROXY = "telegram_proxy"
         private const val KEY_APP_STRATEGIES = "app_strategies"
         private const val KEY_DNS_BLOCK = "dns_block"
         private const val KEY_DNS_SERVERS = "dns_servers"

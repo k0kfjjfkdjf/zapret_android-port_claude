@@ -14,6 +14,7 @@ object Diagnostics {
         add("strategy: ${settings.strategyId}")
         add("args: ${settings.strategyArgs}")
         if (settings.proxyEnabled) add("proxy: list ${settings.proxyList} through socks5://${settings.proxyAddress}, " + (if (settings.proxyUdp) "UDP too" else "TCP only") + if (settings.proxyTelegram) ", Telegram too" else "")
+        settings.extraProxies.takeIf { it.isNotEmpty() }?.let { l -> add("other proxies: " + l.joinToString { "${it.name}=${it.address}" + if (it.udp) " (UDP)" else "" } + (settings.telegramProxy.takeIf { it.isNotEmpty() }?.let { "; Telegram via $it" } ?: "")) }
         settings.appRoutes.takeIf { it.isNotEmpty() }?.let { r -> add("apps routed: " + r.entries.sortedBy { it.key }.joinToString { "${it.key}=${it.value.id}" + if (it.value == AppRoutes.Route.STRATEGY) "(${settings.appStrategies[it.key].orEmpty()})" else "" }) }
         add("dns: ${settings.dns}, mode: ${settings.dnsMode}" + (when (settings.dnsMode) { DnsMode.PLAIN -> ""; DnsMode.DNSCRYPT -> " via " + settings.dnsServers.size + " servers: " + settings.dnsServers.take(5).joinToString { it.first } + if (settings.dnsServers.size > 5) ", …" else ""; else -> " via ${settings.dnsProvider}" }) + ", ipv6: ${settings.ipv6}, log level: ${settings.logLevel}")
         add("hosts: ${settings.hostScope}" + (if (settings.hostScope != HostScope.ALL) " list '${settings.hostList}'" else "") + ", autohost: ${settings.autohost}")

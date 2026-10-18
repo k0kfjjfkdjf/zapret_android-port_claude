@@ -64,6 +64,8 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
     var mode by remember { mutableStateOf(settings.appFilterMode) }
     var selected by remember { mutableStateOf(settings.selectedApps) }
     var strategies by remember { mutableStateOf(settings.appStrategies) }
+    var appProxies by remember { mutableStateOf(settings.appProxies) }
+    val extraProxies = remember { settings.extraProxies }
     // The app whose own strategy is being chosen.
     var picking by remember { mutableStateOf<String?>(null) }
     // Apps with a route when the screen opened are listed first; changing one does not reorder.
@@ -209,6 +211,23 @@ fun AppRoutesScreen(settings: Settings, onBack: () -> Unit) {
                                             onClick = { picking = app.packageName },
                                             label = { Text(stringResource(R.string.app_route_strategy)) },
                                         )
+                                    }
+                                    if (route == AppRoutes.Route.PROXY && extraProxies.isNotEmpty()) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        ) {
+                                            (listOf("") + extraProxies.map { it.name }).forEach { name ->
+                                                FilterChip(
+                                                    selected = appProxies[app.packageName].orEmpty() == name,
+                                                    onClick = {
+                                                        appProxies = if (name.isEmpty()) appProxies - app.packageName else appProxies + (app.packageName to name)
+                                                        settings.appProxies = appProxies
+                                                    },
+                                                    label = { Text(name.ifEmpty { stringResource(R.string.proxies_main) }) },
+                                                )
+                                            }
+                                        }
                                     }
                                     if (route == AppRoutes.Route.STRATEGY) {
                                         Text(
