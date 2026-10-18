@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -73,6 +74,7 @@ import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.SavedStrategies
+import io.github.zapretdroid.core.SavedStrategy
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.AppRoutes
 import io.github.zapretdroid.core.Settings
@@ -123,6 +125,7 @@ fun SettingsScreen(
     var hostList by remember { mutableStateOf(settings.hostList) }
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
+    var saveDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // The settings index (null) or one of its sections; system back returns to the index.
@@ -153,7 +156,8 @@ fun SettingsScreen(
         strategyId = Strategies.CUSTOM
         settings.strategyId = Strategies.CUSTOM
     }
-    val selectedCount = remember { settings.selectedApps.size }
+    // Own strategies (ByeByeDPI's history): pinned first, then the most recent.
+    var saved by remember { mutableStateOf(SavedStrategies.all(context).sortedWith(compareByDescending<SavedStrategy> { it.pinned }.thenByDescending { it.time })) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
             runCatching {
@@ -268,14 +272,6 @@ fun SettingsScreen(
                             modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
                         )
                     }
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.deep_title)) },
-                            supportingContent = { Text(stringResource(R.string.deep_desc)) },
-                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                            modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
-                        )
-                    }
                     items(Strategies.presets, key = { it.id }) { preset ->
                         RadioRow(
                             title = stringResource(preset.title),
@@ -315,9 +311,48 @@ fun SettingsScreen(
                     }
 
                     item {
-                        FilledTonalButton(onClick = { fakePicker = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                            Text(stringResource(R.string.fake_insert))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .horizontalScroll(rememberScrollState()),
+                        ) {
+                            Button(onClick = { saveDialog = true }) { Text(stringResource(R.string.strategy_save)) }
+                            FilledTonalButton(onClick = { fakePicker = true }) { Text(stringResource(R.string.fake_insert)) }
                         }
+                    }
+                    item { SectionHeader(R.string.strategy_mine) }
+                    if (saved.isEmpty()) {
+                        item {
+                            Text(
+                                stringResource(R.string.strategy_mine_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                    items(saved, key = { "saved-" + it.args }) { s ->
+                        val current = (Strategies.byId(strategyId)?.args ?: customArgs).trim() == s.args
+                        ListItem(
+                            headlineContent = { Text(s.name.ifBlank { stringResource(R.string.strategy_unnamed) }) },
+                            supportingContent = {
+                                Text(s.args, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), maxLines = 3)
+                            },
+                            leadingContent = { RadioButton(selected = current, onClick = null) },
+                            trailingContent = {
+                                Row {
+                                    IconButton(onClick = {
+                                        SavedStrategies.update(context, s.args) { it.copy(pinned = !it.pinned) }
+                                        saved = SavedStrategies.all(context)
+                                    }) { Text(if (s.pinned) "★" else "☆", style = MaterialTheme.typography.titleMedium) }
+                                    IconButton(onClick = {
+                                        SavedStrategies.update(context, s.args) { null }
+                                        saved = SavedStrategies.all(context)
+                                    }) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.host_lists_delete)) }
+                                }
+                            },
+                            modifier = Modifier.selectable(selected = current, onClick = { setCustomArgs(s.args) }),
+                        )
                     }
                 }
                 Section.LISTS -> {
@@ -683,7 +718,7 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        item { TorModuleCard(settings) }
+                        item { InviZibleCard() }
                         item {
                             ListItem(
                                 headlineContent = { Text(stringResource(R.string.proxy_telegram)) },
@@ -851,6 +886,38 @@ fun SettingsScreen(
         )
     }
 
+    if (saveDialog) {
+        var name by remember { mutableStateOf("") }
+        val args = (Strategies.byId(strategyId)?.args ?: customArgs).trim()
+        AlertDialog(
+            onDismissRequest = { saveDialog = false },
+            title = { Text(stringResource(R.string.strategy_save)) },
+            text = {
+                Column {
+                    Text(args, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), maxLines = 4)
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(stringResource(R.string.strategy_save_name)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(enabled = args.isNotBlank(), onClick = {
+                    SavedStrategies.remember(context, args, name.trim().ifBlank { null })
+                    // Saved by hand: pinned, so that it shows on the home screen too.
+                    SavedStrategies.update(context, args) { it.copy(pinned = true, name = name.trim().ifBlank { it.name }) }
+                    saved = SavedStrategies.all(context).sortedWith(compareByDescending<SavedStrategy> { it.pinned }.thenByDescending { it.time })
+                    saveDialog = false
+                    Toast.makeText(context, R.string.strategy_saved, Toast.LENGTH_SHORT).show()
+                }) { Text(stringResource(R.string.strategy_save)) }
+            },
+            dismissButton = { TextButton(onClick = { saveDialog = false }) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
+
     if (fakePicker) {
         val names = remember { FakePayloads.names(context) }
         FakePickerDialog(
@@ -983,8 +1050,7 @@ private val SEARCH = listOf(
     SearchEntry(R.string.proxy_address, R.string.proxy_address_hint, Section.PROXY),
     SearchEntry(R.string.proxy_udp, R.string.proxy_udp_desc, Section.PROXY),
     SearchEntry(R.string.proxy_telegram, R.string.proxy_telegram_desc, Section.PROXY),
-    SearchEntry(R.string.tor_module_title, R.string.tor_module_desc, Section.PROXY),
-    SearchEntry(R.string.tor_bridges_title, R.string.tor_bridges_desc, Section.PROXY),
+    SearchEntry(R.string.invizible_title, R.string.invizible_desc, Section.PROXY),
     SearchEntry(R.string.app_routes_title, R.string.app_routes_desc, null, IndexAction.APP_ROUTES),
     SearchEntry(R.string.apps_choose, null, null, IndexAction.APP_ROUTES),
     SearchEntry(R.string.log_level_verbose, R.string.log_level_verbose_desc, Section.CHECKS),

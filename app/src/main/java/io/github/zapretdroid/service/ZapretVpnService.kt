@@ -30,7 +30,6 @@ import io.github.zapretdroid.core.DnsFilter
 import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.DnsServers
 import io.github.zapretdroid.core.SecureDns
-import io.github.zapretdroid.core.TorModule
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.AutoHost
@@ -346,11 +345,6 @@ class ZapretVpnService : VpnService() {
             )
         }
         setState(VpnState.STOPPING)
-        // Tor of the module runs for the proxy group only: it stops with the VPN (Orbot is left alone).
-        if (torModuleStarted) {
-            TorModule.stop(this)
-            torModuleStarted = false
-        }
         appRouting = false
         handler.removeCallbacks(statsTick)
         thread(name = "vpn-stop") {
@@ -410,8 +404,6 @@ class ZapretVpnService : VpnService() {
     @Volatile
     private var secureDns: SecureDns.Server? = null
     @Volatile
-    private var torModuleStarted = false
-
     /** Routing by app is on in this session: hev passes source addresses, the engine asks for owners. */
     @Volatile
     private var appRouting = false
@@ -601,8 +593,7 @@ class ZapretVpnService : VpnService() {
         val direct = routes.filterValues { it == AppRoutes.Route.DIRECT }.keys
         if (proxied.isNotEmpty()) {
             if (TorProxy.isValid(address)) {
-                TorProxy.requestStart(this, settings)
-                if (TorProxy.usesModule(this, settings)) torModuleStarted = true
+                TorProxy.requestStart(this)
             } else {
                 AppLog.w("apps through the proxy skipped: bad proxy address '$address'")
             }
@@ -622,14 +613,10 @@ class ZapretVpnService : VpnService() {
         if (settings.proxyList == TorProxy.LIST) TorProxy.ensureList(this)
         val list = HostLists.file(this, settings.proxyList).takeIf { it.isFile }
             ?: throw IllegalStateException(getString(R.string.error_unknown_list, settings.proxyList))
-        TorProxy.requestStart(this, settings)
-        if (TorProxy.usesModule(this, settings)) torModuleStarted = true
+        TorProxy.requestStart(this)
         if (!TorProxy.reachable(address, 1500)) {
             // Kept anyway: the listed sites must not silently go elsewhere; the log says why they fail.
-            AppLog.w(
-                if (TorProxy.usesModule(this, settings)) "proxy $address does not answer yet: the Tor module is starting (it takes up to a minute, longer with bridges)"
-                else "proxy $address does not answer yet: start Tor in Orbot or InviZible Pro (proxy mode, their own VPN off)",
-            )
+            AppLog.w("proxy $address does not answer yet: start Tor in Orbot or InviZible Pro (proxy mode, their own VPN off)")
         }
         AppLog.i("proxy group: ${HostLists.count(this, settings.proxyList)} domains of list '${settings.proxyList}' through socks5://$address" +
             if (settings.proxyUdp) ", UDP too" else ", TCP only")

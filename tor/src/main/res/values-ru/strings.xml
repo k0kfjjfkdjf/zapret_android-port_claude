@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="channel">Tor</string>
-    <string name="notification_starting">Tor запускается…</string>
-    <string name="notification_bootstrap">Tor: подключение, %1$d%%</string>
-    <string name="notification_on">Tor включён: SOCKS5 %1$s</string>
-    <string name="info">Это модуль Tor для ByeZapret, своих настроек у него нет. ByeZapret запускает и останавливает его (Настройки → Сайты через прокси) и передаёт мосты.\n\nTor %1$s, Lyrebird %2$s, Snowflake %3$s.\n\nСостояние: %4$s</string>
-    <string name="open_app">Открыть ByeZapret</string>
-</resources>

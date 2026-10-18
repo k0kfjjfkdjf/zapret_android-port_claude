@@ -37,6 +37,8 @@ object Updater {
         val page: String,
         /** File name -> download URL. */
         val assets: Map<String, String>,
+        /** File name -> SHA-256 (hex) that GitHub reports for the asset, when it does. */
+        val digests: Map<String, String> = emptyMap(),
     )
 
     /** "0.9.4-debug" -> [0, 9, 4]; non-numeric parts end the version. */
@@ -64,6 +66,10 @@ object Updater {
     /** The project's latest releases, newest first as GitHub lists them. Network. */
     fun releases(): List<Release> = parseReleases(get(API).toString(Charsets.UTF_8))
 
+    /** The latest releases of another project ([repo] = "owner/name"). Network. */
+    fun releasesOf(repo: String): List<Release> =
+        parseReleases(get("https://api.github.com/repos/$repo/releases?per_page=10").toString(Charsets.UTF_8))
+
     fun parseReleases(json: String): List<Release> {
         val arr = JSONArray(json)
         return (0 until arr.length()).map { arr.getJSONObject(it) }.filter { !it.optBoolean("draft") }.map { o ->
@@ -75,6 +81,9 @@ object Updater {
                 page = o.optString("html_url"),
                 assets = (0 until assets.length()).map { assets.getJSONObject(it) }
                     .associate { it.getString("name") to it.getString("browser_download_url") },
+                digests = (0 until assets.length()).map { assets.getJSONObject(it) }
+                    .mapNotNull { a -> a.optString("digest").takeIf { it.startsWith("sha256:") }?.let { a.getString("name") to it.removePrefix("sha256:").lowercase() } }
+                    .toMap(),
             )
         }
     }
@@ -106,11 +115,18 @@ object Updater {
 
     /** Downloads one asset of [release] into the cache and checks it against the release's SHA256SUMS.txt. */
     fun downloadAsset(context: Context, release: Release, name: String, url: String, progress: (Int) -> Unit = {}): File {
+        // Our releases carry SHA256SUMS.txt; others (InviZible Pro) are checked against the digest
+        // GitHub reports for the asset.
         val sums = release.assets["SHA256SUMS.txt"]?.let { get(it).toString(Charsets.UTF_8) }
-            ?: throw IOException("release ${release.tag} has no SHA256SUMS.txt")
-        val expected = sums.lineSequence().map { it.trim().split(Regex("\\s+")) }
-            .firstOrNull { it.size >= 2 && it.last().removePrefix("*") == name }?.first()?.lowercase()
-            ?: throw IOException("$name is not in SHA256SUMS.txt")
+        val expected = if (sums != null) {
+            sums.lineSequence().map { it.trim().split(Regex("\\s+")) }
+                .firstOrNull { it.size >= 2 && it.last().removePrefix("*") == name }?.first()?.lowercase()
+                ?: throw IOException("$name is not in SHA256SUMS.txt")
+        } else {
+            // Without one the HTTPS download from GitHub is all there is (Android's installer still
+            // refuses an update signed with another key).
+            release.digests[name].also { if (it == null) AppLog.w("update: no checksum for $name in release ${release.tag}") }
+        }
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, name)
@@ -133,9 +149,9 @@ object Updater {
             }
         }
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
-        if (actual != expected) {
+        if (expected != null && actual != expected) {
             file.delete()
-            throw IOException("checksum of $name does not match SHA256SUMS.txt")
+            throw IOException("checksum of $name does not match")
         }
         AppLog.i("update: ${release.version} downloaded and verified ($name, ${file.length()} B)")
         return file

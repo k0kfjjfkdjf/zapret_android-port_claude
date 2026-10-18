@@ -18,6 +18,7 @@ import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.DnsServers
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
+import io.github.zapretdroid.core.InviZible
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.Settings
@@ -458,6 +459,18 @@ object SelfCheck {
                     "(answers cannot be spoofed, names for host lists always known)"
                 else -> CheckStatus.WARN to "neither DoH nor DoT gets through on this network"
             }
+        }
+        // The "Download InviZible Pro" button: is there a file for this phone in its releases?
+        check(g, "InviZible Pro download") {
+            val installed = InviZible.installedVersion(context)?.let { "installed $it" } ?: "not installed"
+            runCatching { InviZible.latest() }.fold(
+                onSuccess = { found ->
+                    if (found == null) CheckStatus.WARN to "no APK for ${android.os.Build.SUPPORTED_ABIS.firstOrNull()} in its latest releases ($installed)"
+                    else CheckStatus.OK to "${found.first.version}: ${found.second.first}" +
+                        (if (found.first.digests.containsKey(found.second.first)) ", checksum given" else ", no checksum (HTTPS only)") + " ($installed)"
+                },
+                onFailure = { CheckStatus.WARN to "GitHub releases not reached: ${it.message ?: it.javaClass.simpleName} ($installed)" },
+            )
         }
         if (settings.proxyEnabled) {
             // Sites through the SOCKS5 proxy (Tor): is it up, and does a listed site open with the

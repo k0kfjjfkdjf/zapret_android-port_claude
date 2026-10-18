@@ -191,30 +191,6 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putBoolean(KEY_PROXY_TELEGRAM, value) }
         }
 
-    /** Tor from the module (if installed and trusted) rather than Orbot / InviZible. */
-    var useTorModule: Boolean
-        get() = prefs.getBoolean(KEY_USE_TOR_MODULE, true)
-        set(value) {
-            logChange("useTorModule", useTorModule, value)
-            prefs.edit(commit = true) { putBoolean(KEY_USE_TOR_MODULE, value) }
-        }
-
-    /** The module's bridges: a TorModule.Bridges id. */
-    var torBridges: String
-        get() = prefs.getString(KEY_TOR_BRIDGES, "none")!!
-        set(value) {
-            logChange("torBridges", torBridges, value)
-            prefs.edit(commit = true) { putString(KEY_TOR_BRIDGES, value) }
-        }
-
-    /** The user's own bridge lines ("obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0", one per line). */
-    var torBridgesCustom: String
-        get() = prefs.getString(KEY_TOR_BRIDGES_CUSTOM, "")!!
-        // Typed character by character: not logged (bridges are best kept out of shared logs).
-        set(value) {
-            prefs.edit(commit = true) { putString(KEY_TOR_BRIDGES_CUSTOM, value) }
-        }
-
     var proxyList: String
         get() = prefs.getString(KEY_PROXY_LIST, TorProxy.LIST)!!
         set(value) {
@@ -262,9 +238,6 @@ class Settings(context: Context) {
         private const val KEY_PROXY_TELEGRAM = "proxy_telegram"
         private const val KEY_APP_ROUTES = "app_routes"
         private const val KEY_APP_STRATEGIES = "app_strategies"
-        private const val KEY_USE_TOR_MODULE = "use_tor_module"
-        private const val KEY_TOR_BRIDGES = "tor_bridges"
-        private const val KEY_TOR_BRIDGES_CUSTOM = "tor_bridges_custom"
         private const val KEY_DNS_BLOCK = "dns_block"
         private const val KEY_DNS_SERVERS = "dns_servers"
     }

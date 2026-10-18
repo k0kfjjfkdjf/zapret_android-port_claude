@@ -51,19 +51,13 @@ jobs:
             for lib in libbyedpi.so libhev-socks5-tunnel.so; do
               unzip -l "$apk" | grep -q "lib/$abi/$lib" || { echo "missing lib/$abi/$lib"; exit 1; }
             done
-            tapk=tor/build/outputs/apk/debug/tor-$abi-debug.apk
-            for lib in libtor.so libgojni.so; do
-              unzip -l "$tapk" | grep -q "lib/$abi/$lib" || { echo "missing lib/$abi/$lib in the Tor module"; exit 1; }
-            done
           done
-          ls -la tor/build/outputs/apk/debug/
 
       - uses: actions/upload-artifact@v5
         with:
           name: zapretdroid-debug
           path: |
             app/build/outputs/apk/debug/*.apk
-            tor/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Publish release
@@ -78,13 +72,6 @@ jobs:
           for apk in app/build/outputs/apk/debug/*.apk; do
             abi=$(basename "$apk" | sed -E 's/^app-(.*)-debug\.apk$/\1/')
             cp "$apk" "release/zapretdroid-$version-$abi.apk"
-          done
-          # The Tor module (separate APK per ABI): byezapret-tor-<module version>-<abi>.apk.
-          torver=$(jq -r '.elements[0].versionName' tor/build/outputs/apk/debug/output-metadata.json)
-          torver="${torver%-debug}"
-          for apk in tor/build/outputs/apk/debug/*.apk; do
-            abi=$(basename "$apk" | sed -E 's/^tor-(.*)-debug\.apk$/\1/')
-            cp "$apk" "release/byezapret-tor-$torver-$abi.apk"
           done
           (cd release && sha256sum *.apk > SHA256SUMS.txt)
           sh .github/notes.sh "$version" > release-notes.md
