@@ -23,9 +23,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0-tor$torVersion"
-        ndk {
-            abiFilters += abis
-        }
         // The permission the app holds to control the module; defined by both, signature-level.
         manifestPlaceholders["controlPermission"] = "io.github.zapretdroid.permission.CONTROL_TOR"
     }
