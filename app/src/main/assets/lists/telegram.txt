@@ -1,0 +1,8 @@
+# Telegram's sites (the app itself connects by IP: see telegram-ip.txt). Subdomains included.
+telegram.org
+t.me
+telegram.me
+telesco.pe
+tdesktop.com
+telegra.ph
+cdn-telegram.org

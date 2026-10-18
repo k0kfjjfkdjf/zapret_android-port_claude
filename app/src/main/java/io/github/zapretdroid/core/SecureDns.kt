@@ -288,6 +288,20 @@ object SecureDns {
 
         val port: Int get() = socket.localPort
 
+        // With a chosen list (DNSCrypt mode) the servers are measured once at start, as
+        // dnscrypt-proxy does: otherwise the first queries walk the list in its own order,
+        // broken servers first if they come first (4.7 s for the first answer on a phone).
+        init {
+            if (mode == DnsMode.DNSCRYPT && upstreams.size > 1) thread(name = "secure-dns-warmup", isDaemon = true) {
+                val pool = Executors.newFixedThreadPool(6)
+                upstreams.indices.forEach { i -> pool.execute { if (running) ask(i, probeQuery()) } }
+                pool.shutdown()
+                runCatching { pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS) }
+                if (running) AppLog.i("secure DNS: ${order().count { stats[it].failedUntil == 0L }} of ${upstreams.size} servers answer, fastest: " +
+                    order().take(3).joinToString { "${upstreams[it].provider.title} ${stats[it].ms.toInt()} ms" })
+            }
+        }
+
         init {
             thread(name = "secure-dns", isDaemon = true) {
                 val buf = ByteArray(4096)
@@ -389,6 +403,13 @@ object SecureDns {
             upstreams.forEach { it.close() }
             AppLog.i("secure DNS: ${queries.get()} queries, ${hits.get()} from cache, ${blocked.get()} blocked, ${failures.get()} failed exchanges")
         }
+    }
+
+    /** "A www.google.com?" with a random ID: the start-up measurement query. */
+    private fun probeQuery(): ByteArray {
+        val id = (Math.random() * 65536).toInt()
+        val name = "www.google.com".split('.').flatMap { listOf(it.length.toByte()) + it.toByteArray().toList() }
+        return (listOf(id shr 8, id and 0xff, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0).map { it.toByte() } + name + listOf<Byte>(0, 0, 1, 0, 1)).toByteArray()
     }
 
     /** An error status from a DoH server: retrying on a new connection would not change it. */

@@ -301,8 +301,13 @@ static bool check_host(
 
 
 static bool check_ip(
-        struct mphdr *ipset, const union sockaddr_u *dst)
+        struct mphdr *ipset, const union sockaddr_u *addr)
 {
+    // ZapretDroid: with a v6 listener (phones) IPv4 targets arrive as ::ffff:a.b.c.d and
+    // would never match the IPv4 entries of the list.
+    union sockaddr_u a = *addr, *dst = &a;
+    map_fix(dst, 0);
+    
     int len = sizeof(dst->in.sin_addr);
     const char *data = (const char *)&dst->in.sin_addr;
     

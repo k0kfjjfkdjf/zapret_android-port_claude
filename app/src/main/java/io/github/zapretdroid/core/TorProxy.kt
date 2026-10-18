@@ -82,4 +82,24 @@ object TorProxy {
     /** The engine group in front of the strategy: listed hosts through the proxy, UDP too if [udp]. */
     fun group(listPath: String, address: String, udp: Boolean = false): List<String> =
         listOf("--hosts", listPath, "-C", "socks5://$address") + (if (udp) listOf("--udp-proxy") else emptyList()) + "--auto=none"
+
+    const val TELEGRAM_LIST = "telegram"
+
+    /**
+     * Telegram through the proxy: its sites by name (list "telegram", editable) and the app by
+     * its address ranges (core.telegram.org/resources/cidr.txt), since the app connects to IPs
+     * and sends no name to match. Calls are UDP: they need a proxy that relays UDP ([udp]).
+     */
+    fun telegramGroups(context: Context, address: String, udp: Boolean): List<String> {
+        if (!HostLists.file(context, TELEGRAM_LIST).exists()) {
+            HostLists.save(context, TELEGRAM_LIST, context.assets.open("lists/$TELEGRAM_LIST.txt").bufferedReader().use { it.readText() })
+        }
+        val ips = java.io.File(context.filesDir, "telegram-ip.txt")
+        ips.writeBytes(context.assets.open("telegram-ip.txt").use { it.readBytes() })
+        val upstream = listOf("-C", "socks5://$address") + (if (udp) listOf("--udp-proxy") else emptyList()) + "--auto=none"
+        return listOf("--hosts", HostLists.file(context, TELEGRAM_LIST).absolutePath) + upstream + listOf("--ipset", ips.absolutePath) + upstream
+    }
+
+    /** A Telegram server (DC 2) for the self-check. */
+    const val TELEGRAM_CHECK_IP = "149.154.167.51"
 }

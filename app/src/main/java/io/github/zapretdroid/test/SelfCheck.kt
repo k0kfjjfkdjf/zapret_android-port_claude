@@ -476,6 +476,24 @@ object SelfCheck {
                 val r = TestEngine.with(group, PORT, fakeDir, listDir) { SiteProbe.probe(PORT, "chatgpt.com", addr, TIMEOUT_MS * 3) }
                 (if (r.responded) CheckStatus.OK else CheckStatus.WARN) to r.summary()
             }
+            if (settings.proxyTelegram) {
+                // The Telegram group matches by address: a TCP connection to a Telegram server
+                // through the engine must be passed on to the proxy and come up there.
+                check(g, "Telegram through the proxy") {
+                    val group = TorProxy.telegramGroups(context, address, settings.proxyUdp).joinToString(" ")
+                    TestEngine.with(group, PORT, fakeDir, listDir) {
+                        val start = System.nanoTime()
+                        runCatching {
+                            Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress(InetAddress.getLoopbackAddress(), PORT))).use {
+                                it.connect(InetSocketAddress(InetAddress.getByName(TorProxy.TELEGRAM_CHECK_IP), 443), TIMEOUT_MS * 3)
+                            }
+                        }.fold(
+                            onSuccess = { CheckStatus.OK to "${TorProxy.TELEGRAM_CHECK_IP}:443 connected through the proxy in ${(System.nanoTime() - start) / 1_000_000} ms" },
+                            onFailure = { CheckStatus.WARN to "${TorProxy.TELEGRAM_CHECK_IP}:443 not reached through the proxy: ${it.message ?: it.javaClass.simpleName}" },
+                        )
+                    }
+                }
+            }
             if (settings.proxyUdp) {
                 // The proxy's own UDP ASSOCIATE: a DNS query to 8.8.8.8 through its relay.
                 check(g, "UDP through the proxy $address") {

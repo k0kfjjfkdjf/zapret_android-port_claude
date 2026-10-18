@@ -586,7 +586,10 @@ class ZapretVpnService : VpnService() {
         }
         AppLog.i("proxy group: ${HostLists.count(this, settings.proxyList)} domains of list '${settings.proxyList}' through socks5://$address" +
             if (settings.proxyUdp) ", UDP too" else ", TCP only")
-        return TorProxy.group(list.absolutePath, address, settings.proxyUdp)
+        val telegram = if (settings.proxyTelegram) TorProxy.telegramGroups(this, address, settings.proxyUdp).also {
+            AppLog.i("proxy group: Telegram (its address ranges and list '${TorProxy.TELEGRAM_LIST}') through socks5://$address")
+        } else emptyList()
+        return TorProxy.group(list.absolutePath, address, settings.proxyUdp) + telegram
     }
 
     /** Appends the last line ByeDPI printed, which usually names the bad option or failed call. */

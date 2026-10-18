@@ -162,6 +162,14 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putBoolean(KEY_PROXY_UDP, value) }
         }
 
+    /** Telegram (its sites and its address ranges) through the proxy too. */
+    var proxyTelegram: Boolean
+        get() = prefs.getBoolean(KEY_PROXY_TELEGRAM, false)
+        set(value) {
+            logChange("proxyTelegram", proxyTelegram, value)
+            prefs.edit(commit = true) { putBoolean(KEY_PROXY_TELEGRAM, value) }
+        }
+
     /** Tor from the module (if installed and trusted) rather than Orbot / InviZible. */
     var useTorModule: Boolean
         get() = prefs.getBoolean(KEY_USE_TOR_MODULE, true)
@@ -230,6 +238,7 @@ class Settings(context: Context) {
         private const val KEY_PROXY_ADDRESS = "proxy_address"
         private const val KEY_PROXY_LIST = "proxy_list"
         private const val KEY_PROXY_UDP = "proxy_udp"
+        private const val KEY_PROXY_TELEGRAM = "proxy_telegram"
         private const val KEY_USE_TOR_MODULE = "use_tor_module"
         private const val KEY_TOR_BRIDGES = "tor_bridges"
         private const val KEY_TOR_BRIDGES_CUSTOM = "tor_bridges_custom"

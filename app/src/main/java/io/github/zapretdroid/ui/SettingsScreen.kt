@@ -103,6 +103,7 @@ fun SettingsScreen(
     var proxyEnabled by remember { mutableStateOf(settings.proxyEnabled) }
     var proxyAddress by remember { mutableStateOf(settings.proxyAddress) }
     var proxyUdp by remember { mutableStateOf(settings.proxyUdp) }
+    var proxyTelegram by remember { mutableStateOf(settings.proxyTelegram) }
     var dnsBlock by remember { mutableStateOf(settings.dnsBlock) }
     var ipv6 by remember { mutableStateOf(settings.ipv6) }
     var appMode by remember { mutableStateOf(settings.appFilterMode) }
@@ -592,6 +593,17 @@ fun SettingsScreen(
                     }
                 }
                 item { TorModuleCard(settings) }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.proxy_telegram)) },
+                        supportingContent = { Text(stringResource(R.string.proxy_telegram_desc)) },
+                        trailingContent = { Switch(checked = proxyTelegram, onCheckedChange = null) },
+                        modifier = Modifier.toggleable(value = proxyTelegram, role = Role.Switch) {
+                            proxyTelegram = it
+                            settings.proxyTelegram = it
+                        },
+                    )
+                }
                 item {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.proxy_udp)) },
