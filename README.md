@@ -201,3 +201,43 @@ after a recursive clone (JDK 17, SDK 36, NDK 27.2.12479018, CMake 3.22.1).
 ## Лицензия
 
 GPLv3, см. [LICENSE](LICENSE). Сторонние компоненты — в [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## Благодарности и авторство
+
+ByeZapret стоит на чужой работе. Спасибо авторам проектов, чей код, данные и идеи здесь
+использованы. Лицензии и точные пути — в [THIRD_PARTY.md](THIRD_PARTY.md).
+
+**Код в составе приложения**
+
+- **[ByeDPI](https://github.com/hufrea/byedpi)** — автор hufrea, MIT. Движок десинхронизации;
+  в `app/src/main/cpp/engine` лежит его форк с изменениями, перечисленными в
+  [UPSTREAM.md](app/src/main/cpp/engine/UPSTREAM.md).
+- **[hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel)** — автор heiher, MIT.
+  Туннель TUN ↔ SOCKS5 (подмодуль, вместе с его зависимостями hev-task-system, lwIP, yaml,
+  hev-socks5-core).
+- **[ByeByeDPI](https://github.com/romanvht/ByeByeDPI)** — автор romanvht, GPLv3. Интерфейс
+  ByeByeDPI 1.8.2 внутри приложения (`classic/`, ресурсы `bb_*`), список стратегий сообщества
+  и наборы сайтов для подбора стратегий; образец интеграции движка в Android.
+- **[zapret](https://github.com/bol-van/zapret)** — автор bol-van, MIT. Из tpws перенесены
+  маркеры позиций и модификации HTTP-запроса.
+- **[zapret2](https://github.com/bol-van/zapret2)** — автор bol-van, MIT. Фейковые пакеты
+  из `files/fake` (QUIC Initial, TLS ClientHello, Discord, STUN и другие).
+- **Material Icons** — Google, Apache 2.0. Значок кнопки включения.
+- Библиотеки AndroidX, Jetpack Compose, Material Components for Android и Gson — Google,
+  Apache 2.0.
+
+**Списки, стратегии и идеи**
+
+- Каталог списков доменов загружает их из репозиториев авторов:
+  [Flowseal/zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube),
+  [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains),
+  [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists),
+  [Snowy-Fluffy/zapret.cfgs](https://github.com/Snowy-Fluffy/zapret.cfgs).
+- Стратегии с группами по сервисам — от участников
+  [Telegram-группы ByeByeDPI](https://t.me/byebyedpi_group).
+- Работа через Tor — с помощью [Orbot](https://github.com/guardianproject/orbot)
+  (Guardian Project) или [InviZible Pro](https://github.com/Gedsh/InviZible) (Gedsh),
+  запущенных отдельно; их код в приложение не входит.
+
+**Код самого приложения** написан с помощью Claude (Anthropic) по задачам владельца
+репозитория; соавторство отмечено в истории коммитов.
