@@ -154,23 +154,59 @@ static int resolve(const char *chost, int len,
 }
 
 
+/* The chosen method (S_AUTH_NONE or S_AUTH_USER), -1 if none fits. */
 static int auth_socks5(int fd, const char *buffer, ssize_t n)
 {
     if (n <= 2 || (uint8_t)buffer[1] != (n - 2)) {
         return -1;
     }
     uint8_t c = S_AUTH_BAD;
-    for (long i = 2; i < n; i++)
+    for (long i = 2; i < n; i++) {
         if (buffer[i] == S_AUTH_NONE) {
             c = S_AUTH_NONE;
             break;
         }
+        // ZapretDroid: user/password is accepted with any password; the user name is
+        // the client's source address (hev-socks5-tunnel "@src"), see --apps.
+        if (buffer[i] == S_AUTH_USER) {
+            c = S_AUTH_USER;
+        }
+    }
     uint8_t a[2] = { S_VER5, c };
     if (send(fd, (char *)a, sizeof(a), 0) < 0) {
         uniperror("send");
         return -1;
     }
-    return c != S_AUTH_BAD ? 0 : -1;
+    return c != S_AUTH_BAD ? c : -1;
+}
+
+
+int get_addr(const char *str, union sockaddr_u *addr);
+
+/* ZapretDroid: RFC 1929 sub-negotiation; a user name of the form ip:port is kept as app_src. */
+static int auth_user_socks5(struct eval *val, const char *buffer, ssize_t n)
+{
+    if (n < 3 || buffer[0] != 1) {
+        return -1;
+    }
+    int ulen = (uint8_t) buffer[1];
+    if (n < 2 + ulen + 1 || n < 2 + ulen + 1 + (uint8_t) buffer[2 + ulen]) {
+        return -1;
+    }
+    char user[256];
+    memcpy(user, buffer + 2, ulen);
+    user[ulen] = 0;
+    union sockaddr_u src = { 0 };
+    if (get_addr(user, &src) == 0 && src.in.sin_port) {
+        val->app_src = src;
+        val->has_app_src = 1;
+    }
+    uint8_t a[2] = { 1, 0 };
+    if (send(val->fd, (char *)a, sizeof(a), 0) < 0) {
+        uniperror("send");
+        return -1;
+    }
+    return 0;
 }
 
 
@@ -558,6 +594,9 @@ static int udp_associate(struct poolhd *pool,
     
     client->flag = FLAG_CONN;
     client->addr = val->addr;
+    // ZapretDroid --apps: the association's datagrams belong to the control connection's app.
+    client->app_src = pair->app_src = val->app_src;
+    client->has_app_src = pair->has_app_src = val->has_app_src;
     client->addr.in.sin_port = 0;
     
     sz = sizeof(addr);
@@ -896,10 +935,11 @@ static int handle_s5(struct poolhd *pool, struct eval *val,
             struct buffer *buff, ssize_t n, union sockaddr_u *dst)
 {
     if (val->flag != FLAG_S5) {
-        if (auth_socks5(val->fd, buff->data, n)) {
+        int m = auth_socks5(val->fd, buff->data, n);
+        if (m < 0) {
             return -1;
         }
-        val->flag = FLAG_S5;
+        val->flag = m == S_AUTH_USER ? FLAG_S5_AUTH : FLAG_S5;
         return 0;
     }
     if (n < S_SIZE_MIN) {
@@ -949,6 +989,13 @@ int on_request(struct poolhd *pool, struct eval *val, int et)
     int error = 0;
     bool skip_conn = 0;
     
+    if (val->flag == FLAG_S5_AUTH) {
+        if (auth_user_socks5(val, buff->data, n)) {
+            return -1;
+        }
+        val->flag = FLAG_S5;
+        return 0;
+    }
     if ((params.mode & MODE_SOCKS5) && *buff->data == S_VER5) {
         if ((error = handle_s5(pool, val, buff, n, &dst)) > 0) {
             return -1;

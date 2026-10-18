@@ -53,6 +53,8 @@ typedef int (*evcb_t)(struct poolhd *, struct eval *, int);
 #define FLAG_S5 2
 #define FLAG_CONN 4
 #define FLAG_HTTP 8
+// ZapretDroid: SOCKS5 user/password sub-negotiation pending (the user name is the source address)
+#define FLAG_S5_AUTH 16
 
 struct buffer {
     size_t size;
@@ -138,6 +140,12 @@ struct eval {
     // ZapretDroid: datagram index where the current group of the first destination began
     // (a group chosen again on the second QUIC Initial starts its --udp-desync count there).
     unsigned int udp_dp_base;
+    // ZapretDroid --apps: the address the client's app connected from, given by
+    // hev-socks5-tunnel as the SOCKS5 user name, and the app's uid once looked up.
+    union sockaddr_u app_src;
+    bool has_app_src;
+    bool app_uid_known;
+    int app_uid;
     // Other destinations of the same app socket, each with its own group and datagram count.
     struct udp_dest *udp_dests;
     int udp_dests_n;

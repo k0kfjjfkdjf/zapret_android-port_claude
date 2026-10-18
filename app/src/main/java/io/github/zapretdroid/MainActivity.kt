@@ -37,6 +37,7 @@ import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.Updater
 import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
+import io.github.zapretdroid.ui.AppRoutesScreen
 import io.github.zapretdroid.ui.AppsScreen
 import io.github.zapretdroid.ui.AutoHostScreen
 import io.github.zapretdroid.ui.CollectScreen
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS, APP_ROUTES }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -229,7 +230,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
 
     BackHandler(enabled = screen != Screen.HOME) {
         screen = when (screen) {
-            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP, Screen.COLLECT, Screen.DNS_SERVERS -> Screen.SETTINGS
+            Screen.APPS, Screen.TEST, Screen.LISTS, Screen.AUTOHOST, Screen.SELFCHECK, Screen.DEEP, Screen.COLLECT, Screen.DNS_SERVERS, Screen.APP_ROUTES -> Screen.SETTINGS
             Screen.LIST_EDIT -> Screen.LISTS
             Screen.LOGS -> logsReturn
             Screen.MONITOR -> Screen.HOME
@@ -292,6 +293,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenDeep = { screen = Screen.DEEP },
             onOpenCollect = { screen = Screen.COLLECT },
             onOpenDnsServers = { screen = Screen.DNS_SERVERS },
+            onOpenAppRoutes = { screen = Screen.APP_ROUTES },
             onOpenClassic = { ClassicBridge.open(context) },
             onCheckUpdates = checkUpdates,
         )
@@ -301,6 +303,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         )
         Screen.LOGS -> LogsScreen(onBack = { screen = logsReturn })
         Screen.DNS_SERVERS -> DnsServersScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
+        Screen.APP_ROUTES -> AppRoutesScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.LISTS -> HostListsScreen(
             onBack = { screen = Screen.SETTINGS },
             onEdit = { name ->

@@ -114,7 +114,7 @@ fun AppsScreen(settings: Settings, onBack: () -> Unit) {
 }
 
 @Composable
-private fun AppIcon(packageManager: PackageManager, packageName: String) {
+internal fun AppIcon(packageManager: PackageManager, packageName: String) {
     val icon by produceState<ImageBitmap?>(null, packageName) {
         value = withContext(Dispatchers.IO) {
             runCatching { packageManager.getApplicationIcon(packageName).toBitmap(96, 96).asImageBitmap() }.getOrNull()

@@ -1,5 +1,8 @@
 package io.github.zapretdroid.core
 
+import java.net.InetAddress
+import java.net.InetSocketAddress
+
 /** ByeDPI engine (local SOCKS5 proxy that applies the desync strategy). */
 class ByeDpi {
     /** Runs the proxy with command line [args] and blocks until it exits. */
@@ -12,6 +15,17 @@ class ByeDpi {
         init {
             System.loadLibrary("byedpi")
         }
+
+        /** Set by the VPN service: the uid of the app owning a connection (proto, source, destination), -1 if unknown. */
+        @Volatile
+        var ownerLookup: ((Int, InetSocketAddress, InetSocketAddress) -> Int)? = null
+
+        /** Called by the engine (--apps groups) for each new connection or UDP association. */
+        @JvmStatic
+        fun ownerUid(proto: Int, srcIp: String, srcPort: Int, dstIp: String, dstPort: Int): Int = runCatching {
+            // Literal addresses: no DNS lookup happens here.
+            ownerLookup?.invoke(proto, InetSocketAddress(InetAddress.getByName(srcIp), srcPort), InetSocketAddress(InetAddress.getByName(dstIp), dstPort))
+        }.getOrNull() ?: -1
     }
 }
 

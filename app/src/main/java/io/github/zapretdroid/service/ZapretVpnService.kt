@@ -20,6 +20,7 @@ import androidx.core.app.NotificationCompat
 import io.github.zapretdroid.MainActivity
 import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppCollect
+import io.github.zapretdroid.core.AppRoutes
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
@@ -176,7 +177,7 @@ class ZapretVpnService : VpnService() {
                 |  port: $PROXY_PORT
                 |  address: $PROXY_HOST
                 |  udp: 'udp'
-                |misc:
+                |${if (appRouting) "  # each connection tells the engine its source address (routing by app)\n  username: '@src'\n  password: '-'\n" else ""}                |misc:
                 |  task-stack-size: 81920
                 |  # 5 min instead of 60 s: an idle UDP session that hev closes comes back on a new
                 |  # engine socket and public port, while a call's server still sends to the old one.
@@ -348,6 +349,7 @@ class ZapretVpnService : VpnService() {
             TorModule.stop(this)
             torModuleStarted = false
         }
+        appRouting = false
         handler.removeCallbacks(statsTick)
         thread(name = "vpn-stop") {
             if (wasActive) teardown()
@@ -407,6 +409,10 @@ class ZapretVpnService : VpnService() {
     private var secureDns: SecureDns.Server? = null
     @Volatile
     private var torModuleStarted = false
+
+    /** Routing by app is on in this session: hev passes source addresses, the engine asks for owners. */
+    @Volatile
+    private var appRouting = false
 
     /** The encrypted resolver, or null for plain DNS (also when it cannot start: plain then). */
     private fun startSecureDns(settings: Settings): SecureDns.Server? {
@@ -561,7 +567,30 @@ class ZapretVpnService : VpnService() {
                 ?: throw IllegalStateException(getString(R.string.error_unknown_list, settings.hostList))
         }
         val autohostLog = if (settings.autohost) AutoHost.file(this).absolutePath else null
-        return proxyGroup(settings) + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+        return appGroups(settings) + proxyGroup(settings) + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+    }
+
+    /** Apps routed wholly through the proxy or direct, in front of every other group (see AppRoutes). */
+    private fun appGroups(settings: Settings): List<String> {
+        val routes = settings.appRoutes
+        if (routes.isEmpty()) return emptyList()
+        val address = settings.proxyAddress.trim()
+        val groups = AppRoutes.groups(this, routes, address, settings.proxyUdp)
+        if (groups.isEmpty()) return emptyList()
+        appRouting = true
+        ByeDpi.ownerLookup = { proto, local, remote -> AppRoutes.ownerUid(this, proto, local, remote) }
+        val proxied = routes.filterValues { it == AppRoutes.Route.PROXY }.keys
+        val direct = routes.filterValues { it == AppRoutes.Route.DIRECT }.keys
+        if (proxied.isNotEmpty()) {
+            if (TorProxy.isValid(address)) {
+                TorProxy.requestStart(this, settings)
+                if (TorProxy.usesModule(this, settings)) torModuleStarted = true
+            } else {
+                AppLog.w("apps through the proxy skipped: bad proxy address '$address'")
+            }
+        }
+        AppLog.i("apps: ${proxied.size} through socks5://$address ${proxied.sorted()}, ${direct.size} direct ${direct.sorted()}")
+        return groups
     }
 
     /** Listed domains through the SOCKS5 proxy (Tor), in front of every other group; empty if off. */

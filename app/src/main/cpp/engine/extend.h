@@ -31,6 +31,12 @@ static bool check_l34(struct desync_params *dp, int st, const union sockaddr_u *
 
 int on_connerr(struct poolhd *pool, struct eval *val);
 
+/*
+ * ZapretDroid --apps: the host's lookup of the app (uid) owning a connection from src_ip:src_port
+ * to dst_ip:dst_port (proto: IPPROTO_TCP or IPPROTO_UDP); -1 if unknown. Unset: no app groups match.
+ */
+extern int (*owner_uid_hook)(int proto, const char *src_ip, int src_port, const char *dst_ip, int dst_port);
+
 int on_timeout(struct poolhd *pool, struct eval *val);
 
 #ifdef __linux__

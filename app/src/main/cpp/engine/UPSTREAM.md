@@ -72,6 +72,11 @@ Changes in this fork:
   (the app's DNS over HTTPS/TLS resolver), untouched by any group; its answers come back with
   the first address as their source and still name addresses for host lists. TCP connections
   to the first address are refused at once (Android's DNS over TLS probe falls back to UDP).
+- `--apps <uid,...>`: the group applies only to connections of these Android apps. SOCKS5
+  user/password authentication is accepted with any password; a user name of the form `ip:port`
+  is the client's own source address (hev-socks5-tunnel with the user name `@src`, patched in
+  `app/src/main/jni/hev-patch/`). The host's `owner_uid_hook` (JNI → getConnectionOwnerUid)
+  names the uid once per connection or UDP association; `--conn-log` prints it.
 - `--ipset`: IPv4-mapped destinations (dual-stack bind address) are matched as IPv4, so the
   IPv4 entries of a list apply on phones too.
 - Upstream SOCKS5 of a group (`-C socks5://…`): the CONNECT carries the host name (from the

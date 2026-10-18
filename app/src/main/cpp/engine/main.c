@@ -20,6 +20,7 @@
 #define OPT_NAMES_DNS 0x102
 #define OPT_DNS_REDIRECT 0x103
 #define OPT_UDP_PROXY 0x104
+#define OPT_APPS 0x105
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -163,6 +164,7 @@ static const char help_text[] = {
     "    --names-dns <ip[,ip]>     Only these DNS servers' answers name hosts for -H\n"
     "    --dns-redirect <ip>=<ip:port>  UDP DNS to the first address goes to the second\n"
     "    --udp-proxy               UDP of a -C socks5 group through the proxy too\n"
+    "    --apps <uid,...>          Group only for these apps (source address from the SOCKS5 user)\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
@@ -206,6 +208,7 @@ const struct option options[] = {
     {"names-dns",     1, 0, OPT_NAMES_DNS},
     {"dns-redirect",  1, 0, OPT_DNS_REDIRECT},
     {"udp-proxy",     0, 0, OPT_UDP_PROXY},
+    {"apps",          1, 0, OPT_APPS},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -804,6 +807,7 @@ void clear_params(char *line, char **argv)
         free(dp->fake_sni_list);
         mem_destroy(dp->hosts);
         mem_destroy(dp->ipset);
+        free(dp->apps);
         
         struct desync_params *t = dp;
         dp = dp->next;
@@ -965,6 +969,27 @@ int parse_args(int argc, char **argv)
             dp->udp_proxy = 1;
             break;
 
+        case OPT_APPS: {
+            char *list = strdup(optarg), *save = 0;
+            if (!list) {
+                return -1;
+            }
+            for (char *t = strtok_r(list, ",", &save); t; t = strtok_r(0, ",", &save)) {
+                char *end = 0;
+                long uid = strtol(t, &end, 10);
+                int *a = realloc(dp->apps, (dp->apps_n + 1) * sizeof(int));
+                if (*end || uid < 0 || uid > 0x7fffffff || !a) {
+                    if (a) dp->apps = a;
+                    invalid = 1;
+                    break;
+                }
+                dp->apps = a;
+                dp->apps[dp->apps_n++] = (int) uid;
+            }
+            free(list);
+            break;
+        }
+
         case OPT_DNS_REDIRECT: {
             char *copy = strdup(optarg);
             char *eq = copy ? strchr(copy, '=') : 0;
@@ -1093,7 +1118,7 @@ int parse_args(int argc, char **argv)
                 optind = curr_optind;
                 continue;
             }
-            if (!(dp->hosts || dp->proto || dp->pf[0] || dp->detect || dp->ipset)) {
+            if (!(dp->hosts || dp->proto || dp->pf[0] || dp->detect || dp->ipset || dp->apps_n)) {
                 all_limited = 0;
             }
             dp = add_group(dp);

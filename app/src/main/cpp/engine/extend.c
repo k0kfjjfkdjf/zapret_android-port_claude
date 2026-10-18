@@ -368,6 +368,46 @@ static bool check_l34(struct desync_params *dp, int st, const union sockaddr_u *
 }
 
 
+int (*owner_uid_hook)(int proto, const char *src_ip, int src_port, const char *dst_ip, int dst_port);
+
+
+/*
+ * ZapretDroid --apps: whether the connection of [client] belongs to one of the group's apps.
+ * The uid is asked once per connection (association for UDP), only when a group needs it.
+ */
+static bool check_app(struct desync_params *dp, struct eval *client, int proto, const union sockaddr_u *dst)
+{
+    if (!dp->apps_n) {
+        return 1;
+    }
+    if (!client) {
+        return 0;
+    }
+    if (!client->app_uid_known) {
+        client->app_uid_known = 1;
+        client->app_uid = -1;
+        if (client->has_app_src && owner_uid_hook) {
+            union sockaddr_u s = client->app_src, d = *dst;
+            map_fix(&s, 0);
+            map_fix(&d, 0);
+            char sb[INET6_ADDRSTRLEN] = "", db[INET6_ADDRSTRLEN] = "";
+            inet_ntop(s.sa.sa_family, s.sa.sa_family == AF_INET6 ? (void *)&s.in6.sin6_addr : (void *)&s.in.sin_addr, sb, sizeof(sb));
+            inet_ntop(d.sa.sa_family, d.sa.sa_family == AF_INET6 ? (void *)&d.in6.sin6_addr : (void *)&d.in.sin_addr, db, sizeof(db));
+            client->app_uid = owner_uid_hook(proto, sb, ntohs(s.in.sin_port), db, ntohs(d.in.sin_port));
+        }
+        if (params.conn_log) {
+            fprintf(ENGINE_LOG, "conn %d: app uid %d\n", client->fd, client->app_uid);
+        }
+    }
+    for (int i = 0; i < dp->apps_n; i++) {
+        if (dp->apps[i] == client->app_uid) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
 static bool check_round(const int *nr, int r)
 {
     return (!nr[1] && r <= 1) || (r >= nr[0] && r <= nr[1]);
@@ -681,6 +721,7 @@ static struct desync_params *find_dp(struct eval *client,
         if (!(dp->bit & client->dp_mask) 
                 && (dp == init_dp || !dp->detect || (client->detect & dp->detect))
                 && (check_l34(dp, SOCK_STREAM, dst))
+                && check_app(dp, client, IPPROTO_TCP, dst)
                 && (!dp->proto || !buff || check_proto_tcp(dp->proto, buff, n))
                 && (!dp->hosts || !buff || check_host(dp->hosts, buff, n, dst))) {
             return dp;
@@ -1034,10 +1075,10 @@ struct udp_dest {
 
 /* The first group for a UDP flow: groups with host lists only when the host is known and listed
  * (with by_dns, any of the names the address was resolved from). */
-static struct desync_params *udp_find_dp(const union sockaddr_u *dst, const char *host, bool by_dns)
+static struct desync_params *udp_find_dp(struct eval *owner, const union sockaddr_u *dst, const char *host, bool by_dns)
 {
     for (struct desync_params *dp = params.dp; dp; dp = dp->next) {
-        if (dp->detect || !check_l34(dp, SOCK_DGRAM, dst)) {
+        if (dp->detect || !check_l34(dp, SOCK_DGRAM, dst) || !check_app(dp, owner, IPPROTO_UDP, dst)) {
             continue;
         }
         if (dp->hosts && !(by_dns ? names_in(dp->hosts, dst) : host && host_in(dp->hosts, host, strlen(host)))) {
@@ -1358,7 +1399,7 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
             }
             char host[256];
             const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host), 0);
-            struct desync_params *found = udp_find_dp(dst, source ? host : 0, is_dns(source));
+            struct desync_params *found = udp_find_dp(pair, dst, source ? host : 0, is_dns(source));
             if (!found) {
                 return -1;
             }
@@ -1380,7 +1421,7 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
     if (first && !dp) {
         char host[256];
         const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host), 1);
-        if (!(dp = udp_find_dp(dst, source ? host : 0, is_dns(source)))) {
+        if (!(dp = udp_find_dp(pair, dst, source ? host : 0, is_dns(source)))) {
             return -1;
         }
         pair->dp = dp;
@@ -1401,7 +1442,7 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
             free(val->udp_quic);
             val->udp_quic = 0;
         }
-        struct desync_params *found = len ? udp_find_dp(dst, host, 0) : 0;
+        struct desync_params *found = len ? udp_find_dp(pair, dst, host, 0) : 0;
         if (found && found != dp) {
             if (params.conn_log) {
                 fprintf(ENGINE_LOG, "udp %d: host %s (sni in Initial %u), group %d -> %d\n",

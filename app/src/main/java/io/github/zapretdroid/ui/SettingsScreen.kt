@@ -66,6 +66,7 @@ import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.SecureDns
+import io.github.zapretdroid.core.AppRoutes
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.TorProxy
@@ -90,6 +91,7 @@ fun SettingsScreen(
     onOpenDeep: () -> Unit,
     onOpenCollect: () -> Unit,
     onOpenDnsServers: () -> Unit,
+    onOpenAppRoutes: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
     onOpenClassic: () -> Unit,
@@ -555,6 +557,21 @@ fun SettingsScreen(
                         settings.proxyEnabled = it
                         if (it && settings.proxyList == TorProxy.LIST) runCatching { TorProxy.ensureList(context) }
                     },
+                )
+            }
+            item {
+                val routes = remember { settings.appRoutes }
+                val proxied = routes.count { it.value == AppRoutes.Route.PROXY }
+                val direct = routes.count { it.value == AppRoutes.Route.DIRECT }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.app_routes_title)) },
+                    supportingContent = {
+                        Text(
+                            if (routes.isEmpty()) stringResource(R.string.app_routes_none)
+                            else stringResource(R.string.app_routes_summary, proxied, direct),
+                        )
+                    },
+                    modifier = Modifier.selectable(selected = false, onClick = onOpenAppRoutes),
                 )
             }
             if (proxyEnabled) {
