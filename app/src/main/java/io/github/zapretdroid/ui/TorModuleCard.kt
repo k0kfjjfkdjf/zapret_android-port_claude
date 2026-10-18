@@ -16,7 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -131,12 +131,12 @@ fun TorModuleCard(settings: Settings) {
         if (progress >= 0) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp)) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            TextButton(enabled = progress < 0, onClick = { downloadAndInstall() }) {
+            FilledTonalButton(enabled = progress < 0, onClick = { downloadAndInstall() }) {
                 Text(stringResource(if (installed == null) R.string.tor_module_download else R.string.tor_module_update))
             }
             if (installed != null && trusted) {
-                TextButton(onClick = { TorModule.start(context, settings) }) { Text(stringResource(R.string.tor_module_start)) }
-                TextButton(onClick = { TorModule.stop(context) }) { Text(stringResource(R.string.tor_module_stop)) }
+                FilledTonalButton(onClick = { TorModule.start(context, settings) }) { Text(stringResource(R.string.tor_module_start)) }
+                FilledTonalButton(onClick = { TorModule.stop(context) }) { Text(stringResource(R.string.tor_module_stop)) }
             }
         }
     }
@@ -180,7 +180,7 @@ fun TorModuleCard(settings: Settings) {
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                TextButton(onClick = { restartIfRunning() }) { Text(stringResource(R.string.tor_bridges_apply)) }
+                FilledTonalButton(onClick = { restartIfRunning() }) { Text(stringResource(R.string.tor_bridges_apply)) }
             }
         }
     }

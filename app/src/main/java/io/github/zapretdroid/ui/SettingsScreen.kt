@@ -3,6 +3,7 @@ package io.github.zapretdroid.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -21,8 +23,12 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,10 +49,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -117,6 +125,10 @@ fun SettingsScreen(
     var listPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // The settings index (null) or one of its sections; system back returns to the index.
+    var section by rememberSaveable { mutableStateOf<Section?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
+    BackHandler(enabled = section != null) { section = null }
     var dnsListsVersion by remember { mutableStateOf(0) }
     var dnsUpdating by remember { mutableStateOf(false) }
     var dnsUpdateStatus by remember { mutableStateOf<String?>(null) }
@@ -169,12 +181,45 @@ fun SettingsScreen(
         }
     }
 
+    val indexSummaries = IndexSummaries(
+        strategy = Strategies.byId(strategyId)?.let { stringResource(it.title) } ?: stringResource(R.string.strategy_custom),
+        lists = stringResource(
+            when (hostScope) {
+                HostScope.ALL -> R.string.hosts_all
+                HostScope.ONLY_LIST -> R.string.hosts_only_list
+                HostScope.EXCEPT_LIST -> R.string.hosts_except_list
+            },
+        ),
+        dns = stringResource(
+            when (dnsMode) {
+                DnsMode.PLAIN -> R.string.dns_mode_plain
+                DnsMode.DOH -> R.string.dns_mode_doh
+                DnsMode.DOT -> R.string.dns_mode_dot
+                DnsMode.DNSCRYPT -> R.string.dns_mode_dnscrypt
+            },
+        ),
+        block = if (dnsBlock.isEmpty()) stringResource(R.string.index_off)
+        else DnsFilter.Category.entries.filter { it.id in dnsBlock }.map { stringResource(categoryTitle(it)) }.joinToString(),
+        proxy = if (proxyEnabled) stringResource(R.string.index_proxy_on, proxyAddress.trim()) else stringResource(R.string.index_off),
+        appRoutes = remember(section) { settings.appRoutes }.let { r ->
+            if (r.isEmpty()) stringResource(R.string.app_routes_none)
+            else stringResource(R.string.app_routes_summary, r.count { it.value == AppRoutes.Route.PROXY }, r.count { it.value == AppRoutes.Route.DIRECT })
+        },
+        apps = stringResource(
+            when (appMode) {
+                AppFilterMode.ALL -> R.string.apps_all
+                AppFilterMode.ONLY_SELECTED -> R.string.apps_only_selected
+                AppFilterMode.EXCEPT_SELECTED -> R.string.apps_except_selected
+            },
+        ),
+    )
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.title_settings)) },
+                title = { Text(stringResource(section?.title ?: R.string.title_settings)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (section != null) section = null else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
@@ -192,237 +237,154 @@ fun SettingsScreen(
                     )
                 }
             }
-
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.classic_title)) },
-                    supportingContent = { Text(stringResource(R.string.classic_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenClassic),
-                )
-            }
-
-            item {
-                var auto by remember { mutableStateOf(Updater.isAuto(context)) }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.update_check)) },
-                    supportingContent = { Text(stringResource(R.string.update_check_desc, BuildConfig.VERSION_NAME)) },
-                    trailingContent = {
-                        Switch(checked = auto, onCheckedChange = {
-                            auto = it
-                            Updater.setAuto(context, it)
-                        })
+            when (section) {
+                null -> settingsIndex(
+                    query = query,
+                    onQuery = { query = it },
+                    summaries = indexSummaries,
+                    onOpen = { section = it },
+                    onAction = { action ->
+                        when (action) {
+                            IndexAction.TEST -> onOpenTest()
+                            IndexAction.SELFCHECK -> onOpenSelfCheck()
+                            IndexAction.APP_ROUTES -> onOpenAppRoutes()
+                            IndexAction.LOGS -> onOpenLogs()
+                            IndexAction.UPDATES -> onCheckUpdates()
+                            IndexAction.CLASSIC -> onOpenClassic()
+                        }
                     },
-                    modifier = Modifier.selectable(selected = false, onClick = onCheckUpdates),
-                )
-            }
-
-            item { SectionHeader(R.string.section_strategy) }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.test_open)) },
-                    supportingContent = { Text(stringResource(R.string.test_open_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.deep_title)) },
-                    supportingContent = { Text(stringResource(R.string.deep_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.selfcheck_title)) },
-                    supportingContent = { Text(stringResource(R.string.selfcheck_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenSelfCheck),
-                )
-            }
-            items(Strategies.presets, key = { it.id }) { preset ->
-                RadioRow(
-                    title = stringResource(preset.title),
-                    subtitle = stringResource(preset.description),
-                    selected = strategyId == preset.id,
-                    onSelect = {
-                        strategyId = preset.id
-                        settings.strategyId = preset.id
+                    telegram = proxyTelegram,
+                    onTelegram = {
+                        proxyTelegram = it
+                        settings.proxyTelegram = it
                     },
                 )
-            }
-            item {
-                RadioRow(
-                    title = stringResource(R.string.strategy_custom),
-                    subtitle = stringResource(R.string.strategy_custom_desc),
-                    selected = strategyId == Strategies.CUSTOM,
-                    onSelect = {
-                        strategyId = Strategies.CUSTOM
-                        settings.strategyId = Strategies.CUSTOM
-                    },
-                )
-            }
-            item {
-                val shown = Strategies.byId(strategyId)?.args ?: customArgs
-                OutlinedTextField(
-                    value = shown,
-                    // Editing a preset turns it into a custom strategy.
-                    onValueChange = setCustomArgs,
-                    label = { Text(stringResource(R.string.strategy_args)) },
-                    supportingText = { Text(stringResource(R.string.strategy_args_hint)) },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-
-            item {
-                TextButton(onClick = { fakePicker = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    Text(stringResource(R.string.fake_insert))
-                }
-            }
-
-            item { SectionHeader(R.string.section_hosts) }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.collect_title)) },
-                    supportingContent = { Text(stringResource(R.string.collect_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenCollect),
-                )
-            }
-            items(HostScope.entries.toList(), key = { "scope_" + it.name }) { scope ->
-                RadioRow(
-                    title = stringResource(
-                        when (scope) {
-                            HostScope.ALL -> R.string.hosts_all
-                            HostScope.ONLY_LIST -> R.string.hosts_only_list
-                            HostScope.EXCEPT_LIST -> R.string.hosts_except_list
-                        },
-                    ),
-                    subtitle = null,
-                    selected = hostScope == scope,
-                    onSelect = {
-                        hostScope = scope
-                        settings.hostScope = scope
-                        if (scope != HostScope.ALL && hostList.isEmpty()) listPicker = true
-                    },
-                )
-            }
-            if (hostScope != HostScope.ALL) {
-                item {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.hosts_list)) },
-                        supportingContent = {
-                            Text(
-                                if (hostList.isEmpty()) stringResource(R.string.hosts_list_none)
-                                else stringResource(R.string.hosts_list_value, hostList, HostLists.count(context, hostList)),
-                            )
-                        },
-                        modifier = Modifier.selectable(selected = false, onClick = { listPicker = true }),
-                    )
-                }
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.title_host_lists)) },
-                    supportingContent = { Text(stringResource(R.string.host_lists_open_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenLists),
-                )
-            }
-
-            item { SectionHeader(R.string.section_network) }
-            item {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .padding(start = 16.dp, end = 16.dp, top = 4.dp)
-                        .horizontalScroll(rememberScrollState()),
-                ) {
-                    DnsMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = dnsMode == mode,
-                            onClick = {
-                                dnsMode = mode
-                                settings.dnsMode = mode
-                            },
-                            label = {
-                                Text(
-                                    stringResource(
-                                        when (mode) {
-                                            DnsMode.PLAIN -> R.string.dns_mode_plain
-                                            DnsMode.DOH -> R.string.dns_mode_doh
-                                            DnsMode.DOT -> R.string.dns_mode_dot
-                                            DnsMode.DNSCRYPT -> R.string.dns_mode_dnscrypt
-                                        },
-                                    ),
-                                )
+                Section.STRATEGY -> {
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.test_open)) },
+                            supportingContent = { Text(stringResource(R.string.test_open_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.deep_title)) },
+                            supportingContent = { Text(stringResource(R.string.deep_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
+                        )
+                    }
+                    items(Strategies.presets, key = { it.id }) { preset ->
+                        RadioRow(
+                            title = stringResource(preset.title),
+                            subtitle = stringResource(preset.description),
+                            selected = strategyId == preset.id,
+                            onSelect = {
+                                strategyId = preset.id
+                                settings.strategyId = preset.id
                             },
                         )
                     }
-                }
-            }
-            if (dnsMode == DnsMode.PLAIN) {
-                item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
-                    ) {
-                        listOf(Settings.SYSTEM_DNS, "77.88.8.8", "1.1.1.1", "8.8.8.8").forEach { option ->
-                            FilterChip(
-                                selected = dns.trim() == option,
-                                onClick = {
-                                    dns = option
-                                    settings.dns = option
-                                },
-                                label = { Text(if (option == Settings.SYSTEM_DNS) stringResource(R.string.dns_system) else option) },
-                            )
+                    item {
+                        RadioRow(
+                            title = stringResource(R.string.strategy_custom),
+                            subtitle = stringResource(R.string.strategy_custom_desc),
+                            selected = strategyId == Strategies.CUSTOM,
+                            onSelect = {
+                                strategyId = Strategies.CUSTOM
+                                settings.strategyId = Strategies.CUSTOM
+                            },
+                        )
+                    }
+                    item {
+                        val shown = Strategies.byId(strategyId)?.args ?: customArgs
+                        OutlinedTextField(
+                            value = shown,
+                            // Editing a preset turns it into a custom strategy.
+                            onValueChange = setCustomArgs,
+                            label = { Text(stringResource(R.string.strategy_args)) },
+                            supportingText = { Text(stringResource(R.string.strategy_args_hint)) },
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+
+                    item {
+                        FilledTonalButton(onClick = { fakePicker = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text(stringResource(R.string.fake_insert))
                         }
                     }
                 }
-                item {
-                    val valid = isIpLiteral(dns.trim()) || dns.trim() == Settings.SYSTEM_DNS
-                    OutlinedTextField(
-                        value = dns,
-                        onValueChange = {
-                            dns = it
-                            if (isIpLiteral(it.trim()) || it.trim() == Settings.SYSTEM_DNS) settings.dns = it.trim()
-                        },
-                        label = { Text(stringResource(R.string.dns_server)) },
-                        supportingText = {
-                            Text(stringResource(if (valid) R.string.dns_server_hint else R.string.dns_server_invalid))
-                        },
-                        isError = !valid,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-            } else {
-                item {
-                    Text(
-                        stringResource(R.string.dns_secure_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
-                if (dnsMode == DnsMode.DNSCRYPT) {
+                Section.LISTS -> {
                     item {
-                        val chosen = remember(dnsMode) { settings.dnsServers }
                         ListItem(
-                            headlineContent = { Text(stringResource(R.string.dns_servers_title)) },
-                            supportingContent = {
-                                Text(
-                                    if (chosen.isEmpty()) stringResource(R.string.dns_servers_none_chosen)
-                                    else stringResource(R.string.dns_servers_chosen, chosen.joinToString { it.first }),
-                                    color = if (chosen.isEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            modifier = Modifier.selectable(selected = false, onClick = onOpenDnsServers),
+                            headlineContent = { Text(stringResource(R.string.collect_title)) },
+                            supportingContent = { Text(stringResource(R.string.collect_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenCollect),
                         )
                     }
-                } else {
+                    items(HostScope.entries.toList(), key = { "scope_" + it.name }) { scope ->
+                        RadioRow(
+                            title = stringResource(
+                                when (scope) {
+                                    HostScope.ALL -> R.string.hosts_all
+                                    HostScope.ONLY_LIST -> R.string.hosts_only_list
+                                    HostScope.EXCEPT_LIST -> R.string.hosts_except_list
+                                },
+                            ),
+                            subtitle = null,
+                            selected = hostScope == scope,
+                            onSelect = {
+                                hostScope = scope
+                                settings.hostScope = scope
+                                if (scope != HostScope.ALL && hostList.isEmpty()) listPicker = true
+                            },
+                        )
+                    }
+                    if (hostScope != HostScope.ALL) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.hosts_list)) },
+                                supportingContent = {
+                                    Text(
+                                        if (hostList.isEmpty()) stringResource(R.string.hosts_list_none)
+                                        else stringResource(R.string.hosts_list_value, hostList, HostLists.count(context, hostList)),
+                                    )
+                                },
+                                modifier = Modifier.selectable(selected = false, onClick = { listPicker = true }),
+                            )
+                        }
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.title_host_lists)) },
+                            supportingContent = { Text(stringResource(R.string.host_lists_open_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenLists),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.autohost_toggle)) },
+                            supportingContent = { Text(stringResource(R.string.autohost_toggle_desc)) },
+                            trailingContent = { Switch(checked = autohost, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(value = autohost, role = Role.Switch) {
+                                autohost = it
+                                settings.autohost = it
+                            },
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.title_autohost)) },
+                            supportingContent = { Text(stringResource(R.string.autohost_open_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenAutoHost),
+                        )
+                    }
+                }
+                Section.DNS -> {
                     item {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -430,339 +392,461 @@ fun SettingsScreen(
                                 .padding(start = 16.dp, end = 16.dp, top = 4.dp)
                                 .horizontalScroll(rememberScrollState()),
                         ) {
-                            SecureDns.providers.forEach { provider ->
+                            DnsMode.entries.forEach { mode ->
                                 FilterChip(
-                                    selected = dnsProvider == provider.id,
+                                    selected = dnsMode == mode,
                                     onClick = {
-                                        dnsProvider = provider.id
-                                        settings.dnsProvider = provider.id
+                                        dnsMode = mode
+                                        settings.dnsMode = mode
                                     },
-                                    label = { Text(provider.title) },
+                                    label = {
+                                        Text(
+                                            stringResource(
+                                                when (mode) {
+                                                    DnsMode.PLAIN -> R.string.dns_mode_plain
+                                                    DnsMode.DOH -> R.string.dns_mode_doh
+                                                    DnsMode.DOT -> R.string.dns_mode_dot
+                                                    DnsMode.DNSCRYPT -> R.string.dns_mode_dnscrypt
+                                                },
+                                            ),
+                                        )
+                                    },
                                 )
                             }
                         }
                     }
-                    item {
-                        val custom = SecureDns.providers.none { it.id == dnsProvider }
-                        OutlinedTextField(
-                            value = if (custom) dnsProvider else "",
-                            onValueChange = {
-                                dnsProvider = it.trim()
-                                if (it.trim().isNotEmpty()) settings.dnsProvider = it.trim()
-                            },
-                            label = { Text(stringResource(R.string.dns_provider_custom)) },
-                            supportingText = { Text(stringResource(R.string.dns_provider_custom_hint)) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                    }
-                    SecureDns.providers.firstOrNull { it.id == dnsProvider }?.filters?.takeIf { it.isNotEmpty() }?.let { filters ->
+                    if (dnsMode == DnsMode.PLAIN) {
                         item {
-                            val names = DnsFilter.Category.entries.filter { it.id in filters }.map { stringResource(categoryTitle(it)) }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+                            ) {
+                                listOf(Settings.SYSTEM_DNS, "77.88.8.8", "1.1.1.1", "8.8.8.8").forEach { option ->
+                                    FilterChip(
+                                        selected = dns.trim() == option,
+                                        onClick = {
+                                            dns = option
+                                            settings.dns = option
+                                        },
+                                        label = { Text(if (option == Settings.SYSTEM_DNS) stringResource(R.string.dns_system) else option) },
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            val valid = isIpLiteral(dns.trim()) || dns.trim() == Settings.SYSTEM_DNS
+                            OutlinedTextField(
+                                value = dns,
+                                onValueChange = {
+                                    dns = it
+                                    if (isIpLiteral(it.trim()) || it.trim() == Settings.SYSTEM_DNS) settings.dns = it.trim()
+                                },
+                                label = { Text(stringResource(R.string.dns_server)) },
+                                supportingText = {
+                                    Text(stringResource(if (valid) R.string.dns_server_hint else R.string.dns_server_invalid))
+                                },
+                                isError = !valid,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                    } else {
+                        item {
                             Text(
-                                stringResource(R.string.dns_server_blocks, names.joinToString()),
+                                stringResource(R.string.dns_secure_desc),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                             )
                         }
+                        if (dnsMode == DnsMode.DNSCRYPT) {
+                            item {
+                                val chosen = remember(dnsMode) { settings.dnsServers }
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.dns_servers_title)) },
+                                    supportingContent = {
+                                        Text(
+                                            if (chosen.isEmpty()) stringResource(R.string.dns_servers_none_chosen)
+                                            else stringResource(R.string.dns_servers_chosen, chosen.joinToString { it.first }),
+                                            color = if (chosen.isEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                    modifier = Modifier.selectable(selected = false, onClick = onOpenDnsServers),
+                                )
+                            }
+                        } else {
+                            item {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                                        .horizontalScroll(rememberScrollState()),
+                                ) {
+                                    SecureDns.providers.forEach { provider ->
+                                        FilterChip(
+                                            selected = dnsProvider == provider.id,
+                                            onClick = {
+                                                dnsProvider = provider.id
+                                                settings.dnsProvider = provider.id
+                                            },
+                                            label = { Text(provider.title) },
+                                        )
+                                    }
+                                }
+                            }
+                            item {
+                                val custom = SecureDns.providers.none { it.id == dnsProvider }
+                                OutlinedTextField(
+                                    value = if (custom) dnsProvider else "",
+                                    onValueChange = {
+                                        dnsProvider = it.trim()
+                                        if (it.trim().isNotEmpty()) settings.dnsProvider = it.trim()
+                                    },
+                                    label = { Text(stringResource(R.string.dns_provider_custom)) },
+                                    supportingText = { Text(stringResource(R.string.dns_provider_custom_hint)) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                            SecureDns.providers.firstOrNull { it.id == dnsProvider }?.filters?.takeIf { it.isNotEmpty() }?.let { filters ->
+                                item {
+                                    val names = DnsFilter.Category.entries.filter { it.id in filters }.map { stringResource(categoryTitle(it)) }
+                                    Text(
+                                        stringResource(R.string.dns_server_blocks, names.joinToString()),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.ipv6)) },
+                            supportingContent = { Text(stringResource(R.string.ipv6_desc)) },
+                            trailingContent = { Switch(checked = ipv6, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(value = ipv6, role = Role.Switch) {
+                                ipv6 = it
+                                settings.ipv6 = it
+                            },
+                        )
                     }
                 }
-                item {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.dns_block_title)) },
-                        supportingContent = { Text(stringResource(R.string.dns_block_desc)) },
-                    )
-                }
-                items(DnsFilter.Category.entries.toList(), key = { "dnsblock-" + it.id }) { category ->
-                    val on = category.id in dnsBlock
-                    val count = remember(dnsListsVersion) { DnsFilter.count(context, category) }
-                    val updated = remember(dnsListsVersion) { DnsFilter.updatedAt(context, category) }
-                    ListItem(
-                        headlineContent = { Text(stringResource(categoryTitle(category))) },
-                        supportingContent = {
+                Section.BLOCK -> {
+                    if (dnsMode == DnsMode.PLAIN) {
+                        item {
                             Text(
-                                if (count != null && updated != null) {
-                                    stringResource(R.string.dns_block_count, count, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(updated)))
-                                } else {
-                                    stringResource(R.string.dns_block_missing)
+                                stringResource(R.string.dns_block_needs_secure),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.dns_block_title)) },
+                            supportingContent = { Text(stringResource(R.string.dns_block_desc)) },
+                        )
+                    }
+                    items(DnsFilter.Category.entries.toList(), key = { "dnsblock-" + it.id }) { category ->
+                        val on = category.id in dnsBlock
+                        val count = remember(dnsListsVersion) { DnsFilter.count(context, category) }
+                        val updated = remember(dnsListsVersion) { DnsFilter.updatedAt(context, category) }
+                        ListItem(
+                            headlineContent = { Text(stringResource(categoryTitle(category))) },
+                            supportingContent = {
+                                Text(
+                                    if (count != null && updated != null) {
+                                        stringResource(R.string.dns_block_count, count, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(updated)))
+                                    } else {
+                                        stringResource(R.string.dns_block_missing)
+                                    },
+                                )
+                            },
+                            trailingContent = { Switch(checked = on, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(value = on, role = Role.Switch) {
+                                dnsBlock = if (it) dnsBlock + category.id else dnsBlock - category.id
+                                settings.dnsBlock = dnsBlock
+                            },
+                        )
+                    }
+                    item {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                FilledTonalButton(
+                                    enabled = !dnsUpdating && dnsBlock.isNotEmpty(),
+                                    onClick = {
+                                        dnsUpdating = true
+                                        dnsUpdateStatus = null
+                                        scope.launch {
+                                            val errors = withContext(Dispatchers.IO) {
+                                                DnsFilter.Category.entries.filter { it.id in dnsBlock }.mapNotNull { c ->
+                                                    runCatching { DnsFilter.update(context, c) }.exceptionOrNull()?.let { "${c.id}: ${it.message ?: it.javaClass.simpleName}" }
+                                                }
+                                            }
+                                            dnsUpdating = false
+                                            dnsListsVersion++
+                                            dnsUpdateStatus = if (errors.isEmpty()) context.getString(R.string.dns_block_updated)
+                                            else context.getString(R.string.dns_block_failed, errors.joinToString("; "))
+                                        }
+                                    },
+                                ) { Text(stringResource(if (dnsUpdating) R.string.dns_block_updating else R.string.dns_block_update)) }
+                                FilledTonalButton(onClick = {
+                                    // Created empty, so that both show up on the Lists screen.
+                                    listOf(DnsFilter.OWN_BLOCK, DnsFilter.OWN_ALLOW).forEach { name ->
+                                        if (!HostLists.file(context, name).exists()) runCatching { HostLists.save(context, name, "") }
+                                    }
+                                    onOpenLists()
+                                }) { Text(stringResource(R.string.dns_block_own)) }
+                            }
+                            dnsUpdateStatus?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                Section.PROXY -> {
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.proxy_toggle)) },
+                            supportingContent = { Text(stringResource(R.string.proxy_toggle_desc)) },
+                            trailingContent = { Switch(checked = proxyEnabled, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(value = proxyEnabled, role = Role.Switch) {
+                                proxyEnabled = it
+                                settings.proxyEnabled = it
+                                if (it && settings.proxyList == TorProxy.LIST) runCatching { TorProxy.ensureList(context) }
+                            },
+                        )
+                    }
+                    item {
+                        val routes = remember { settings.appRoutes }
+                        val proxied = routes.count { it.value == AppRoutes.Route.PROXY }
+                        val direct = routes.count { it.value == AppRoutes.Route.DIRECT }
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.app_routes_title)) },
+                            supportingContent = {
+                                Text(
+                                    if (routes.isEmpty()) stringResource(R.string.app_routes_none)
+                                    else stringResource(R.string.app_routes_summary, proxied, direct),
+                                )
+                            },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenAppRoutes),
+                        )
+                    }
+                    if (proxyEnabled) {
+                        item {
+                            val installed = remember { TorProxy.installed(context) }
+                            var reachable by remember { mutableStateOf<Boolean?>(null) }
+                            LaunchedEffect(proxyAddress) {
+                                reachable = null
+                                reachable = withContext(Dispatchers.IO) { TorProxy.isValid(proxyAddress) && TorProxy.reachable(proxyAddress.trim()) }
+                            }
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                Text(
+                                    when {
+                                        reachable == null -> stringResource(R.string.proxy_checking)
+                                        reachable == true -> stringResource(R.string.proxy_up, proxyAddress.trim())
+                                        installed.isEmpty() -> stringResource(R.string.proxy_none_installed)
+                                        else -> stringResource(R.string.proxy_down, installed.joinToString { it.first.title })
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (reachable == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                    installed.forEach { (provider, pkg) ->
+                                        FilledTonalButton(onClick = {
+                                            if (provider == TorProxy.Provider.ORBOT) TorProxy.requestStart(context)
+                                            context.packageManager.getLaunchIntentForPackage(pkg)?.let { runCatching { context.startActivity(it) } }
+                                        }) { Text(stringResource(R.string.proxy_open, provider.title)) }
+                                    }
+                                    if (installed.isEmpty()) {
+                                        FilledTonalButton(onClick = {
+                                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ORBOT_URL))) }
+                                        }) { Text(stringResource(R.string.proxy_get_orbot)) }
+                                    }
+                                    FilledTonalButton(onClick = onOpenLists) { Text(stringResource(R.string.proxy_edit_list, settings.proxyList)) }
+                                }
+                            }
+                        }
+                        item { TorModuleCard(settings) }
+                        item {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.proxy_telegram)) },
+                                supportingContent = { Text(stringResource(R.string.proxy_telegram_desc)) },
+                                trailingContent = { Switch(checked = proxyTelegram, onCheckedChange = null) },
+                                modifier = Modifier.toggleable(value = proxyTelegram, role = Role.Switch) {
+                                    proxyTelegram = it
+                                    settings.proxyTelegram = it
                                 },
                             )
-                        },
-                        trailingContent = { Switch(checked = on, onCheckedChange = null) },
-                        modifier = Modifier.toggleable(value = on, role = Role.Switch) {
-                            dnsBlock = if (it) dnsBlock + category.id else dnsBlock - category.id
-                            settings.dnsBlock = dnsBlock
-                        },
-                    )
-                }
-                item {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            TextButton(
-                                enabled = !dnsUpdating && dnsBlock.isNotEmpty(),
-                                onClick = {
-                                    dnsUpdating = true
-                                    dnsUpdateStatus = null
-                                    scope.launch {
-                                        val errors = withContext(Dispatchers.IO) {
-                                            DnsFilter.Category.entries.filter { it.id in dnsBlock }.mapNotNull { c ->
-                                                runCatching { DnsFilter.update(context, c) }.exceptionOrNull()?.let { "${c.id}: ${it.message ?: it.javaClass.simpleName}" }
-                                            }
-                                        }
-                                        dnsUpdating = false
-                                        dnsListsVersion++
-                                        dnsUpdateStatus = if (errors.isEmpty()) context.getString(R.string.dns_block_updated)
-                                        else context.getString(R.string.dns_block_failed, errors.joinToString("; "))
-                                    }
+                        }
+                        item {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.proxy_udp)) },
+                                supportingContent = { Text(stringResource(R.string.proxy_udp_desc)) },
+                                trailingContent = { Switch(checked = proxyUdp, onCheckedChange = null) },
+                                modifier = Modifier.toggleable(value = proxyUdp, role = Role.Switch) {
+                                    proxyUdp = it
+                                    settings.proxyUdp = it
                                 },
-                            ) { Text(stringResource(if (dnsUpdating) R.string.dns_block_updating else R.string.dns_block_update)) }
-                            TextButton(onClick = {
-                                // Created empty, so that both show up on the Lists screen.
-                                listOf(DnsFilter.OWN_BLOCK, DnsFilter.OWN_ALLOW).forEach { name ->
-                                    if (!HostLists.file(context, name).exists()) runCatching { HostLists.save(context, name, "") }
-                                }
-                                onOpenLists()
-                            }) { Text(stringResource(R.string.dns_block_own)) }
+                            )
                         }
-                        dnsUpdateStatus?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        item {
+                            val valid = TorProxy.isValid(proxyAddress)
+                            OutlinedTextField(
+                                value = proxyAddress,
+                                onValueChange = {
+                                    proxyAddress = it
+                                    if (TorProxy.isValid(it)) settings.proxyAddress = it.trim()
+                                },
+                                label = { Text(stringResource(R.string.proxy_address)) },
+                                supportingText = { Text(stringResource(if (valid) R.string.proxy_address_hint else R.string.proxy_address_invalid)) },
+                                isError = !valid,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
                         }
                     }
                 }
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.ipv6)) },
-                    supportingContent = { Text(stringResource(R.string.ipv6_desc)) },
-                    trailingContent = { Switch(checked = ipv6, onCheckedChange = null) },
-                    modifier = Modifier.toggleable(value = ipv6, role = Role.Switch) {
-                        ipv6 = it
-                        settings.ipv6 = it
-                    },
-                )
-            }
-
-            item { SectionHeader(R.string.section_proxy) }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.proxy_toggle)) },
-                    supportingContent = { Text(stringResource(R.string.proxy_toggle_desc)) },
-                    trailingContent = { Switch(checked = proxyEnabled, onCheckedChange = null) },
-                    modifier = Modifier.toggleable(value = proxyEnabled, role = Role.Switch) {
-                        proxyEnabled = it
-                        settings.proxyEnabled = it
-                        if (it && settings.proxyList == TorProxy.LIST) runCatching { TorProxy.ensureList(context) }
-                    },
-                )
-            }
-            item {
-                val routes = remember { settings.appRoutes }
-                val proxied = routes.count { it.value == AppRoutes.Route.PROXY }
-                val direct = routes.count { it.value == AppRoutes.Route.DIRECT }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.app_routes_title)) },
-                    supportingContent = {
-                        Text(
-                            if (routes.isEmpty()) stringResource(R.string.app_routes_none)
-                            else stringResource(R.string.app_routes_summary, proxied, direct),
-                        )
-                    },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenAppRoutes),
-                )
-            }
-            if (proxyEnabled) {
-                item {
-                    val installed = remember { TorProxy.installed(context) }
-                    var reachable by remember { mutableStateOf<Boolean?>(null) }
-                    LaunchedEffect(proxyAddress) {
-                        reachable = null
-                        reachable = withContext(Dispatchers.IO) { TorProxy.isValid(proxyAddress) && TorProxy.reachable(proxyAddress.trim()) }
-                    }
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                        Text(
-                            when {
-                                reachable == null -> stringResource(R.string.proxy_checking)
-                                reachable == true -> stringResource(R.string.proxy_up, proxyAddress.trim())
-                                installed.isEmpty() -> stringResource(R.string.proxy_none_installed)
-                                else -> stringResource(R.string.proxy_down, installed.joinToString { it.first.title })
+                Section.APPS -> {
+                    items(AppFilterMode.entries.toList(), key = { it.name }) { mode ->
+                        RadioRow(
+                            title = stringResource(
+                                when (mode) {
+                                    AppFilterMode.ALL -> R.string.apps_all
+                                    AppFilterMode.ONLY_SELECTED -> R.string.apps_only_selected
+                                    AppFilterMode.EXCEPT_SELECTED -> R.string.apps_except_selected
+                                },
+                            ),
+                            subtitle = null,
+                            selected = appMode == mode,
+                            onSelect = {
+                                appMode = mode
+                                settings.appFilterMode = mode
                             },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (reachable == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            installed.forEach { (provider, pkg) ->
-                                TextButton(onClick = {
-                                    if (provider == TorProxy.Provider.ORBOT) TorProxy.requestStart(context)
-                                    context.packageManager.getLaunchIntentForPackage(pkg)?.let { runCatching { context.startActivity(it) } }
-                                }) { Text(stringResource(R.string.proxy_open, provider.title)) }
-                            }
-                            if (installed.isEmpty()) {
-                                TextButton(onClick = {
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ORBOT_URL))) }
-                                }) { Text(stringResource(R.string.proxy_get_orbot)) }
-                            }
-                            TextButton(onClick = onOpenLists) { Text(stringResource(R.string.proxy_edit_list, settings.proxyList)) }
-                        }
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.apps_choose)) },
+                            supportingContent = { Text(stringResource(R.string.apps_selected_count, selectedCount)) },
+                            modifier = Modifier.selectable(
+                                selected = false,
+                                enabled = appMode != AppFilterMode.ALL,
+                                onClick = onOpenApps,
+                            ),
+                        )
                     }
                 }
-                item { TorModuleCard(settings) }
-                item {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.proxy_telegram)) },
-                        supportingContent = { Text(stringResource(R.string.proxy_telegram_desc)) },
-                        trailingContent = { Switch(checked = proxyTelegram, onCheckedChange = null) },
-                        modifier = Modifier.toggleable(value = proxyTelegram, role = Role.Switch) {
-                            proxyTelegram = it
-                            settings.proxyTelegram = it
-                        },
-                    )
+                Section.CHECKS -> {
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.selfcheck_title)) },
+                            supportingContent = { Text(stringResource(R.string.selfcheck_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenSelfCheck),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.deep_title)) },
+                            supportingContent = { Text(stringResource(R.string.deep_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenDeep),
+                        )
+                    }
+                    items(LogLevel.entries.toList(), key = { "log_" + it.name }) { level ->
+                        RadioRow(
+                            title = stringResource(
+                                when (level) {
+                                    LogLevel.NORMAL -> R.string.log_level_normal
+                                    LogLevel.DEBUG -> R.string.log_level_debug
+                                    LogLevel.VERBOSE -> R.string.log_level_verbose
+                                },
+                            ),
+                            subtitle = stringResource(
+                                when (level) {
+                                    LogLevel.NORMAL -> R.string.log_level_normal_desc
+                                    LogLevel.DEBUG -> R.string.log_level_debug_desc
+                                    LogLevel.VERBOSE -> R.string.log_level_verbose_desc
+                                },
+                            ),
+                            selected = logLevel == level,
+                            onSelect = {
+                                logLevel = level
+                                settings.logLevel = level
+                            },
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.title_logs)) },
+                            supportingContent = { Text(stringResource(R.string.logs_open_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenLogs),
+                        )
+                    }
                 }
-                item {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.proxy_udp)) },
-                        supportingContent = { Text(stringResource(R.string.proxy_udp_desc)) },
-                        trailingContent = { Switch(checked = proxyUdp, onCheckedChange = null) },
-                        modifier = Modifier.toggleable(value = proxyUdp, role = Role.Switch) {
-                            proxyUdp = it
-                            settings.proxyUdp = it
-                        },
-                    )
-                }
-                item {
-                    val valid = TorProxy.isValid(proxyAddress)
-                    OutlinedTextField(
-                        value = proxyAddress,
-                        onValueChange = {
-                            proxyAddress = it
-                            if (TorProxy.isValid(it)) settings.proxyAddress = it.trim()
-                        },
-                        label = { Text(stringResource(R.string.proxy_address)) },
-                        supportingText = { Text(stringResource(if (valid) R.string.proxy_address_hint else R.string.proxy_address_invalid)) },
-                        isError = !valid,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-            }
-
-            item { SectionHeader(R.string.section_apps) }
-            items(AppFilterMode.entries.toList(), key = { it.name }) { mode ->
-                RadioRow(
-                    title = stringResource(
-                        when (mode) {
-                            AppFilterMode.ALL -> R.string.apps_all
-                            AppFilterMode.ONLY_SELECTED -> R.string.apps_only_selected
-                            AppFilterMode.EXCEPT_SELECTED -> R.string.apps_except_selected
-                        },
-                    ),
-                    subtitle = null,
-                    selected = appMode == mode,
-                    onSelect = {
-                        appMode = mode
-                        settings.appFilterMode = mode
-                    },
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.apps_choose)) },
-                    supportingContent = { Text(stringResource(R.string.apps_selected_count, selectedCount)) },
-                    modifier = Modifier.selectable(
-                        selected = false,
-                        enabled = appMode != AppFilterMode.ALL,
-                        onClick = onOpenApps,
-                    ),
-                )
-            }
-
-            item { SectionHeader(R.string.section_debug) }
-            items(LogLevel.entries.toList(), key = { "log_" + it.name }) { level ->
-                RadioRow(
-                    title = stringResource(
-                        when (level) {
-                            LogLevel.NORMAL -> R.string.log_level_normal
-                            LogLevel.DEBUG -> R.string.log_level_debug
-                            LogLevel.VERBOSE -> R.string.log_level_verbose
-                        },
-                    ),
-                    subtitle = stringResource(
-                        when (level) {
-                            LogLevel.NORMAL -> R.string.log_level_normal_desc
-                            LogLevel.DEBUG -> R.string.log_level_debug_desc
-                            LogLevel.VERBOSE -> R.string.log_level_verbose_desc
-                        },
-                    ),
-                    selected = logLevel == level,
-                    onSelect = {
-                        logLevel = level
-                        settings.logLevel = level
-                    },
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.autohost_toggle)) },
-                    supportingContent = { Text(stringResource(R.string.autohost_toggle_desc)) },
-                    trailingContent = { Switch(checked = autohost, onCheckedChange = null) },
-                    modifier = Modifier.toggleable(value = autohost, role = Role.Switch) {
-                        autohost = it
-                        settings.autohost = it
-                    },
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.title_autohost)) },
-                    supportingContent = { Text(stringResource(R.string.autohost_open_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenAutoHost),
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.title_logs)) },
-                    supportingContent = { Text(stringResource(R.string.logs_open_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = onOpenLogs),
-                )
-            }
-
-            item { SectionHeader(R.string.section_backup) }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.backup_export)) },
-                    supportingContent = { Text(stringResource(R.string.backup_export_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = {
-                        val stamp = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
-                        exportLauncher.launch("zapretdroid-settings-$stamp.json")
-                    }),
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.backup_import)) },
-                    supportingContent = { Text(stringResource(R.string.backup_import_desc)) },
-                    modifier = Modifier.selectable(selected = false, onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }),
-                )
-            }
-
-            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
-            item {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(
-                        stringResource(R.string.about_version, BuildConfig.VERSION_NAME),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        stringResource(R.string.about_credits),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Section.GENERAL -> {
+                    item {
+                        var auto by remember { mutableStateOf(Updater.isAuto(context)) }
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.update_check)) },
+                            supportingContent = { Text(stringResource(R.string.update_check_desc, BuildConfig.VERSION_NAME)) },
+                            trailingContent = {
+                                Switch(checked = auto, onCheckedChange = {
+                                    auto = it
+                                    Updater.setAuto(context, it)
+                                })
+                            },
+                            modifier = Modifier.selectable(selected = false, onClick = onCheckUpdates),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.classic_title)) },
+                            supportingContent = { Text(stringResource(R.string.classic_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenClassic),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.backup_export)) },
+                            supportingContent = { Text(stringResource(R.string.backup_export_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = {
+                                val stamp = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+                                exportLauncher.launch("zapretdroid-settings-$stamp.json")
+                            }),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.backup_import)) },
+                            supportingContent = { Text(stringResource(R.string.backup_import_desc)) },
+                            modifier = Modifier.selectable(selected = false, onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }),
+                        )
+                    }
+                    item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+                    item {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text(
+                                stringResource(R.string.about_version, BuildConfig.VERSION_NAME),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                stringResource(R.string.about_credits),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -865,3 +949,185 @@ private fun RadioRow(title: String, subtitle: String?, selected: Boolean, onSele
 }
 
 private const val ORBOT_URL = "https://orbot.app/download/"
+
+
+/** The sections of the settings index; each opens as its own page. */
+internal enum class Section(val title: Int) {
+    STRATEGY(R.string.index_strategy),
+    LISTS(R.string.index_lists),
+    DNS(R.string.index_dns),
+    BLOCK(R.string.index_block),
+    PROXY(R.string.index_proxy),
+    APPS(R.string.index_apps),
+    CHECKS(R.string.index_checks),
+    GENERAL(R.string.index_general),
+}
+
+/** Index entries that open another screen rather than a section. */
+internal enum class IndexAction { TEST, SELFCHECK, APP_ROUTES, LOGS, UPDATES, CLASSIC }
+
+internal class IndexSummaries(
+    val strategy: String,
+    val lists: String,
+    val dns: String,
+    val block: String,
+    val proxy: String,
+    val appRoutes: String,
+    val apps: String,
+)
+
+/** A searchable setting: its name and description, and where it lives. */
+private class SearchEntry(val title: Int, val desc: Int?, val section: Section?, val action: IndexAction? = null)
+
+private val SEARCH = listOf(
+    SearchEntry(R.string.strategy_args, R.string.strategy_args_hint, Section.STRATEGY),
+    SearchEntry(R.string.strategy_custom, R.string.strategy_custom_desc, Section.STRATEGY),
+    SearchEntry(R.string.fake_insert, R.string.fake_insert_desc, Section.STRATEGY),
+    SearchEntry(R.string.test_open, R.string.test_open_desc, null, IndexAction.TEST),
+    SearchEntry(R.string.deep_title, R.string.deep_desc, Section.CHECKS),
+    SearchEntry(R.string.selfcheck_title, R.string.selfcheck_desc, null, IndexAction.SELFCHECK),
+    SearchEntry(R.string.title_host_lists, R.string.host_lists_open_desc, Section.LISTS),
+    SearchEntry(R.string.collect_title, R.string.collect_desc, Section.LISTS),
+    SearchEntry(R.string.autohost_toggle, R.string.autohost_toggle_desc, Section.LISTS),
+    SearchEntry(R.string.hosts_list, null, Section.LISTS),
+    SearchEntry(R.string.dns_server, R.string.dns_server_hint, Section.DNS),
+    SearchEntry(R.string.dns_mode_dnscrypt, R.string.dns_secure_desc, Section.DNS),
+    SearchEntry(R.string.dns_servers_title, null, Section.DNS),
+    SearchEntry(R.string.ipv6, R.string.ipv6_desc, Section.DNS),
+    SearchEntry(R.string.dns_block_title, R.string.dns_block_desc, Section.BLOCK),
+    SearchEntry(R.string.dns_block_own, null, Section.BLOCK),
+    SearchEntry(R.string.proxy_toggle, R.string.proxy_toggle_desc, Section.PROXY),
+    SearchEntry(R.string.proxy_address, R.string.proxy_address_hint, Section.PROXY),
+    SearchEntry(R.string.proxy_udp, R.string.proxy_udp_desc, Section.PROXY),
+    SearchEntry(R.string.proxy_telegram, R.string.proxy_telegram_desc, Section.PROXY),
+    SearchEntry(R.string.tor_module_title, R.string.tor_module_desc, Section.PROXY),
+    SearchEntry(R.string.tor_bridges_title, R.string.tor_bridges_desc, Section.PROXY),
+    SearchEntry(R.string.app_routes_title, R.string.app_routes_desc, null, IndexAction.APP_ROUTES),
+    SearchEntry(R.string.apps_choose, null, Section.APPS),
+    SearchEntry(R.string.log_level_verbose, R.string.log_level_verbose_desc, Section.CHECKS),
+    SearchEntry(R.string.title_logs, R.string.logs_open_desc, null, IndexAction.LOGS),
+    SearchEntry(R.string.update_check, null, Section.GENERAL),
+    SearchEntry(R.string.classic_title, R.string.classic_desc, Section.GENERAL),
+    SearchEntry(R.string.backup_export, R.string.backup_export_desc, Section.GENERAL),
+    SearchEntry(R.string.backup_import, R.string.backup_import_desc, Section.GENERAL),
+)
+
+/** The settings index in the manner of ByeByeDPI: a search field, then sections with icons. */
+private fun LazyListScope.settingsIndex(
+    query: String,
+    onQuery: (String) -> Unit,
+    summaries: IndexSummaries,
+    onOpen: (Section) -> Unit,
+    onAction: (IndexAction) -> Unit,
+    telegram: Boolean,
+    onTelegram: (Boolean) -> Unit,
+) {
+    item {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQuery,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            placeholder = { Text(stringResource(R.string.index_search)) },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+    if (query.isNotBlank()) {
+        item {
+            val context = LocalContext.current
+            val found = remember(query) {
+                SEARCH.filter { e ->
+                    val text = context.getString(e.title) + " " + (e.desc?.let { context.getString(it) } ?: "")
+                    query.trim().split(Regex("\\s+")).all { text.contains(it, ignoreCase = true) }
+                }
+            }
+            Column {
+                if (found.isEmpty()) {
+                    Text(
+                        stringResource(R.string.index_nothing_found),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+                found.forEach { e ->
+                    ListItem(
+                        headlineContent = { Text(stringResource(e.title)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.index_found_in, stringResource(e.section?.title ?: R.string.title_settings)))
+                        },
+                        modifier = Modifier.selectable(selected = false, onClick = {
+                            if (e.action != null) onAction(e.action) else e.section?.let(onOpen)
+                        }),
+                    )
+                }
+            }
+        }
+        return
+    }
+    item { IndexHeader(R.string.index_cat_bypass) }
+    item { IndexRow(R.drawable.bb_ic_tune, R.string.index_strategy, summaries.strategy) { onOpen(Section.STRATEGY) } }
+    item { IndexRow(R.drawable.bb_ic_speed, R.string.test_open, stringResource(R.string.index_test_desc)) { onAction(IndexAction.TEST) } }
+    item { IndexRow(R.drawable.bb_ic_description, R.string.index_lists, summaries.lists) { onOpen(Section.LISTS) } }
+    item { IndexHeader(R.string.index_cat_network) }
+    item { IndexRow(R.drawable.bb_ic_dns, R.string.index_dns, summaries.dns) { onOpen(Section.DNS) } }
+    item { IndexRow(R.drawable.bb_ic_filter_list, R.string.index_block, summaries.block) { onOpen(Section.BLOCK) } }
+    item { IndexHeader(R.string.index_cat_proxy) }
+    item { IndexRow(R.drawable.bb_ic_vpn_key, R.string.index_proxy, summaries.proxy) { onOpen(Section.PROXY) } }
+    item { IndexRow(R.drawable.bb_ic_apps, R.string.app_routes_title, summaries.appRoutes) { onAction(IndexAction.APP_ROUTES) } }
+    item {
+        ListItem(
+            leadingContent = { IndexIcon(R.drawable.bb_ic_telegram) },
+            headlineContent = { Text(stringResource(R.string.proxy_telegram)) },
+            supportingContent = { Text(stringResource(R.string.index_telegram_desc)) },
+            trailingContent = { Switch(checked = telegram, onCheckedChange = null) },
+            modifier = Modifier.toggleable(value = telegram, role = Role.Switch, onValueChange = onTelegram),
+        )
+    }
+    item { IndexHeader(R.string.index_cat_vpn) }
+    item { IndexRow(R.drawable.bb_ic_filter_list, R.string.index_apps, summaries.apps) { onOpen(Section.APPS) } }
+    item { IndexHeader(R.string.index_cat_checks) }
+    item { IndexRow(R.drawable.bb_ic_check, R.string.selfcheck_title, stringResource(R.string.index_selfcheck_desc)) { onAction(IndexAction.SELFCHECK) } }
+    item { IndexRow(R.drawable.bb_ic_documentation, R.string.title_logs, stringResource(R.string.index_logs_desc)) { onAction(IndexAction.LOGS) } }
+    item { IndexRow(R.drawable.bb_ic_terminal, R.string.index_checks, stringResource(R.string.index_checks_desc)) { onOpen(Section.CHECKS) } }
+    item { IndexHeader(R.string.index_cat_general) }
+    item { IndexRow(R.drawable.bb_ic_info, R.string.index_general, stringResource(R.string.index_general_desc)) { onOpen(Section.GENERAL) } }
+    item {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .horizontalScroll(rememberScrollState()),
+        ) {
+            Button(onClick = { onAction(IndexAction.UPDATES) }) { Text(stringResource(R.string.update_check)) }
+            FilledTonalButton(onClick = { onAction(IndexAction.CLASSIC) }) { Text(stringResource(R.string.index_classic)) }
+        }
+    }
+}
+
+@Composable
+private fun IndexHeader(title: Int) {
+    Text(
+        stringResource(title),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun IndexIcon(icon: Int) {
+    Icon(painterResource(icon), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+private fun IndexRow(icon: Int, title: Int, summary: String, onClick: () -> Unit) {
+    ListItem(
+        leadingContent = { IndexIcon(icon) },
+        headlineContent = { Text(stringResource(title)) },
+        supportingContent = { Text(summary, maxLines = 2) },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+        modifier = Modifier.selectable(selected = false, onClick = onClick),
+    )
+}

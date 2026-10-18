@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -168,7 +169,7 @@ fun HomeScreen(
                     )
                 }
             }
-            TextButton(onClick = onOpenMonitor) { Text(stringResource(R.string.monitor_open)) }
+            FilledTonalButton(onClick = onOpenMonitor) { Text(stringResource(R.string.monitor_open)) }
         }
     }
     if (picking) {
@@ -306,7 +307,7 @@ private fun ErrorCard(message: String, onDismiss: () -> Unit, onOpenLogs: () -> 
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(message, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Start)
-            TextButton(onClick = onOpenLogs) { Text(stringResource(R.string.action_show_logs)) }
+            FilledTonalButton(onClick = onOpenLogs) { Text(stringResource(R.string.action_show_logs)) }
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_dismiss))
             }
