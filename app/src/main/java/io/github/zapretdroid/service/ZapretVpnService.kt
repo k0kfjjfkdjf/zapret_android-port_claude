@@ -168,6 +168,8 @@ class ZapretVpnService : VpnService() {
             }
             AppLog.i("tun interface established")
 
+            // Routing by app: each connection tells the engine its source address (user "@src").
+            val hevAuth = if (appRouting) "\n  username: '@src'\n  password: '-'" else ""
             val config = File(filesDir, "hev.yml")
             config.writeText(
                 """
@@ -176,8 +178,8 @@ class ZapretVpnService : VpnService() {
                 |socks5:
                 |  port: $PROXY_PORT
                 |  address: $PROXY_HOST
-                |  udp: 'udp'
-                |${if (appRouting) "  # each connection tells the engine its source address (routing by app)\n  username: '@src'\n  password: '-'\n" else ""}                |misc:
+                |  udp: 'udp'$hevAuth
+                |misc:
                 |  task-stack-size: 81920
                 |  # 5 min instead of 60 s: an idle UDP session that hev closes comes back on a new
                 |  # engine socket and public port, while a call's server still sends to the old one.
