@@ -15,6 +15,17 @@
 
 *English summary below.*
 
+## Документация
+
+Подробные инструкции — в [docs/](docs/):
+
+- [Быстрый старт](docs/quick-start.md) — установка, включение, проверка.
+- [Стратегии](docs/strategies.md) — пресеты, синтаксис, группы по сервисам, мультистратегия вручную.
+- [Подбор стратегии и глубокая проверка](docs/strategy-testing.md) — как читать результаты.
+- [Решение проблем](docs/troubleshooting.md) — звонки, DNS, группы по сервисам, обновления.
+- [Автоматизация](docs/automation.md) — включение и смена стратегии из других приложений и скриптов.
+- [Приватность](docs/privacy.md) — журнал, бэкап, сетевые запросы.
+
 ## Как это устроено
 
 ```
@@ -37,7 +48,7 @@ nfqws/nfqws2 из zapret работают с сырыми пакетами че�
 доступны только техники уровня сокетов (то, что умеет tpws и ByeDPI). Поэтому часть стратегий
 zapret на Android без root не воспроизвести.
 
-## Возможности (v0.9)
+## Возможности
 
 - Включение одной кнопкой, плитка в шторке, уведомление с кнопкой остановки.
 - Готовые стратегии и своя командная строка движка.
@@ -146,7 +157,7 @@ zapret на Android без root не воспроизвести.
     все сайты / только список / все, кроме списка; `{list:имя}` в аргументах;
   - autohostlist как отладочная функция: запись доменов, где блокировка видна даже со
     стратегией, и добавление их в список.
-- **Проверка функций** (Настройки): около 40 проверок устройства, движка и сети за минуту-две
+- **Проверка функций** (Настройки): около 80 проверок устройства, движка и сети за две-три минуты
   (разрешения, частный DNS, оптимизация батареи, движок против локальных серверов — TCP с
   разрезом и UDP с фейками, все пресеты, DNS, HTTPS, QUIC и STUN без обхода и с текущей
   стратегией) и отчёт с концом журнала для отправки разработчику.
@@ -165,6 +176,9 @@ zapret на Android без root не воспроизвести.
   отправка/сохранение; при запуске приложения или сессии VPN журнал больше 4 МБ обрезается до
   последних ~2 МБ (на месте, вывод движка продолжает писаться в тот же файл); вывод движка за
   одну сессию ограничен 8 МБ, дальше только в logcat. В облачный бэкап журнал не попадает.
+- **Автоматизация:** активность `ToggleActivity` включает, выключает и меняет стратегию из
+  других приложений и скриптов — см. [docs/automation.md](docs/automation.md). Она не защищена
+  разрешением: любое приложение на телефоне может её вызвать.
 - DNS-сервер, IPv6, раздельное туннелирование по приложениям.
 - Поддержка «Постоянного VPN» Android (автозапуск при загрузке:
   *Настройки → Сеть → VPN → ByeZapret → Постоянная VPN*).
@@ -215,6 +229,8 @@ cd zapret_android-port_claude
 
 Нужны JDK 21 (или 17), Android SDK (platform 36), NDK 27.2.12479018 и CMake 3.22.1.
 APK для всех ABI и универсальный APK появятся в `app/build/outputs/apk/debug/`.
+Модуль Tor собирается отдельно: `./gradlew :tor:assembleDebug`, его APK — в
+`tor/build/outputs/apk/debug/`.
 CI (GitHub Actions) собирает их на каждый push — смотрите артефакты сборки.
 
 Подписанный релиз: задайте переменные `ZAPRETDROID_KEYSTORE`, `ZAPRETDROID_KEYSTORE_PASSWORD`,
@@ -224,11 +240,14 @@ CI (GitHub Actions) собирает их на каждый push — смотр�
 
 ByeZapret is a rootless DPI bypass for Android. It runs a local VPN (`VpnService`) that feeds
 traffic through [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) into the
-[ByeDPI](https://github.com/hufrea/byedpi) desync engine; nothing leaves the device through a
-remote server. Packet-level zapret techniques (nfqws) require root and are out of scope; tpws position
-markers and HTTP modifications, zapret2 fake payloads, zapret-style host lists, autohostlist
-and a blockcheck-like strategy finder are included. Build with `./gradlew assembleDebug`
-after a recursive clone (JDK 17, SDK 36, NDK 27.2.12479018, CMake 3.22.1).
+[ByeDPI](https://github.com/hufrea/byedpi) desync engine; nothing goes to a remote server of
+the project. Included: zapret-style host lists and tpws position markers, zapret2 fake payloads,
+a blockcheck-like strategy finder with a deep check and multi-strategies, encrypted DNS (DoH,
+DoT, DNSCrypt), DNS blocking of ads and malware sites, routing selected domains through Tor
+(a downloadable module) or your own SOCKS5 proxy, and automation through an activity intent.
+Packet-level nfqws techniques need root and are out of scope. The documentation is in Russian,
+in [docs/](docs/). Build with `./gradlew assembleDebug` after a recursive clone (JDK 17 or 21,
+SDK 36, NDK 27.2.12479018, CMake 3.22.1).
 
 ## Лицензия
 
