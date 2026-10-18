@@ -477,19 +477,24 @@ object SelfCheck {
                 (if (r.responded) CheckStatus.OK else CheckStatus.WARN) to r.summary()
             }
             if (settings.proxyTelegram) {
-                // The Telegram group matches by address: a TCP connection to a Telegram server
-                // through the engine must be passed on to the proxy and come up there.
+                // The Telegram group matches by address. The engine accepts a proxy group's
+                // connection at once and connects to the proxy only on the client's first data,
+                // so a connect alone proves nothing: an HTTP request to a Telegram server (port 80,
+                // its HTTP transport) must get an answer back through the proxy.
                 check(g, "Telegram through the proxy") {
                     val group = TorProxy.telegramGroups(context, address, settings.proxyUdp).joinToString(" ")
                     TestEngine.with(group, PORT, fakeDir, listDir) {
                         val start = System.nanoTime()
                         runCatching {
-                            Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", PORT))).use {
-                                it.connect(InetSocketAddress(InetAddress.getByName(TorProxy.TELEGRAM_CHECK_IP), 443), TIMEOUT_MS * 3)
+                            Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", PORT))).use { s ->
+                                s.soTimeout = TIMEOUT_MS * 4
+                                s.connect(InetSocketAddress(InetAddress.getByName(TorProxy.TELEGRAM_CHECK_IP), 80), TIMEOUT_MS * 3)
+                                s.getOutputStream().write("GET / HTTP/1.1\r\nHost: ${TorProxy.TELEGRAM_CHECK_IP}\r\nConnection: close\r\n\r\n".toByteArray())
+                                s.getInputStream().bufferedReader().readLine() ?: throw java.io.IOException("closed without an answer")
                             }
                         }.fold(
-                            onSuccess = { CheckStatus.OK to "${TorProxy.TELEGRAM_CHECK_IP}:443 connected through the proxy in ${(System.nanoTime() - start) / 1_000_000} ms" },
-                            onFailure = { CheckStatus.WARN to "${TorProxy.TELEGRAM_CHECK_IP}:443 not reached through the proxy: ${it.message ?: it.javaClass.simpleName}" },
+                            onSuccess = { CheckStatus.OK to "${TorProxy.TELEGRAM_CHECK_IP} answered through the proxy in ${(System.nanoTime() - start) / 1_000_000} ms: ${it.take(60)}" },
+                            onFailure = { CheckStatus.WARN to "${TorProxy.TELEGRAM_CHECK_IP} did not answer through the proxy: ${it.message ?: it.javaClass.simpleName}" },
                         )
                     }
                 }
