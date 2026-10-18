@@ -484,7 +484,7 @@ object SelfCheck {
                     TestEngine.with(group, PORT, fakeDir, listDir) {
                         val start = System.nanoTime()
                         runCatching {
-                            Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress(InetAddress.getLoopbackAddress(), PORT))).use {
+                            Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", PORT))).use {
                                 it.connect(InetSocketAddress(InetAddress.getByName(TorProxy.TELEGRAM_CHECK_IP), 443), TIMEOUT_MS * 3)
                             }
                         }.fold(

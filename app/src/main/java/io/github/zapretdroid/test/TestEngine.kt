@@ -13,7 +13,9 @@ object TestEngine {
     /** Chrome's ClientHello with the post-quantum key share, from zapret2's fake payloads. */
     const val BROWSER_HELLO = "tls_clienthello_vk_com_kyber.bin"
 
-    class Failed(val exitCode: Int) : Exception("engine did not start (code $exitCode)")
+    class Failed(val exitCode: Int) : Exception(
+        if (exitCode == Int.MIN_VALUE) "engine did not start listening within 3 s" else "engine did not start (code $exitCode)",
+    )
 
     /**
      * Starts the engine with [strategy] on 127.0.0.1:[port], runs [block] while it listens and
@@ -36,7 +38,9 @@ object TestEngine {
             return block()
         } finally {
             engine.stopProxy()
-            engineThread.join(3000)
+            // The next run must not start while this engine still holds the global state:
+            // after slow probes (14 s ones on phones) 3 s was not always enough.
+            engineThread.join(10_000)
         }
     }
 
