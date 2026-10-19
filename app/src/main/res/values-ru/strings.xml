@@ -456,6 +456,11 @@
     <string name="autofix_restart">VPN применит решения при следующем запуске.</string>
     <string name="autofix_remove">Убрать решение</string>
     <string name="cmd_block_autofix">Автоподбор: %1$s</string>
+    <string name="script_ok">Скрипт без ошибок: движок получит %1$d аргументов</string>
+    <string name="script_block">Блок «%1$s»</string>
+    <string name="script_result">Движок получит в сети</string>
+    <string name="script_wifi">Wi-Fi</string>
+    <string name="script_mobile">мобильной</string>
     <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>

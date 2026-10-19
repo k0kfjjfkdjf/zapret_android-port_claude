@@ -13,6 +13,12 @@ object Diagnostics {
         add("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}, ABI ${Build.SUPPORTED_ABIS.joinToString()}")
         add("strategy: ${settings.strategyId}")
         add("args: ${settings.strategyArgs}")
+        if (Script.hasDirectives(settings.strategyArgs)) {
+            val network = StrategyScript.networkType(context)
+            val r = StrategyScript.compile(context, settings, network = network)
+            add("script for $network: " + (r.errors.firstOrNull()?.let { "ERROR line ${it.line}: ${it.message}" }
+                ?: "${splitArgs(r.text).size} arguments") + (r.blocks.takeIf { it.isNotEmpty() }?.let { b -> ", blocks: " + b.joinToString { if (it in settings.disabledBlocks) "$it off" else it } } ?: ""))
+        }
         if (settings.proxyEnabled) add("proxy: list ${settings.proxyList} through socks5://${settings.proxyAddress}, " + (if (settings.proxyUdp) "UDP too" else "TCP only") + if (settings.proxyTelegram) ", Telegram too" else "")
         if (settings.excludeEnabled) add("exclusions: list ${TorProxy.EXCLUDE_LIST} goes direct")
         settings.extraProxies.takeIf { it.isNotEmpty() }?.let { l -> add("other proxies: " + l.joinToString { "${it.name}=${it.address}" + if (it.udp) " (UDP)" else "" } + (settings.telegramProxy.takeIf { it.isNotEmpty() }?.let { "; Telegram via $it" } ?: "")) }

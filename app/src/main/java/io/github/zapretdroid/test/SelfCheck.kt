@@ -28,6 +28,8 @@ import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.isIpLiteral
 import io.github.zapretdroid.core.StrategyArgs
+import io.github.zapretdroid.core.StrategyScript
+import io.github.zapretdroid.core.Script
 import io.github.zapretdroid.core.splitArgs
 import io.github.zapretdroid.service.VpnStatus
 import java.io.File
@@ -480,9 +482,21 @@ object SelfCheck {
             }?.let { line ->
                 return@check CheckStatus.WARN to "a # comment hides options on its line: \"${line.trim().take(80)}…\"; put the comment on its own line"
             }
-            runCatching { ArgTemplates.resolve(splitArgs(settings.strategyArgs), fakeDir, listDir) }.fold(
+            val script = StrategyScript.compile(context, settings)
+            if (script.errors.isNotEmpty()) {
+                return@check CheckStatus.WARN to script.errors.joinToString("; ") { e ->
+                    (if (e.line > 0) "line ${e.line}: " else "") + e.message
+                } + ": the VPN will not start with this strategy"
+            }
+            val network = StrategyScript.networkType(context)
+            val scriptNote = if (Script.hasDirectives(settings.strategyArgs)) {
+                ", script for $network" + script.blocks.takeIf { it.isNotEmpty() }?.let { b ->
+                    " (blocks: " + b.joinToString { if (it in settings.disabledBlocks) "$it off" else it } + ")"
+                }.orEmpty()
+            } else ""
+            runCatching { ArgTemplates.resolve(splitArgs(script.text), fakeDir, listDir) }.fold(
                 onSuccess = { args ->
-                    CheckStatus.OK to "${args.size} arguments" +
+                    CheckStatus.OK to "${args.size} arguments$scriptNote" +
                         (if (ArgTemplates.usesApps(args)) ", routes by app" else "") +
                         (if (ArgTemplates.usesProxy(args)) ", uses a proxy" else "")
                 },
@@ -573,7 +587,8 @@ object SelfCheck {
         check(g, "Telegram calls (UDP)") {
             if (!settings.proxyTelegram) {
                 // The command line from the settings may carry the Telegram group ({ipset:telegram}).
-                val group = StrategyArgs.groups(splitArgs(settings.strategyArgs)).firstOrNull { "{ipset:telegram}" in it }
+                val compiled = runCatching { StrategyScript.text(context, settings) }.getOrDefault(settings.strategyArgs)
+                val group = StrategyArgs.groups(splitArgs(compiled)).firstOrNull { "{ipset:telegram}" in it }
                 if (group != null) {
                     val proxy = group.getOrNull(group.indexOf("-C") + 1).takeIf { "-C" in group } ?: "?"
                     return@check if ("--udp-proxy" in group) CheckStatus.INFO to "Telegram goes through $proxy in the command line, with --udp-proxy: calls go there if the proxy relays UDP"
@@ -621,7 +636,8 @@ object SelfCheck {
                 else -> CheckStatus.OK to "all checked resolvers answer correctly"
             }
         }
-        val strategy = settings.strategyArgs
+        // The strategy as the VPN gets it on this network (the script compiled).
+        val strategy = runCatching { StrategyScript.text(context, settings) }.getOrDefault(settings.strategyArgs)
         // HTTPS: www.google.com is the control site, the others are often blocked.
         for ((label, args) in listOf("without bypass" to "", "current strategy" to strategy)) {
             runCatching {

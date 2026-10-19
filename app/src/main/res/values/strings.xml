@@ -458,6 +458,11 @@
     <string name="autofix_restart">The VPN takes the fixes on its next start.</string>
     <string name="autofix_remove">Remove the fix</string>
     <string name="cmd_block_autofix">Auto-fix: %1$s</string>
+    <string name="script_ok">Script without errors: %1$d arguments for the engine</string>
+    <string name="script_block">Block “%1$s”</string>
+    <string name="script_result">The engine gets on</string>
+    <string name="script_wifi">Wi-Fi</string>
+    <string name="script_mobile">mobile</string>
     <string name="app_routes_title">Apps</string>
     <string name="app_routes_none">All apps follow the strategy and the lists</string>
     <string name="app_routes_summary">Through the proxy: %1$d, direct: %2$d</string>

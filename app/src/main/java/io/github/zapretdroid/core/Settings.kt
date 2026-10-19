@@ -215,6 +215,14 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putString(KEY_AUTOFIX, value.joinToString("\n") { "${it.list}\t${it.label}\t${it.args}" }) }
         }
 
+    /** Named @block sections of the strategy script that are switched off (see Script). */
+    var disabledBlocks: Set<String>
+        get() = prefs.getStringSet(KEY_BLOCKS_OFF, emptySet())!!.toSet()
+        set(value) {
+            logChange("disabledBlocks", disabledBlocks, value)
+            prefs.edit(commit = true) { putStringSet(KEY_BLOCKS_OFF, value) }
+        }
+
     /** Apps routed wholly through the proxy or wholly direct (see AppRoutes). */
     var appRoutes: Map<String, AppRoutes.Route>
         get() = prefs.getStringSet(KEY_APP_ROUTES, emptySet())!!.mapNotNull { e ->
@@ -298,6 +306,7 @@ class Settings(context: Context) {
         private const val KEY_DNS_BLOCK = "dns_block"
         private const val KEY_DNS_SERVERS = "dns_servers"
         private const val KEY_AUTOFIX = "autofix_rules"
+        private const val KEY_BLOCKS_OFF = "script_blocks_off"
 
         /** Every setting and how it is stored: what the settings editor checks against. */
         val SCHEMA: Map<String, ConfigCheck.Kind> =
@@ -309,7 +318,7 @@ class Settings(context: Context) {
                 KEY_PROXY_LIST to STRING, KEY_PROXY_UDP to BOOLEAN, KEY_PROXY_TELEGRAM to BOOLEAN,
                 KEY_APP_ROUTES to SET, KEY_EXTRA_PROXIES to STRING, KEY_EXCLUDE to BOOLEAN, KEY_APP_PROXIES to SET,
                 KEY_TELEGRAM_PROXY to STRING, KEY_APP_STRATEGIES to SET, KEY_DNS_BLOCK to SET, KEY_DNS_SERVERS to STRING,
-                KEY_AUTOFIX to STRING,
+                KEY_AUTOFIX to STRING, KEY_BLOCKS_OFF to SET,
             )
 
         /** Settings that take one of a few words. */

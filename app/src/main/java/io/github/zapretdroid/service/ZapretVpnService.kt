@@ -40,6 +40,9 @@ import io.github.zapretdroid.core.StrategyArgs
 import io.github.zapretdroid.core.StrategyGroups
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.core.LogLevel
+import io.github.zapretdroid.core.StrategyScript
+import io.github.zapretdroid.core.Script
 import io.github.zapretdroid.core.TProxyService
 import io.github.zapretdroid.core.isIpLiteral
 import io.github.zapretdroid.core.splitArgs
@@ -123,91 +126,135 @@ class ZapretVpnService : VpnService() {
             if (hevLog == null) AppLog.w("could not capture native engine output")
             val logLevel = settings.logLevel
             secureDns = startSecureDns(settings)
-            val args = buildList {
-                add("ciadpi")
-                add("--ip"); add(PROXY_HOST)
-                add("--port"); add(PROXY_PORT.toString())
-                // One line per connection (host, group, bytes) and per detected block at every level.
-                add("--conn-log")
-                // Only the VPN's DNS servers name addresses for host lists (see udp_reply_hook).
-                val resolver = secureDns
-                if (resolver != null) {
-                    add("--names-dns"); add(SecureDns.VPN_DNS)
-                    add("--dns-redirect"); add("${SecureDns.VPN_DNS}=127.0.0.1:${resolver.port}")
-                } else {
-                    add("--names-dns"); add(dnsServers(settings).take(4).joinToString(","))
-                }
-                if (logLevel.byedpiDebug > 0) {
-                    add("--debug"); add(logLevel.byedpiDebug.toString())
-                }
-                addAll(resolveStrategy(settings))
-            }
-            AppLog.i("byedpi command: ${args.joinToString(" ") { quoteArg(it) }}")
-            StrategyGroups.describe(args.drop(1)).forEach { AppLog.i(it) }
-            val proxy = ByeDpi()
-            engine = proxy
-            engineThread = thread(name = "byedpi") {
-                val code = proxy.startProxy(args.toTypedArray())
-                AppLog.i("byedpi exited with code $code")
-                if (state == VpnState.STARTING || state == VpnState.RUNNING) {
-                    val message = withEngineOutput(getString(R.string.error_engine_exited, code))
-                    handler.post { stop(message) }
-                }
-            }
+            startEngine(engineArgs(settings))
             if (!awaitProxy()) {
                 throw IllegalStateException(withEngineOutput(getString(R.string.error_engine_start)))
             }
             AppLog.i("byedpi is listening on $PROXY_HOST:$PROXY_PORT")
-            // Under the lock with teardown(): a stop during the start must not leave a tun
-            // interface or hev running after teardown() has already run.
-            synchronized(sessionLock) {
-                if (state != VpnState.STARTING) return
-                val fd = buildTunnel(settings).establish()
-                    ?: throw IllegalStateException(getString(R.string.error_vpn_permission))
-                tun = fd
-            }
-            AppLog.i("tun interface established")
-
-            // Routing by app: each connection tells the engine its source address (user "@src").
-            val hevAuth = if (appRouting) "\n  username: '@src'\n  password: '-'" else ""
-            val config = File(filesDir, "hev.yml")
-            config.writeText(
-                """
-                |tunnel:
-                |  mtu: $MTU
-                |socks5:
-                |  port: $PROXY_PORT
-                |  address: $PROXY_HOST
-                |  udp: 'udp'$hevAuth
-                |misc:
-                |  task-stack-size: 81920
-                |  # 5 min instead of 60 s: an idle UDP session that hev closes comes back on a new
-                |  # engine socket and public port, while a call's server still sends to the old one.
-                |  udp-read-write-timeout: 300000
-                |  log-file: ${hevLog ?: "null"}
-                |  log-level: ${logLevel.hevLevel}
-                |""".trimMargin(),
-            )
-            synchronized(sessionLock) {
-                val fd = tun
-                if (state != VpnState.STARTING || fd == null) return
-                if (!TProxyService.TProxyStartService(config.absolutePath, fd.fd)) {
-                    throw IllegalStateException(getString(R.string.error_tunnel_start))
-                }
-            }
-            AppLog.i("tunnel started")
-            handler.post {
-                if (state == VpnState.STARTING) {
-                    startedAt = System.currentTimeMillis()
-                    AppLog.i("connected")
-                    watchNetwork()
-                    setState(VpnState.RUNNING)
-                    handler.postDelayed(statsTick, STATS_INTERVAL_MS)
-                }
-            }
+            startTunnel(settings, hevLog, logLevel)
         } catch (e: Throwable) {
             AppLog.e("failed to start: ${e.message}", e)
             handler.post { stop(e.message ?: e.toString()) }
+        }
+    }
+
+    /** The engine's command line: listening address, DNS, log and the strategy. */
+    private fun engineArgs(settings: Settings): List<String> {
+        val logLevel = settings.logLevel
+        return buildList {
+            add("ciadpi")
+            add("--ip"); add(PROXY_HOST)
+            add("--port"); add(PROXY_PORT.toString())
+            // One line per connection (host, group, bytes) and per detected block at every level.
+            add("--conn-log")
+            // Only the VPN's DNS servers name addresses for host lists (see udp_reply_hook).
+            val resolver = secureDns
+            if (resolver != null) {
+                add("--names-dns"); add(SecureDns.VPN_DNS)
+                add("--dns-redirect"); add("${SecureDns.VPN_DNS}=127.0.0.1:${resolver.port}")
+            } else {
+                add("--names-dns"); add(dnsServers(settings).take(4).joinToString(","))
+            }
+            if (logLevel.byedpiDebug > 0) {
+                add("--debug"); add(logLevel.byedpiDebug.toString())
+            }
+            addAll(resolveStrategy(settings))
+        }
+    }
+
+    /** Engines replaced by [restartEngine] exit without stopping the VPN. */
+    @Volatile
+    private var engineGeneration = 0
+
+    private fun startEngine(args: List<String>) {
+        AppLog.i("byedpi command: ${args.joinToString(" ") { quoteArg(it) }}")
+        StrategyGroups.describe(args.drop(1)).forEach { AppLog.i(it) }
+        val proxy = ByeDpi()
+        val generation = engineGeneration
+        engine = proxy
+        engineThread = thread(name = "byedpi") {
+            val code = proxy.startProxy(args.toTypedArray())
+            AppLog.i("byedpi exited with code $code")
+            if (generation == engineGeneration && (state == VpnState.STARTING || state == VpnState.RUNNING)) {
+                val message = withEngineOutput(getString(R.string.error_engine_exited, code))
+                handler.post { stop(message) }
+            }
+        }
+    }
+
+    /**
+     * A new engine with the strategy compiled again (the script's @if wifi/mobile after a network
+     * change), the tunnel kept: open connections drop, apps reconnect at once.
+     */
+    private fun restartEngine(reason: String) {
+        thread(name = "engine-restart") {
+            synchronized(sessionLock) {
+                if (state != VpnState.RUNNING) return@thread
+                AppLog.i("engine restart: $reason")
+                val args = try {
+                    engineArgs(Settings(this))
+                } catch (e: Throwable) {
+                    AppLog.e("engine restart failed: ${e.message}", e)
+                    handler.post { stop(e.message ?: e.toString()) }
+                    return@thread
+                }
+                engineGeneration++
+                engine?.stopProxy()
+                engineThread?.join(STOP_TIMEOUT_MS)
+                startEngine(args)
+                if (awaitProxy()) AppLog.i("engine restarted")
+                else handler.post { stop(withEngineOutput(getString(R.string.error_engine_start))) }
+            }
+        }
+    }
+
+    private fun startTunnel(settings: Settings, hevLog: String?, logLevel: LogLevel) {
+        // Under the lock with teardown(): a stop during the start must not leave a tun
+        // interface or hev running after teardown() has already run.
+        synchronized(sessionLock) {
+            if (state != VpnState.STARTING) return
+            val fd = buildTunnel(settings).establish()
+                ?: throw IllegalStateException(getString(R.string.error_vpn_permission))
+            tun = fd
+        }
+        AppLog.i("tun interface established")
+
+        // Routing by app: each connection tells the engine its source address (user "@src").
+        val hevAuth = if (appRouting) "\n  username: '@src'\n  password: '-'" else ""
+        val config = File(filesDir, "hev.yml")
+        config.writeText(
+            """
+            |tunnel:
+            |  mtu: $MTU
+            |socks5:
+            |  port: $PROXY_PORT
+            |  address: $PROXY_HOST
+            |  udp: 'udp'$hevAuth
+            |misc:
+            |  task-stack-size: 81920
+            |  # 5 min instead of 60 s: an idle UDP session that hev closes comes back on a new
+            |  # engine socket and public port, while a call's server still sends to the old one.
+            |  udp-read-write-timeout: 300000
+            |  log-file: ${hevLog ?: "null"}
+            |  log-level: ${logLevel.hevLevel}
+            |""".trimMargin(),
+        )
+        synchronized(sessionLock) {
+            val fd = tun
+            if (state != VpnState.STARTING || fd == null) return
+            if (!TProxyService.TProxyStartService(config.absolutePath, fd.fd)) {
+                throw IllegalStateException(getString(R.string.error_tunnel_start))
+            }
+        }
+        AppLog.i("tunnel started")
+        handler.post {
+            if (state == VpnState.STARTING) {
+                startedAt = System.currentTimeMillis()
+                AppLog.i("connected")
+                watchNetwork()
+                setState(VpnState.RUNNING)
+                handler.postDelayed(statsTick, STATS_INTERVAL_MS)
+            }
         }
     }
 
@@ -381,6 +428,7 @@ class ZapretVpnService : VpnService() {
         val manager = getSystemService(ConnectivityManager::class.java) ?: return
         val callback = object : ConnectivityManager.NetworkCallback() {
             private var lastDescription: String? = null
+            private var lastType: String? = null
 
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
                 val description = buildList {
@@ -392,6 +440,13 @@ class ZapretVpnService : VpnService() {
                 if (description != lastDescription) {
                     lastDescription = description
                     AppLog.i("network: $description")
+                }
+                // The script has @if wifi/mobile: the engine gets the strategy for the new network type.
+                val type = StrategyScript.typeOf(caps)
+                if (type != "other") {
+                    val before = lastType
+                    lastType = type
+                    if (before != null && before != type && scriptOnNetwork) restartEngine("network $before -> $type")
                 }
             }
 
@@ -414,6 +469,10 @@ class ZapretVpnService : VpnService() {
     /** Routing by app is on in this session: hev passes source addresses, the engine asks for owners. */
     @Volatile
     private var appRouting = false
+
+    /** The strategy script has @if wifi/mobile: the engine restarts when the network type changes. */
+    @Volatile
+    private var scriptOnNetwork = false
 
     /** The strategy's own command line uses a proxy (-C): proxy apps must bypass the VPN. */
     @Volatile
@@ -558,10 +617,19 @@ class ZapretVpnService : VpnService() {
      * chosen host list and with the autohostlist recorder when enabled.
      */
     private fun resolveStrategy(settings: Settings): List<String> {
+        val network = StrategyScript.networkType(this)
+        val script = settings.strategyArgs
+        scriptOnNetwork = Script.dependsOnNetwork(script)
+        if (Script.hasDirectives(script)) AppLog.i("strategy script compiled for network: $network")
         val strategy = try {
-            ArgTemplates.resolve(splitArgs(settings.strategyArgs), FakePayloads.install(this), HostLists.dir(this))
+            ArgTemplates.resolve(splitArgs(StrategyScript.text(this, settings, script, network)), FakePayloads.install(this), HostLists.dir(this))
         } catch (e: ArgTemplates.UnknownReference) {
             throw IllegalStateException(unknownReference(e))
+        }
+        // A block for another network may route by app: hev must pass source addresses from the start.
+        if (scriptOnNetwork && ("--apps" in script || "{app:" in script)) {
+            appRouting = true
+            ByeDpi.ownerLookup = { proto, local, remote -> AppRoutes.ownerUid(this, proto, local, remote) }
         }
         val scope = settings.hostScope
         val listPath = if (scope == HostScope.ALL) {

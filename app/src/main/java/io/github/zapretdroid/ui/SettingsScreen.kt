@@ -67,6 +67,9 @@ import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.BuiltinLists
+import io.github.zapretdroid.core.StrategyScript
+import io.github.zapretdroid.core.Script
+import io.github.zapretdroid.core.splitArgs
 import io.github.zapretdroid.core.Backup
 import io.github.zapretdroid.core.DnsFilter
 import io.github.zapretdroid.core.DnsMode
@@ -132,6 +135,7 @@ fun SettingsScreen(
     var listPicker by remember { mutableStateOf(false) }
     var saveDialog by remember { mutableStateOf(false) }
     var excludeEnabled by remember { mutableStateOf(settings.excludeEnabled) }
+    var disabledBlocks by remember { mutableStateOf(settings.disabledBlocks) }
     var builtinStatus by remember { mutableStateOf<String?>(null) }
     var builtinBusy by remember { mutableStateOf(false) }
     // The command line from the settings waiting for "move into my strategy" to be confirmed.
@@ -331,6 +335,15 @@ fun SettingsScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                         )
+                    }
+                    item {
+                        val shown = Strategies.byId(strategyId)?.args ?: customArgs
+                        if (Script.hasDirectives(shown)) {
+                            ScriptPanel(shown, disabledBlocks, { blocks ->
+                                disabledBlocks = blocks
+                                settings.disabledBlocks = blocks
+                            }, settings)
+                        }
                     }
 
                     item {
@@ -1432,4 +1445,46 @@ private fun IndexRow(icon: Int, title: Int, summary: String, onClick: () -> Unit
         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
         modifier = Modifier.selectable(selected = false, onClick = onClick),
     )
+}
+
+/**
+ * Under the strategy field when it is a script: its errors by line, a switch per @block and the
+ * command line the engine gets on Wi-Fi and on mobile networks.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScriptPanel(text: String, disabled: Set<String>, onBlocks: (Set<String>) -> Unit, settings: Settings) {
+    val context = LocalContext.current
+    var network by remember { mutableStateOf(StrategyScript.networkType(context).takeIf { it != "other" } ?: "wifi") }
+    val result = remember(text, disabled, network) { StrategyScript.compile(context, settings, text, network) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
+        if (result.errors.isEmpty()) {
+            Text(stringResource(R.string.script_ok, splitArgs(result.text).size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        } else {
+            result.errors.forEach { e ->
+                Text(
+                    (if (e.line > 0) stringResource(R.string.config_line, e.line) + ": " else "") + e.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        result.blocks.forEach { block ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.script_block, block), modifier = Modifier.weight(1f))
+                Switch(checked = block !in disabled, onCheckedChange = { on -> onBlocks(if (on) disabled - block else disabled + block) })
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.script_result), style = MaterialTheme.typography.titleSmall)
+            listOf("wifi" to R.string.script_wifi, "mobile" to R.string.script_mobile).forEach { (id, label) ->
+                FilterChip(selected = network == id, onClick = { network = id }, label = { Text(stringResource(label)) })
+            }
+        }
+        Text(
+            splitArgs(result.text).joinToString(" "),
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

@@ -45,6 +45,7 @@ import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.core.StrategyScript
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.splitArgs
 
@@ -54,8 +55,11 @@ private fun rules(context: Context) = ConfigCheck.Rules(Settings.SCHEMA, Setting
         Settings.KEY_STRATEGY -> (value as String).takeIf { id -> id != Strategies.CUSTOM && Strategies.presets.none { it.id == id } }
             ?.let { "no strategy \"$it\": one of ${(Strategies.presets.map { it.id } + Strategies.CUSTOM).joinToString()}" }
         Settings.KEY_CUSTOM_ARGS -> {
-            ArgTemplates.resolve(splitArgs(value as String), FakePayloads.install(context), HostLists.dir(context))
-            null
+            val script = StrategyScript.compile(context, Settings(context), value as String)
+            script.errors.firstOrNull()?.let { e -> "script line ${e.line}: ${e.message}" } ?: run {
+                ArgTemplates.resolve(splitArgs(script.text), FakePayloads.install(context), HostLists.dir(context))
+                null
+            }
         }
         Settings.KEY_PROXY_ADDRESS -> (value as String).takeIf { !TorProxy.isValid(it) }?.let { "not host:port: $it" }
         Settings.KEY_EXTRA_PROXIES -> (value as String).lines().filter { it.isNotBlank() }.firstNotNullOfOrNull { line ->
