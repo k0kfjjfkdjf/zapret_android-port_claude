@@ -1063,8 +1063,9 @@ int on_connect(struct poolhd *pool, struct eval *val, int et)
             uniperror("getsockopt SO_ERROR");
             return -1;
         }
+        bool refused = proxy_refused(val, error);
         if (!error) error = ECONNREFUSED;
-        if (params.conn_log) {
+        if (params.conn_log && !refused) {
             INIT_ADDR_STR((val->addr));
             fprintf(ENGINE_LOG, "tcp %d: connect to %s FAILED after %lld ms: %s\n",
                 val->fd, ADDR_STR, mono_ms() - val->started_ms, strerror(error));

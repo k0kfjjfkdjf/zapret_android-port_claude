@@ -18,6 +18,8 @@ object ConnMonitor {
     private val CLOSED = Regex("""\bconn (\d+) closed: (\S+), up (\d+) B, down (\d+) B, rounds (\d+), (\d+) ms""")
     private val BLOCK = Regex("""\bconn (\d+): block detected \((\w+)\) on (\S+) \((\S+)\) with group (\d+), (.*)""")
     private val TCP_FAILED = Regex("""\btcp (\d+): connect to (\S+) FAILED after (\d+) ms: (.*)""")
+    // The engine logs a refusing proxy (not running) once per burst, with a count of repeats.
+    private val PROXY_REFUSED = Regex("""\bgroup (\d+): proxy (\S+) (?:still )?refuses connections(?: \((\d+) more)?""")
     private val TCP_SLOW = Regex("""\btcp (\d+): slow connect to (\S+): (\d+) ms""")
     // "host NAME (where from), " is there since the engine names UDP flows (SNI, DNS answers).
     private val UDP_START = Regex("""\budp (\d+): -> (\S+):(\d+), (\w+), (?:host (\S+) \(([^)]*)\), )?group (\d+)""")
@@ -65,6 +67,11 @@ object ConnMonitor {
             }
             TCP_FAILED.find(line)?.let { m ->
                 out += Event(time, Kind.TCP_FAILED, m.groupValues[2], "${m.groupValues[2]}: ${m.groupValues[4]} after ${m.groupValues[3]} ms", false)
+                return@forEach
+            }
+            PROXY_REFUSED.find(line)?.let { m ->
+                val more = m.groupValues[3].takeIf { it.isNotEmpty() }?.let { ", $it more since the last line" } ?: ""
+                out += Event(time, Kind.TCP_FAILED, m.groupValues[2], "proxy ${m.groupValues[2]} of group ${m.groupValues[1]} refuses connections$more", false)
                 return@forEach
             }
             TCP_SLOW.find(line)?.let { m ->

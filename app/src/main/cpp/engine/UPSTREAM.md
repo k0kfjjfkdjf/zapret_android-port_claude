@@ -93,3 +93,7 @@ Changes in this fork:
   to be lost; `engine_stop_requested` (set by the JNI layer) makes the engine return right
   after `listen`. Inside the app (`ZAPRETDROID_JNI`) no SIGINT/SIGTERM/SIGHUP handlers are
   installed: they outlived the engine in the app process.
+- Refusing proxy: when the proxy of a `-C` group refuses a connection (not running), the
+  engine logs `group N: proxy ADDR refuses connections` once and counts the repeats of the
+  next 10 s (`still refuses connections (K more since the last line)`), instead of a
+  `socks send`, a `connect … FAILED` and a `block detected` line for every connection.

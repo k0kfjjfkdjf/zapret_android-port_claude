@@ -21,6 +21,17 @@ class ConnMonitorTest {
     )
 
     @Test
+    fun proxyRefusals() {
+        val events = ConnMonitor.parse(listOf(
+            "10-19 00:40:00.000 byedpi | group 1: proxy 127.0.0.1:9050 refuses connections: is it running? Repeats within 10 s are counted, not logged",
+            "10-19 00:40:12.000 byedpi | group 1: proxy 127.0.0.1:9050 still refuses connections (7 more since the last line)",
+        ))
+        assertEquals(listOf(Kind.TCP_FAILED, Kind.TCP_FAILED), events.map { it.kind })
+        assertEquals("127.0.0.1:9050", events[0].host)
+        assertTrue(events[1].text.endsWith("7 more since the last line"))
+    }
+
+    @Test
     fun parsesTheLastSession() {
         val events = ConnMonitor.parse(lines)
         assertEquals(

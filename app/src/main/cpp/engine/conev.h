@@ -144,6 +144,8 @@ struct eval {
     // hev-socks5-tunnel as the SOCKS5 user name, and the app's uid once looked up.
     union sockaddr_u app_src;
     bool has_app_src;
+    // ZapretDroid: the failure was the group's proxy refusing; already logged by proxy_refused.
+    bool quiet_fail;
     bool app_uid_known;
     int app_uid;
     // Other destinations of the same app socket, each with its own group and datagram count.

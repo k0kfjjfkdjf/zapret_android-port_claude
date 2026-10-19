@@ -31,6 +31,8 @@ static bool check_l34(struct desync_params *dp, int st, const union sockaddr_u *
 
 int on_connerr(struct poolhd *pool, struct eval *val);
 
+bool proxy_refused(struct eval *remote, int error);
+
 /*
  * ZapretDroid --apps: the host's lookup of the app (uid) owning a connection from src_ip:src_port
  * to dst_ip:dst_port (proto: IPPROTO_TCP or IPPROTO_UDP); -1 if unknown. Unset: no app groups match.

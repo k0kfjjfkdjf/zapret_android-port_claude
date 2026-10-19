@@ -211,6 +211,10 @@ static int on_socks_conn(struct poolhd *pool, struct eval *val, int t)
 {
     static const char data[3] = { S_VER5, 0x01, 0x00 };
     
+    // ZapretDroid: the proxy did not accept the connection; on_connect reads why and logs it.
+    if (t & POLLERR) {
+        return (val->after_conn_cb)(pool, val, t);
+    }
     if (send(val->fd, (char *)data, sizeof(data), 0) < 0) {
         uniperror("socks send");
         return (val->after_conn_cb)(pool, val, t);
@@ -519,7 +523,7 @@ int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_aliv
         }
         lav->dp->pri++;
     }
-    if (params.conn_log) {
+    if (params.conn_log && !lav->quiet_fail) {
         const char *h = lav->log_host[0] ? lav->log_host : "-";
         if (next) {
             fprintf(ENGINE_LOG, "conn %d: block detected (%s) on %s (%s) with group %d, trying group %d%s\n",
@@ -531,6 +535,7 @@ int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_aliv
                 lav->fd, detect_name(type), h, ADDR_STR, lav->dp->id);
         }
     }
+    lav->quiet_fail = 0;
     if (!next) {
         LOG(LOG_S, "unreach ip: %s\n", ADDR_STR);
         cache->dp_mask = 0;
@@ -588,6 +593,46 @@ int on_timeout(struct poolhd *pool, struct eval *val) {
     }
     set_timer(pool, val, params.ptimeout);
     return 0;
+}
+
+
+/* Repeated refusals of a group's proxy within this time are counted, not logged. */
+#define REFUSED_QUIET_MS 10000
+
+/*
+ * ZapretDroid: a proxy that is not running (Tor off) refuses every connection of its group;
+ * instead of a failure and a block line per connection, one line per burst with a count.
+ * Returns true when the connection went to the group's proxy and was refused.
+ */
+bool proxy_refused(struct eval *remote, int error)
+{
+    struct eval *client = remote->pair;
+    struct desync_params *dp = client ? client->dp : 0;
+    if (!dp || !dp->out_type || error != ECONNREFUSED) {
+        return 0;
+    }
+    client->quiet_fail = 1;
+    if (!params.conn_log) {
+        return 1;
+    }
+    long long now = mono_ms();
+    if (dp->refused_ms && now - dp->refused_ms < REFUSED_QUIET_MS) {
+        dp->refused_n++;
+        return 1;
+    }
+    INIT_ADDR_STR((dp->out_addr));
+    if (dp->refused_n) {
+        fprintf(ENGINE_LOG, "group %d: proxy %s:%d still refuses connections (%d more since the last line)\n",
+            dp->id, ADDR_STR, ntohs(dp->out_addr.in.sin_port), dp->refused_n);
+    }
+    else {
+        fprintf(ENGINE_LOG, "group %d: proxy %s:%d refuses connections: is it running? "
+            "Repeats within %d s are counted, not logged\n",
+            dp->id, ADDR_STR, ntohs(dp->out_addr.in.sin_port), REFUSED_QUIET_MS / 1000);
+    }
+    dp->refused_ms = now;
+    dp->refused_n = 0;
+    return 1;
 }
 
 

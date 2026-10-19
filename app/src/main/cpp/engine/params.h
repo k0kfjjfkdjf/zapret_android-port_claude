@@ -135,6 +135,9 @@ struct desync_params {
     // ZapretDroid --udp-proxy: with -C socks5://…, the group's UDP also goes through the proxy
     // (its UDP ASSOCIATE); without it UDP of a -C group is dropped (Tor carries TCP only).
     bool udp_proxy;
+    // ZapretDroid: while the proxy refuses connections, one log line per burst (see proxy_refused).
+    long long refused_ms;
+    int refused_n;
     // ZapretDroid --apps: the group applies only to connections of these apps (Android uids),
     // looked up from the client's source address (see conev.h, app_src).
     int *apps;
