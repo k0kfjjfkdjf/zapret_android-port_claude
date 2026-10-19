@@ -3,6 +3,9 @@ package io.github.zapretdroid.core
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import io.github.zapretdroid.core.ConfigCheck.Kind.BOOLEAN
+import io.github.zapretdroid.core.ConfigCheck.Kind.SET
+import io.github.zapretdroid.core.ConfigCheck.Kind.STRING
 
 enum class AppFilterMode { ALL, ONLY_SELECTED, EXCEPT_SELECTED }
 
@@ -286,7 +289,7 @@ class Settings(context: Context) {
         private const val KEY_DNS_SERVERS = "dns_servers"
 
         /** Every setting and how it is stored: what the settings editor checks against. */
-        val SCHEMA: Map<String, ConfigCheck.Kind> = ConfigCheck.Kind.run {
+        val SCHEMA: Map<String, ConfigCheck.Kind> =
             mapOf(
                 KEY_STRATEGY to STRING, KEY_CUSTOM_ARGS to STRING, KEY_DNS to STRING, KEY_IPV6 to BOOLEAN,
                 KEY_APP_FILTER to STRING, KEY_APPS to SET, KEY_LOG_LEVEL to STRING, KEY_HOST_SCOPE to STRING,
@@ -296,7 +299,6 @@ class Settings(context: Context) {
                 KEY_APP_ROUTES to SET, KEY_EXTRA_PROXIES to STRING, KEY_EXCLUDE to BOOLEAN, KEY_APP_PROXIES to SET,
                 KEY_TELEGRAM_PROXY to STRING, KEY_APP_STRATEGIES to SET, KEY_DNS_BLOCK to SET, KEY_DNS_SERVERS to STRING,
             )
-        }
 
         /** Settings that take one of a few words. */
         val CHOICES: Map<String, List<String>> = mapOf(
