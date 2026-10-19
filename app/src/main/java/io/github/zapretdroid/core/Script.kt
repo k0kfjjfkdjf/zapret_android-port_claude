@@ -19,6 +19,15 @@ package io.github.zapretdroid.core
  *   @fallback … @or … @end        variants as the engine's --auto groups (no testing beforehand)
  *   @restart …                    accepted; with slots a variant changes without a restart
  *
+ * Stage 3:
+ *   @on <reasons> [masks] [tcp|udp] [xN/T] -> <action>
+ *       reasons: block, freeze, noreply, connfail, udp-noreply, proxy-down, any (comma-separated)
+ *       masks:   domains, "*.example.com" for subdomains (comma-separated; none: every domain)
+ *       xN/T:    only after N events within T (s, m, h), e.g. x3/5m
+ *       action:  use <args> | proxy <name> | try { <args> | <args> … } | autofix | notify | ignore
+ *   The rules are checked in order against the engine's connection log while the VPN runs; the
+ *   first one that matches acts. use/proxy/try/autofix move the domain to a slot without a restart.
+ *
  * Pure: the network type, switched-off blocks, saved strategies and the winners of earlier
  * tries come in through [Env].
  */
@@ -29,6 +38,28 @@ object Script {
         val disabledBlocks: Set<String> = emptySet(),
         /** The text of a saved strategy by name, or null. */
         val include: (String) -> String? = { null },
+        /** The candidates of "-> autofix": strategies, then proxies. */
+        val autofix: List<String> = emptyList(),
+    )
+
+    /** What an @on rule does; slot actions name their slots. */
+    sealed class Action {
+        data class Use(val slot: String, val args: String) : Action()
+        data class Try(val slots: List<String>, val variants: List<String>) : Action()
+        object Notify : Action()
+        object Ignore : Action()
+    }
+
+    data class OnRule(
+        val index: Int,
+        val line: Int,
+        val reasons: Set<String>,
+        val masks: List<String>,
+        val proto: String?,
+        val count: Int,
+        val windowMs: Long,
+        val action: Action,
+        val text: String,
     )
 
     data class Issue(val line: Int, val message: String)
@@ -47,10 +78,14 @@ object Script {
         val blocks: List<String>,
         val tries: List<TryBlock> = emptyList(),
         val restart: Map<String, String> = emptyMap(),
+        val rules: List<OnRule> = emptyList(),
     )
 
     /** Directives of later stages: reported as not supported yet instead of passed to the engine. */
-    private val LATER = setOf("on", "scenario")
+    private val LATER = setOf("scenario")
+    val REASONS = setOf("block", "freeze", "noreply", "connfail", "udp-noreply", "proxy-down", "any")
+    private val THRESHOLD = Regex("""^x(\d+)/(\d+)([smh])$""")
+    private val MASK = Regex("""^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*$""")
     private val RESTART = setOf("restart", "restart-delay", "restart-idle", "restart-limit", "restart-keep")
 
     private val DIRECTIVE = Regex("""^\s*@([A-Za-z][A-Za-z-]*)\s*(.*)$""")
@@ -73,7 +108,7 @@ object Script {
         val st = State(env)
         val out = st.compile(text, emptyList(), null)
         st.pendingFor?.let { (line, name) -> st.errors += Issue(line, "@for $name without @try or @fallback after it") }
-        return Result(out, st.errors, st.blocks, st.tries, st.restart)
+        return Result(out, st.errors, st.blocks, st.tries, st.restart, st.rules)
     }
 
     private class Frame(val kind: String, val line: Int, val parentActive: Boolean, var active: Boolean, var seenElse: Boolean = false)
@@ -89,6 +124,7 @@ object Script {
         val sites = mutableMapOf<String, List<String>>()
         val tries = mutableListOf<TryBlock>()
         val restart = mutableMapOf<String, String>()
+        val rules = mutableListOf<OnRule>()
         var pendingFor: Pair<Int, String>? = null
 
         fun compile(text: String, includes: List<String>, from: String?): String {
@@ -196,6 +232,7 @@ object Script {
                     }
                     "or" -> error(line, "@or without @try or @fallback")
                     in RESTART -> if (active()) restart[name] = arg
+                    "on" -> if (active()) out.append(onRule(substitute(d.groupValues[2].trim(), line), line, ::error))
                     in LATER -> error(line, "@$name is not supported yet")
                     else -> error(line, "unknown directive @$name")
                 }
@@ -203,6 +240,100 @@ object Script {
             open?.let { error(it.line, "@${it.kind.name.lowercase()} without @end") }
             stack.forEach { error(it.line, "@${it.kind} without @end") }
             return out.toString()
+        }
+
+        /** An @on rule: recorded, and the slot groups of its action as the engine's command line. */
+        private fun onRule(text: String, line: Int, error: (Int, String) -> Unit): String {
+            val arrow = text.indexOf("->")
+            if (arrow < 0) {
+                error(line, "@on <reasons> [domains] [tcp|udp] [xN/T] -> <action>")
+                return ""
+            }
+            val words = text.substring(0, arrow).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val action = text.substring(arrow + 2).trim()
+            val reasons = words.firstOrNull()?.lowercase()?.split(',')?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+            if (reasons.isEmpty() || !REASONS.containsAll(reasons)) {
+                error(line, "@on reasons are ${REASONS.joinToString()}: \"${words.firstOrNull().orEmpty()}\"")
+                return ""
+            }
+            var masks = emptyList<String>()
+            var proto: String? = null
+            var count = 1
+            var window = 0L
+            for (w in words.drop(1)) {
+                val lw = w.lowercase()
+                val th = THRESHOLD.find(lw)
+                when {
+                    lw == "tcp" || lw == "udp" -> proto = lw
+                    th != null -> {
+                        count = th.groupValues[1].toInt().coerceAtLeast(1)
+                        window = th.groupValues[2].toLong() * when (th.groupValues[3]) { "s" -> 1000L; "m" -> 60_000L; else -> 3_600_000L }
+                    }
+                    else -> {
+                        val list = lw.split(',').filter { it.isNotEmpty() }
+                        val bad = list.firstOrNull { !MASK.matches(it) }
+                        if (bad != null) {
+                            error(line, "@on: not a domain or *.domain: \"$bad\"")
+                            return ""
+                        }
+                        masks = masks + list
+                    }
+                }
+            }
+            val index = rules.size + 1
+            val base = "on$index"
+            val out = StringBuilder()
+            fun slotGroups(variants: List<String>, slots: List<String>) = variants.zip(slots).forEach { (v, s) ->
+                out.append(quote(StrategyArgs.withSlot(splitArgs(v), s) + "--auto=none")).append('\n')
+            }
+            val parsed: Action = when {
+                action == "notify" -> Action.Notify
+                action == "ignore" -> Action.Ignore
+                action.startsWith("use ") -> {
+                    val args = action.removePrefix("use ").trim()
+                    if (splitArgs(args).isEmpty()) {
+                        error(line, "@on … -> use <args>")
+                        return ""
+                    }
+                    slotGroups(listOf(args), listOf(base))
+                    Action.Use(base, args)
+                }
+                action == "proxy" || action.startsWith("proxy ") -> {
+                    val name = action.removePrefix("proxy").trim()
+                    val args = "-C " + (if (name.isEmpty()) "{proxy}" else "{proxy:$name}") + if (proto == "udp") " --udp-proxy" else ""
+                    slotGroups(listOf(args), listOf(base))
+                    Action.Use(base, args)
+                }
+                action.startsWith("try") -> {
+                    val body = action.removePrefix("try").trim()
+                    val variants = if (body.startsWith("{") && body.endsWith("}")) {
+                        body.substring(1, body.length - 1).split(" | ").map { it.trim() }.filter { splitArgs(it).isNotEmpty() }
+                    } else emptyList()
+                    if (variants.isEmpty()) {
+                        error(line, "@on … -> try { <args> | <args> … }")
+                        return ""
+                    }
+                    val slots = variants.indices.map { "$base.${it + 1}" }
+                    slotGroups(variants, slots)
+                    Action.Try(slots, variants)
+                }
+                action == "autofix" -> {
+                    val variants = env.autofix
+                    if (variants.isEmpty()) {
+                        error(line, "@on … -> autofix: no candidates")
+                        return ""
+                    }
+                    val slots = variants.indices.map { "$base.${it + 1}" }
+                    slotGroups(variants, slots)
+                    Action.Try(slots, variants)
+                }
+                else -> {
+                    error(line, "@on action: use <args>, proxy <name>, try { … | … }, autofix, notify or ignore")
+                    return ""
+                }
+            }
+            rules += OnRule(index, line, reasons, masks, proto, count, window, parsed, text)
+            return if (out.isEmpty()) "" else "# === on $index ===\n$out"
         }
 
         /** The engine's groups of a finished @try/@fallback, and the block recorded. */

@@ -42,6 +42,7 @@ import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.test.ScriptSearch
 import io.github.zapretdroid.core.ScriptCache
+import io.github.zapretdroid.core.ScriptEvents
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.StrategyScript
 import io.github.zapretdroid.core.Script
@@ -264,6 +265,7 @@ class ZapretVpnService : VpnService() {
                 AppLog.i("connected")
                 watchNetwork()
                 setState(VpnState.RUNNING)
+                watchEvents()
                 handler.postDelayed(statsTick, STATS_INTERVAL_MS)
             }
         }
@@ -516,12 +518,106 @@ class ZapretVpnService : VpnService() {
         }
     }
 
+    /** Follows the log while the VPN runs and carries out the script's @on rules. */
+    @Volatile
+    private var eventWatcher: Thread? = null
+
+    private fun watchEvents() {
+        val rules = scriptResult?.rules.orEmpty()
+        if (rules.isEmpty() || eventWatcher != null) return
+        var current = rules
+        var matcher = ScriptEvents.Matcher(rules)
+        AppLog.i("script: watching the connection log for ${rules.size} @on rule(s)")
+        eventWatcher = thread(name = "script-events", isDaemon = true) {
+            var offset = AppLog.file.length()
+            val pending = StringBuilder()
+            try {
+                while (state == VpnState.RUNNING || state == VpnState.STARTING) {
+                    Thread.sleep(1000)
+                    val file = AppLog.file
+                    val size = file.length()
+                    if (size < offset) offset = 0 // trimmed
+                    if (size == offset) continue
+                    java.io.RandomAccessFile(file, "r").use { raf ->
+                        raf.seek(offset)
+                        val bytes = ByteArray((size - offset).coerceAtMost(1L shl 20).toInt())
+                        raf.readFully(bytes)
+                        offset += bytes.size
+                        pending.append(String(bytes, Charsets.UTF_8))
+                    }
+                    val text = pending.toString()
+                    val end = text.lastIndexOf('\n')
+                    if (end < 0) continue
+                    pending.setLength(0)
+                    pending.append(text.substring(end + 1))
+                    // The engine restarted with the script compiled again (another network type).
+                    val now = scriptResult?.rules.orEmpty()
+                    if (now !== current) {
+                        current = now
+                        matcher = ScriptEvents.Matcher(now)
+                    }
+                    text.substring(0, end).lineSequence().forEach { line ->
+                        // Our own lines ("script: …") never count as events.
+                        if (!line.contains("byedpi |")) return@forEach
+                        val event = ScriptEvents.parse(line) ?: return@forEach
+                        val rule = matcher.offer(event) ?: return@forEach
+                        handler.post { onRule(rule, event) }
+                    }
+                }
+            } catch (_: InterruptedException) {
+            } catch (e: Exception) {
+                AppLog.e("script: log watcher stopped", e)
+            } finally {
+                eventWatcher = null
+            }
+        }
+    }
+
+    private fun onRule(rule: Script.OnRule, event: ScriptEvents.Event) {
+        if (state != VpnState.RUNNING) return
+        val what = "@on ${rule.index} (${event.reason} on ${event.host})"
+        when (val action = rule.action) {
+            is Script.Action.Use -> {
+                val ok = ByeDpi.assignSlot(event.host, action.slot) == 0
+                AppLog.i("script: $what -> ${action.args}" + if (ok) ", without a restart" else " FAILED (no slot)")
+            }
+            is Script.Action.Try -> {
+                AppLog.i("script: $what -> searching ${action.variants.size} variants in the background")
+                ScriptSearch.Request.send(
+                    this, scriptNetwork,
+                    listOf(Script.TryBlock("@on${rule.index}|${event.host}", Script.TryKind.TRY, listOf(event.host), action.variants, action.slots)),
+                )
+            }
+            Script.Action.Notify -> {
+                AppLog.i("script: $what -> notify")
+                val n = NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(getString(R.string.script_event_title))
+                    .setContentText(getString(R.string.script_event_text, event.reason, event.host))
+                    .setAutoCancel(true)
+                    .build()
+                getSystemService(NotificationManager::class.java)?.notify(SCRIPT_NOTIFICATION_ID, n)
+            }
+            Script.Action.Ignore -> Unit
+        }
+    }
+
     private fun onScriptResult(intent: Intent) {
         val network = intent.getStringExtra("network") ?: return
         val name = intent.getStringExtra("name") ?: return
         val index = intent.getIntExtra("index", -1)
         val hash = intent.getIntExtra("hash", 0)
         if (index < 0) return
+        // A search started by an @on rule for one domain: "@on<rule>|<domain>".
+        if (name.startsWith("@on")) {
+            val rule = name.removePrefix("@on").substringBefore('|').toIntOrNull()
+            val host = name.substringAfter('|')
+            val action = scriptResult?.rules?.firstOrNull { it.index == rule }?.action as? Script.Action.Try ?: return
+            if (state != VpnState.RUNNING || network != scriptNetwork || index !in action.slots.indices) return
+            val ok = ByeDpi.assignSlot(host, action.slots[index]) == 0
+            AppLog.i("script: @on $rule: $host -> ${action.variants[index]}" + if (ok) ", without a restart" else " FAILED (no slot)")
+            return
+        }
         ScriptCache.save(this, network, name, index, hash)
         val t = scriptResult?.tries?.firstOrNull { it.name == name } ?: return
         if (state != VpnState.RUNNING || network != scriptNetwork || ScriptCache.hash(t) != hash || index !in t.slots.indices) return
@@ -853,6 +949,7 @@ class ZapretVpnService : VpnService() {
         /** From the app's @try search (ScriptSearch): a block's winning variant. */
         const val ACTION_SCRIPT_RESULT = "io.github.zapretdroid.SCRIPT_RESULT"
         private const val PAUSED_NOTIFICATION_ID = 3
+        private const val SCRIPT_NOTIFICATION_ID = 4
 
         private const val NATIVE_LOG_LIMIT = 8L * 1024 * 1024
         private const val CHANNEL_ID = "vpn"

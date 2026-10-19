@@ -23,7 +23,15 @@ object StrategyScript {
         network = network,
         disabledBlocks = settings.disabledBlocks,
         include = { name -> SavedStrategies.all(context).firstOrNull { it.name == name }?.args },
+        autofix = autofixCandidates(settings),
     )
+
+    /** "-> autofix": the presets, then the main proxy and the other proxies. */
+    fun autofixCandidates(settings: Settings): List<String> =
+        (Strategies.presets.map { it.args } + buildList {
+            if (TorProxy.isValid(settings.proxyAddress)) add("-C {proxy}" + if (settings.proxyUdp) " --udp-proxy" else "")
+            settings.extraProxies.filter { TorProxy.isValid(it.address) }.forEach { add("-C {proxy:${it.name}}" + if (it.udp) " --udp-proxy" else "") }
+        }).distinct()
 
     fun compile(context: Context, settings: Settings, text: String = settings.strategyArgs, network: String = networkType(context)): Script.Result =
         Script.compile(text, env(context, settings, network))

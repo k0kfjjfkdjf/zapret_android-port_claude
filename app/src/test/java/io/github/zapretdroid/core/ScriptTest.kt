@@ -55,7 +55,7 @@ class ScriptTest {
 
     @Test
     fun errorsHaveLines() {
-        val r = Script.compile("--split 1\n@if moon\n@end\n@end\n@block\n@on\n@frobnicate", Script.Env("wifi"))
+        val r = Script.compile("--split 1\n@if moon\n@end\n@end\n@block\n@scenario\n@frobnicate", Script.Env("wifi"))
         val byLine = r.errors.associate { it.line to it.message }
         assertTrue(byLine[2]!!.contains("@if takes"))
         assertTrue(byLine[4]!!.contains("@end without"))
@@ -110,5 +110,42 @@ class ScriptTest {
     fun quoteRoundTrips() {
         val tokens = listOf("a b", "it's", "#x", "plain", "")
         assertEquals(tokens, splitArgs(Script.quote(tokens)))
+    }
+
+    @Test
+    fun onRules() {
+        val text = listOf(
+            "@on freeze *.discord.com,discord.gg tcp -> proxy termux",
+            "@on noreply *.youtube.com x2/1m -> try { --disorder 1 | --oob 3 }",
+            "@on proxy-down -> notify",
+            "@on any x3/10m -> autofix",
+            "--disorder 1",
+        ).joinToString("\n")
+        val r = Script.compile(text, Script.Env("wifi", autofix = listOf("--split 1", "-C {proxy}")))
+        assertEquals(emptyList<Script.Issue>(), r.errors)
+        assertEquals(4, r.rules.size)
+        val (proxy, tryRule, notify, autofix) = r.rules
+        assertEquals(setOf("freeze"), proxy.reasons)
+        assertEquals(listOf("*.discord.com", "discord.gg"), proxy.masks)
+        assertEquals("tcp", proxy.proto)
+        assertEquals(Script.Action.Use("on1", "-C {proxy:termux}"), proxy.action)
+        assertEquals(2, tryRule.count)
+        assertEquals(60_000L, tryRule.windowMs)
+        assertEquals(listOf("on2.1", "on2.2"), (tryRule.action as Script.Action.Try).slots)
+        assertEquals(Script.Action.Notify, notify.action)
+        assertEquals(listOf("--split 1", "-C {proxy}"), (autofix.action as Script.Action.Try).variants)
+        val args = splitArgs(r.text)
+        assertTrue(args.containsAll(listOf("--slot", "on1", "-C", "{proxy:termux}", "on2.1", "on2.2", "on4.1", "on4.2")))
+        assertEquals(listOf("--disorder", "1"), args.takeLast(2))
+    }
+
+    @Test
+    fun onRuleErrors() {
+        val env = Script.Env("wifi")
+        assertTrue(Script.compile("@on freeze", env).errors.single().message.contains("->"))
+        assertTrue(Script.compile("@on melt -> notify", env).errors.single().message.contains("reasons"))
+        assertTrue(Script.compile("@on block Not_A_Domain! -> notify", env).errors.single().message.contains("domain"))
+        assertTrue(Script.compile("@on block -> explode", env).errors.single().message.contains("action"))
+        assertTrue(Script.compile("@on block -> autofix", env).errors.single().message.contains("candidates"))
     }
 }

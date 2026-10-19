@@ -36,13 +36,13 @@ object ScriptSearch {
         private set
 
     /** A block as it travels in an Intent: name, sites, variants. */
-    fun encode(b: Script.TryBlock) = b.name + "\t" + b.sites.joinToString(",") + "\t" + b.variants.joinToString("\u0001")
+    fun encode(b: Script.TryBlock) =
+        b.name + "\t" + b.sites.joinToString(",") + "\t" + b.variants.joinToString("\u0001") + "\t" + b.slots.joinToString("\u0001")
 
     private fun decode(s: String): Script.TryBlock? {
         val p = s.split('\t')
-        if (p.size != 3) return null
-        val variants = p[2].split('\u0001')
-        return Script.TryBlock(p[0], Script.TryKind.TRY, p[1].split(',').filter { it.isNotEmpty() }, variants, variants.indices.map { "${p[0]}.${it + 1}" })
+        if (p.size != 4) return null
+        return Script.TryBlock(p[0], Script.TryKind.TRY, p[1].split(',').filter { it.isNotEmpty() }, p[2].split('\u0001'), p[3].split('\u0001'))
     }
 
     fun start(context: Context, network: String, blocks: List<Script.TryBlock>) {
