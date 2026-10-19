@@ -41,6 +41,7 @@ import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppRoutesScreen
 import io.github.zapretdroid.ui.ConfigEditorScreen
 import io.github.zapretdroid.ui.AppsScreen
+import io.github.zapretdroid.ui.AutoFixScreen
 import io.github.zapretdroid.ui.AutoHostScreen
 import io.github.zapretdroid.ui.CollectScreen
 import io.github.zapretdroid.ui.DnsServersScreen
@@ -102,13 +103,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS, APP_ROUTES, CONFIG }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS, APP_ROUTES, CONFIG, AUTOFIX }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var autofixReturn by rememberSaveable { mutableStateOf(Screen.SETTINGS) }
     var logsReturn by rememberSaveable { mutableStateOf(Screen.HOME) }
     var editingList by rememberSaveable { mutableStateOf<String?>(null) }
     var state by remember {
@@ -279,7 +281,14 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenLogs = { openLogs(Screen.HOME) },
             onOpenMonitor = { screen = Screen.MONITOR },
         )
-        Screen.MONITOR -> MonitorScreen(vpnRunning = state == VpnState.RUNNING, onBack = { screen = Screen.HOME })
+        Screen.MONITOR -> MonitorScreen(
+            vpnRunning = state == VpnState.RUNNING,
+            onBack = { screen = Screen.HOME },
+            onOpenAutoFix = {
+                autofixReturn = Screen.MONITOR
+                screen = Screen.AUTOFIX
+            },
+        )
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
             vpnActive = state != VpnState.STOPPED,
@@ -298,6 +307,10 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenDnsServers = { screen = Screen.DNS_SERVERS },
             onOpenAppRoutes = { screen = Screen.APP_ROUTES },
             onOpenConfig = { screen = Screen.CONFIG },
+            onOpenAutoFix = {
+                autofixReturn = Screen.SETTINGS
+                screen = Screen.AUTOFIX
+            },
             onOpenClassic = { ClassicBridge.open(context) },
             onCheckUpdates = checkUpdates,
         )
@@ -309,6 +322,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         Screen.DNS_SERVERS -> DnsServersScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.APP_ROUTES -> AppRoutesScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.CONFIG -> ConfigEditorScreen(onBack = { screen = Screen.SETTINGS })
+        Screen.AUTOFIX -> AutoFixScreen(settings = settings, vpnActive = state != VpnState.STOPPED, onBack = { screen = autofixReturn })
         Screen.LISTS -> HostListsScreen(
             onBack = { screen = Screen.SETTINGS },
             onEdit = { name ->

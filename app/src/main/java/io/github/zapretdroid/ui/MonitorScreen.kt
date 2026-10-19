@@ -17,6 +17,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,7 +41,7 @@ import kotlinx.coroutines.withContext
 /** Live view of the engine's connection log for the current VPN session. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MonitorScreen(vpnRunning: Boolean, onBack: () -> Unit) {
+fun MonitorScreen(vpnRunning: Boolean, onBack: () -> Unit, onOpenAutoFix: () -> Unit) {
     var discordOnly by rememberSaveable { mutableStateOf(true) }
     var events by remember { mutableStateOf(emptyList<ConnMonitor.Event>()) }
     LaunchedEffect(Unit) {
@@ -60,6 +61,9 @@ fun MonitorScreen(vpnRunning: Boolean, onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
+                },
+                actions = {
+                    TextButton(onClick = onOpenAutoFix) { Text(stringResource(R.string.autofix_open_short)) }
                 },
             )
         },

@@ -37,6 +37,37 @@ object ConnMonitor {
 
     private fun stripMapped(ip: String) = ip.removePrefix("::ffff:")
 
+    private val FAILED_NAME = Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$")
+
+    /**
+     * Named sites that failed in the last VPN session: blocks the engine
+     * detected (--auto groups), freezes after 16-20 KB, and connections the server sent nothing
+     * back on (a dropped TLS handshake: with --auto=none groups no block is detected). A site
+     * that also loaded more than the freeze size in the session is left out.
+     */
+    fun failedHosts(lines: List<String>): List<String> {
+        val start = lines.indexOfLast { it.contains(SESSION_START) }
+        val session = if (start >= 0) lines.subList(start, lines.size) else lines
+        val failed = LinkedHashSet<String>()
+        val loaded = HashSet<String>()
+        parse(session).forEach { e ->
+            if (e.kind == Kind.BLOCK || e.kind == Kind.FREEZE) failed += e.host
+        }
+        session.forEach { line ->
+            val m = CLOSED.find(line) ?: return@forEach
+            val host = m.groupValues[2]
+            val d = m.groupValues[4].toLong()
+            when {
+                d == 0L && m.groupValues[3].toLong() > 0 -> failed += host
+                d > 32 * 1024 -> loaded += host
+            }
+        }
+        return failed.toList().asReversed()
+            .map { it.lowercase().trimEnd('.') }
+            .filter { FAILED_NAME.matches(it) && !it.matches(Regex("^[0-9.]+$")) && it !in loaded }
+            .distinct()
+    }
+
     /** Events of the last VPN session in [lines] (the whole input if no session start is found). */
     fun parse(lines: List<String>): List<Event> {
         val start = lines.indexOfLast { it.contains(SESSION_START) }

@@ -33,6 +33,7 @@ import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.AutoHost
+import io.github.zapretdroid.core.AutoFix
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.StrategyArgs
@@ -597,7 +598,22 @@ class ZapretVpnService : VpnService() {
             TorProxy.requestStart(this)
             AppLog.i("the strategy sends groups to a proxy (-C)")
         }
-        return excludeGroup(settings) + appGroups(settings) + proxyGroup(settings) + telegramGroup(settings) + appStrategy +
+        val fixes = AutoFix.groups(this, settings) { args ->
+            try {
+                ArgTemplates.resolve(splitArgs(args), FakePayloads.install(this), HostLists.dir(this))
+            } catch (e: ArgTemplates.UnknownReference) {
+                throw IllegalStateException(unknownReference(e))
+            }
+        }
+        if (fixes.isNotEmpty()) {
+            AppLog.i("auto-fix: " + AutoFix.rules(this, settings).joinToString { "${it.label} for ${HostLists.count(this, it.list)} site(s)" })
+            if (ArgTemplates.usesProxy(fixes)) {
+                strategyProxy = true
+                TorProxy.requestStart(this)
+            }
+        }
+        // Sites with a fix of their own come after the exclusions and the app routes.
+        return excludeGroup(settings) + appGroups(settings) + fixes + proxyGroup(settings) + telegramGroup(settings) + appStrategy +
             StrategyArgs.build(strategy, scope, listPath, autohostLog)
     }
 

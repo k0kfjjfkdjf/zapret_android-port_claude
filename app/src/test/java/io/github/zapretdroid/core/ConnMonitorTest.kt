@@ -21,6 +21,21 @@ class ConnMonitorTest {
     )
 
     @Test
+    fun failedHosts() {
+        val failed = ConnMonitor.failedHosts(listOf(
+            "10-19 08:00:00.000 byedpi | conn 3 closed: old.example, up 500 B, down 0 B, rounds 1, 5000 ms",
+            "10-19 08:00:01.000 vpn | ===== VPN session start (io.github.zapretdroid.START) =====",
+            "10-19 08:00:02.000 byedpi | conn 4 closed: www.youtube.com, up 517 B, down 0 B, rounds 1, 5000 ms",
+            "10-19 08:00:03.000 byedpi | conn 5 closed: discord.com, up 900 B, down 24642 B, rounds 3, 6600 ms",
+            "10-19 08:00:04.000 byedpi | conn 6 closed: ok.example, up 500 B, down 0 B, rounds 1, 100 ms",
+            "10-19 08:00:05.000 byedpi | conn 7 closed: ok.example, up 900 B, down 90000 B, rounds 9, 900 ms",
+            "10-19 08:00:06.000 byedpi | conn 8 closed: 1.2.3.4, up 900 B, down 0 B, rounds 1, 900 ms",
+            "10-19 08:00:07.000 byedpi | conn 9: block detected (torst) on chatgpt.com (8.6.112.5) with group 0, no group left",
+        ))
+        assertEquals(setOf("www.youtube.com", "discord.com", "chatgpt.com"), failed.toSet())
+    }
+
+    @Test
     fun proxyRefusals() {
         val events = ConnMonitor.parse(listOf(
             "10-19 00:40:00.000 byedpi | group 1: proxy 127.0.0.1:9050 refuses connections: is it running? Repeats within 10 s are counted, not logged",

@@ -40,6 +40,10 @@ object CommandLine {
                 line(listOf("--apps", "{app:${pkgs.joinToString(",")}}", "-C", proxyRef(name)) +
                     (if (proxy.udp) listOf("--udp-proxy") else emptyList()) + "--auto=none")
             }
+        AutoFix.rules(context, settings).forEach { rule ->
+            block(R.string.cmd_block_autofix, rule.label)
+            line(StrategyArgs.build(splitArgs(rule.args), HostScope.ONLY_LIST, "{list:${rule.list}}", null) + "--auto=none")
+        }
         if (settings.proxyEnabled) {
             block(R.string.cmd_block_sites_proxy, settings.proxyList)
             line(listOf("--hosts", "{list:${settings.proxyList}}", "-C", "{proxy}") +

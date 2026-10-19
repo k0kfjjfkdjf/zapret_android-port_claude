@@ -106,6 +106,7 @@ fun SettingsScreen(
     onOpenDnsServers: () -> Unit,
     onOpenAppRoutes: () -> Unit,
     onOpenConfig: () -> Unit,
+    onOpenAutoFix: () -> Unit,
     onOpenLists: () -> Unit,
     onOpenAutoHost: () -> Unit,
     onOpenClassic: () -> Unit,
@@ -284,6 +285,14 @@ fun SettingsScreen(
                             supportingContent = { Text(stringResource(R.string.test_open_desc)) },
                             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.selectable(selected = false, onClick = onOpenTest),
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.autofix_title)) },
+                            supportingContent = { Text(stringResource(R.string.autofix_open_desc)) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                            modifier = Modifier.selectable(selected = false, onClick = onOpenAutoFix),
                         )
                     }
                     items(Strategies.presets, key = { it.id }) { preset ->
@@ -1280,6 +1289,7 @@ private val SEARCH = listOf(
     SearchEntry(R.string.exclude_title, R.string.exclude_desc, Section.LISTS),
     SearchEntry(R.string.builtin_update_title, R.string.builtin_update_desc, Section.LISTS),
     SearchEntry(R.string.config_title, R.string.config_open_desc, Section.GENERAL),
+    SearchEntry(R.string.autofix_title, R.string.autofix_open_desc, Section.STRATEGY),
     SearchEntry(R.string.collect_title, R.string.collect_desc, Section.LISTS),
     SearchEntry(R.string.autohost_toggle, R.string.autohost_toggle_desc, Section.LISTS),
     SearchEntry(R.string.hosts_list, null, Section.LISTS),

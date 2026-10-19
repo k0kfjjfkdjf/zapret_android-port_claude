@@ -205,6 +205,16 @@ class Settings(context: Context) {
     fun proxyByName(name: String): ProxyEntry =
         extraProxies.firstOrNull { it.name == name && name.isNotEmpty() } ?: ProxyEntry("", proxyAddress.trim(), proxyUdp)
 
+    /** Sites with a fix of their own, found by the auto-fix (see AutoFix): list, label, args. */
+    var autofixRules: List<FixRule>
+        get() = prefs.getString(KEY_AUTOFIX, "")!!.lines().mapNotNull { line ->
+            val parts = line.split('\t')
+            if (parts.size == 3 && HostLists.isValidName(parts[0])) FixRule(parts[0], parts[1], parts[2]) else null
+        }
+        set(value) {
+            prefs.edit(commit = true) { putString(KEY_AUTOFIX, value.joinToString("\n") { "${it.list}\t${it.label}\t${it.args}" }) }
+        }
+
     /** Apps routed wholly through the proxy or wholly direct (see AppRoutes). */
     var appRoutes: Map<String, AppRoutes.Route>
         get() = prefs.getStringSet(KEY_APP_ROUTES, emptySet())!!.mapNotNull { e ->
@@ -287,6 +297,7 @@ class Settings(context: Context) {
         private const val KEY_APP_STRATEGIES = "app_strategies"
         private const val KEY_DNS_BLOCK = "dns_block"
         private const val KEY_DNS_SERVERS = "dns_servers"
+        private const val KEY_AUTOFIX = "autofix_rules"
 
         /** Every setting and how it is stored: what the settings editor checks against. */
         val SCHEMA: Map<String, ConfigCheck.Kind> =
@@ -298,6 +309,7 @@ class Settings(context: Context) {
                 KEY_PROXY_LIST to STRING, KEY_PROXY_UDP to BOOLEAN, KEY_PROXY_TELEGRAM to BOOLEAN,
                 KEY_APP_ROUTES to SET, KEY_EXTRA_PROXIES to STRING, KEY_EXCLUDE to BOOLEAN, KEY_APP_PROXIES to SET,
                 KEY_TELEGRAM_PROXY to STRING, KEY_APP_STRATEGIES to SET, KEY_DNS_BLOCK to SET, KEY_DNS_SERVERS to STRING,
+                KEY_AUTOFIX to STRING,
             )
 
         /** Settings that take one of a few words. */
