@@ -409,6 +409,10 @@
     <string name="cmd_move">Перенести в свою стратегию</string>
     <string name="cmd_move_confirm">Командная строка станет вашей стратегией (и сохранится в «Моих стратегиях»), а маршруты, заданные переключателями (приложения, сайты через прокси, Telegram), выключатся, чтобы ничего не дублировалось. Продолжить?</string>
     <string name="cmd_copied">Командная строка скопирована</string>
+    <string name="exclude_title">Исключения: эти сайты всегда напрямую</string>
+    <string name="exclude_desc">Сайты из списка «exclude» (банки, госуслуги, сайты, которые ломает стратегия) идут без обхода и без прокси, раньше любых других правил. Приложения напрямую — на экране «Приложения».</string>
+    <string name="exclude_edit">Изменить список исключений</string>
+    <string name="cmd_block_exclude">Исключения: список exclude идёт напрямую</string>
     <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>

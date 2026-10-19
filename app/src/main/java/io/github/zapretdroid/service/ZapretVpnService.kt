@@ -597,7 +597,17 @@ class ZapretVpnService : VpnService() {
             TorProxy.requestStart(this)
             AppLog.i("the strategy sends groups to a proxy (-C)")
         }
-        return appGroups(settings) + proxyGroup(settings) + telegramGroup(settings) + appStrategy + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+        return excludeGroup(settings) + appGroups(settings) + proxyGroup(settings) + telegramGroup(settings) + appStrategy +
+            StrategyArgs.build(strategy, scope, listPath, autohostLog)
+    }
+
+    /** The exclusion list in front of everything: those sites go direct, without desync or proxy. */
+    private fun excludeGroup(settings: Settings): List<String> {
+        if (!settings.excludeEnabled) return emptyList()
+        TorProxy.ensureExcludeList(this)
+        val file = HostLists.file(this, TorProxy.EXCLUDE_LIST)
+        AppLog.i("exclusions: ${HostLists.count(this, TorProxy.EXCLUDE_LIST)} domains of list '${TorProxy.EXCLUDE_LIST}' go direct")
+        return listOf("--hosts", file.absolutePath, "--auto=none")
     }
 
     private fun unknownReference(e: ArgTemplates.UnknownReference): String = when (e.kind) {

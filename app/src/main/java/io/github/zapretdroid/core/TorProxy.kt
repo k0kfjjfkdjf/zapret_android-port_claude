@@ -83,6 +83,14 @@ object TorProxy {
         HostLists.save(context, LIST, text)
     }
 
+    const val EXCLUDE_LIST = "exclude"
+
+    /** The exclusion list (assets/lists/exclude.txt), created once; the user edits it afterwards. */
+    fun ensureExcludeList(context: Context) {
+        if (HostLists.file(context, EXCLUDE_LIST).exists()) return
+        HostLists.save(context, EXCLUDE_LIST, context.assets.open("lists/$EXCLUDE_LIST.txt").bufferedReader().use { it.readText() })
+    }
+
     /** The engine group in front of the strategy: listed hosts through the proxy, UDP too if [udp]. */
     fun group(listPath: String, address: String, udp: Boolean = false): List<String> =
         listOf("--hosts", listPath, "-C", "socks5://$address") + (if (udp) listOf("--udp-proxy") else emptyList()) + "--auto=none"

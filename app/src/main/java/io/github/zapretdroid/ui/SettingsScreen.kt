@@ -128,6 +128,7 @@ fun SettingsScreen(
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
     var saveDialog by remember { mutableStateOf(false) }
+    var excludeEnabled by remember { mutableStateOf(settings.excludeEnabled) }
     // The command line from the settings waiting for "move into my strategy" to be confirmed.
     var moveDialog by remember { mutableStateOf<String?>(null) }
     var extraProxies by remember { mutableStateOf(settings.extraProxies) }
@@ -386,6 +387,24 @@ fun SettingsScreen(
                     }
                 }
                 Section.LISTS -> {
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.exclude_title)) },
+                            supportingContent = { Text(stringResource(R.string.exclude_desc)) },
+                            trailingContent = { Switch(checked = excludeEnabled, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(value = excludeEnabled, role = Role.Switch) {
+                                excludeEnabled = it
+                                settings.excludeEnabled = it
+                                if (it) runCatching { TorProxy.ensureExcludeList(context) }
+                            },
+                        )
+                    }
+                    item {
+                        FilledTonalButton(onClick = {
+                            runCatching { TorProxy.ensureExcludeList(context) }
+                            onOpenLists()
+                        }, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.exclude_edit)) }
+                    }
                     item {
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.collect_title)) },
@@ -1218,6 +1237,7 @@ private val SEARCH = listOf(
     SearchEntry(R.string.deep_title, R.string.deep_desc, Section.CHECKS),
     SearchEntry(R.string.selfcheck_title, R.string.selfcheck_desc, null, IndexAction.SELFCHECK),
     SearchEntry(R.string.title_host_lists, R.string.host_lists_open_desc, Section.LISTS),
+    SearchEntry(R.string.exclude_title, R.string.exclude_desc, Section.LISTS),
     SearchEntry(R.string.collect_title, R.string.collect_desc, Section.LISTS),
     SearchEntry(R.string.autohost_toggle, R.string.autohost_toggle_desc, Section.LISTS),
     SearchEntry(R.string.hosts_list, null, Section.LISTS),

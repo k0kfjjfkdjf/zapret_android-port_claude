@@ -411,6 +411,10 @@
     <string name="cmd_move">Move into my strategy</string>
     <string name="cmd_move_confirm">The command line becomes your strategy (and is saved in My strategies); the routes set by switches (apps, sites through the proxy, Telegram) are turned off so that nothing is doubled. Go on?</string>
     <string name="cmd_copied">Command line copied</string>
+    <string name="exclude_title">Exclusions: these sites always go direct</string>
+    <string name="exclude_desc">Sites of the list \"exclude\" (banks, government services, sites the strategy breaks) go without bypass and without the proxy, before any other rule. Apps go direct on the Apps screen.</string>
+    <string name="exclude_edit">Edit the exclusion list</string>
+    <string name="cmd_block_exclude">Exclusions: the list exclude goes direct</string>
     <string name="app_routes_title">Apps</string>
     <string name="app_routes_none">All apps follow the strategy and the lists</string>
     <string name="app_routes_summary">Through the proxy: %1$d, direct: %2$d</string>

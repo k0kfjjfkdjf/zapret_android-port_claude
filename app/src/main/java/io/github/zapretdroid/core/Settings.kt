@@ -162,6 +162,14 @@ class Settings(context: Context) {
             prefs.edit(commit = true) { putBoolean(KEY_PROXY_UDP, value) }
         }
 
+    /** Sites of the list "exclude" always go direct (no desync, no proxy), in front of all groups. */
+    var excludeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_EXCLUDE, false)
+        set(value) {
+            logChange("excludeEnabled", excludeEnabled, value)
+            prefs.edit(commit = true) { putBoolean(KEY_EXCLUDE, value) }
+        }
+
     /** More proxies besides the main one; apps and Telegram can pick one by name. */
     var extraProxies: List<ProxyEntry>
         get() = prefs.getString(KEY_EXTRA_PROXIES, "")!!.lines().mapNotNull { line ->
@@ -270,6 +278,7 @@ class Settings(context: Context) {
         private const val KEY_PROXY_TELEGRAM = "proxy_telegram"
         private const val KEY_APP_ROUTES = "app_routes"
         private const val KEY_EXTRA_PROXIES = "extra_proxies"
+        private const val KEY_EXCLUDE = "exclude_enabled"
         private const val KEY_APP_PROXIES = "app_proxies"
         private const val KEY_TELEGRAM_PROXY = "telegram_proxy"
         private const val KEY_APP_STRATEGIES = "app_strategies"

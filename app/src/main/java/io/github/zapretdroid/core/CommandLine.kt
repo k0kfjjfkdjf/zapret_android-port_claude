@@ -21,6 +21,10 @@ object CommandLine {
         }
         fun proxyRef(name: String) = if (name.isEmpty()) "{proxy}" else "{proxy:$name}"
 
+        if (settings.excludeEnabled) {
+            block(R.string.cmd_block_exclude)
+            line(listOf("--hosts", "{list:${TorProxy.EXCLUDE_LIST}}", "--auto=none"))
+        }
         val routes = settings.appRoutes
         val direct = routes.filterValues { it == AppRoutes.Route.DIRECT }.keys.sorted()
         if (direct.isNotEmpty()) {

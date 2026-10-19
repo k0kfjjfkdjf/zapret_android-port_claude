@@ -1,0 +1,13 @@
+# Sites that always go direct: no bypass, no proxy (banks, government services, sites the
+# strategy breaks). Subdomains included. Edit freely.
+gosuslugi.ru
+nalog.gov.ru
+mos.ru
+sberbank.ru
+online.sberbank.ru
+tbank.ru
+tinkoff.ru
+vtb.ru
+alfabank.ru
+gazprombank.ru
+raiffeisen.ru
