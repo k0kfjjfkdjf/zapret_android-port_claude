@@ -413,6 +413,14 @@
     <string name="exclude_desc">Сайты из списка «exclude» (банки, госуслуги, сайты, которые ломает стратегия) идут без обхода и без прокси, раньше любых других правил. Приложения напрямую — на экране «Приложения».</string>
     <string name="exclude_edit">Изменить список исключений</string>
     <string name="cmd_block_exclude">Исключения: список exclude идёт напрямую</string>
+    <string name="builtin_update_title">Встроенные списки</string>
+    <string name="builtin_update_desc">Списки proxy, telegram и exclude и диапазоны адресов Telegram обновляются из репозитория проекта вместе с проверкой обновлений, без обновления приложения. Список, который вы меняли, не трогается.</string>
+    <string name="builtin_update">Обновить сейчас</string>
+    <string name="builtin_updating">Обновление…</string>
+    <string name="builtin_updated">%1$s: обновлён (%2$s)</string>
+    <string name="builtin_same">%1$s: актуален (%2$s)</string>
+    <string name="builtin_kept">%1$s: изменён вами, оставлен (%2$s)</string>
+    <string name="builtin_failed">%1$s: ошибка: %2$s</string>
     <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>

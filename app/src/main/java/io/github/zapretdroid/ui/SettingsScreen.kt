@@ -66,6 +66,7 @@ import io.github.zapretdroid.R
 import io.github.zapretdroid.core.AppFilterMode
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.ArgTemplates
+import io.github.zapretdroid.core.BuiltinLists
 import io.github.zapretdroid.core.Backup
 import io.github.zapretdroid.core.DnsFilter
 import io.github.zapretdroid.core.DnsMode
@@ -129,6 +130,8 @@ fun SettingsScreen(
     var listPicker by remember { mutableStateOf(false) }
     var saveDialog by remember { mutableStateOf(false) }
     var excludeEnabled by remember { mutableStateOf(settings.excludeEnabled) }
+    var builtinStatus by remember { mutableStateOf<String?>(null) }
+    var builtinBusy by remember { mutableStateOf(false) }
     // The command line from the settings waiting for "move into my strategy" to be confirmed.
     var moveDialog by remember { mutableStateOf<String?>(null) }
     var extraProxies by remember { mutableStateOf(settings.extraProxies) }
@@ -405,6 +408,34 @@ fun SettingsScreen(
                             onOpenLists()
                         }, modifier = Modifier.padding(horizontal = 16.dp)) { Text(stringResource(R.string.exclude_edit)) }
                     }
+                    item { Column {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.builtin_update_title)) },
+                            supportingContent = { Text(builtinStatus ?: stringResource(R.string.builtin_update_desc)) },
+                        )
+                        FilledTonalButton(
+                            enabled = !builtinBusy,
+                            onClick = {
+                                builtinBusy = true
+                                scope.launch {
+                                    val rows = withContext(Dispatchers.IO) { BuiltinLists.update(context) }
+                                    builtinStatus = rows.joinToString("\n") { row ->
+                                        context.getString(
+                                            when (row.status) {
+                                                BuiltinLists.Status.UPDATED -> R.string.builtin_updated
+                                                BuiltinLists.Status.SAME -> R.string.builtin_same
+                                                BuiltinLists.Status.KEPT_EDITED -> R.string.builtin_kept
+                                                BuiltinLists.Status.FAILED -> R.string.builtin_failed
+                                            },
+                                            row.name, row.detail,
+                                        )
+                                    }
+                                    builtinBusy = false
+                                }
+                            },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        ) { Text(stringResource(if (builtinBusy) R.string.builtin_updating else R.string.builtin_update)) }
+                    } }
                     item {
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.collect_title)) },
@@ -1238,6 +1269,7 @@ private val SEARCH = listOf(
     SearchEntry(R.string.selfcheck_title, R.string.selfcheck_desc, null, IndexAction.SELFCHECK),
     SearchEntry(R.string.title_host_lists, R.string.host_lists_open_desc, Section.LISTS),
     SearchEntry(R.string.exclude_title, R.string.exclude_desc, Section.LISTS),
+    SearchEntry(R.string.builtin_update_title, R.string.builtin_update_desc, Section.LISTS),
     SearchEntry(R.string.collect_title, R.string.collect_desc, Section.LISTS),
     SearchEntry(R.string.autohost_toggle, R.string.autohost_toggle_desc, Section.LISTS),
     SearchEntry(R.string.hosts_list, null, Section.LISTS),

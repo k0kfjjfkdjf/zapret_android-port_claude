@@ -19,6 +19,7 @@ import io.github.zapretdroid.core.DnsServers
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.ArgTemplates
+import io.github.zapretdroid.core.BuiltinLists
 import io.github.zapretdroid.core.InviZible
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.SecureDns
@@ -460,6 +461,14 @@ object SelfCheck {
                     "(answers cannot be spoofed, names for host lists always known)"
                 else -> CheckStatus.WARN to "neither DoH nor DoT gets through on this network"
             }
+        }
+        // The built-in lists (proxy, telegram, exclude, Telegram ranges) from the repository:
+        // reachable and valid? Nothing is saved here.
+        check(g, "built-in lists update") {
+            val rows = BuiltinLists.update(context, apply = false)
+            val failed = rows.filter { it.status == BuiltinLists.Status.FAILED }
+            val text = rows.joinToString { "${it.name}: ${it.status.name.lowercase().replace('_', ' ')} (${it.detail})" }
+            (if (failed.isEmpty()) CheckStatus.OK else CheckStatus.WARN) to text
         }
         // References in the strategy's command line ({app:…}, {proxy:…}, {list:…}…): all found?
         check(g, "strategy command line") {

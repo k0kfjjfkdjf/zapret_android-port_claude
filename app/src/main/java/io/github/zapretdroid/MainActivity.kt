@@ -34,6 +34,7 @@ import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
+import io.github.zapretdroid.core.BuiltinLists
 import io.github.zapretdroid.core.Updater
 import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
@@ -142,6 +143,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         if (!Updater.due(context)) return@LaunchedEffect
         val release = withContext(Dispatchers.IO) {
             runCatching { Updater.check(context) }.onFailure { AppLog.w("update check failed: ${it.message}") }.getOrNull()
+                .also { BuiltinLists.update(context) }
         }
         if (release != null && !Updater.isSkipped(context, release.version)) {
             AppLog.i("update available: ${release.version}")

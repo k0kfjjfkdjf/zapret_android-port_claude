@@ -415,6 +415,14 @@
     <string name="exclude_desc">Sites of the list \"exclude\" (banks, government services, sites the strategy breaks) go without bypass and without the proxy, before any other rule. Apps go direct on the Apps screen.</string>
     <string name="exclude_edit">Edit the exclusion list</string>
     <string name="cmd_block_exclude">Exclusions: the list exclude goes direct</string>
+    <string name="builtin_update_title">Built-in lists</string>
+    <string name="builtin_update_desc">The proxy, telegram and exclude lists and Telegram\'s address ranges are updated from the project\'s repository with the app update check, without an app update. A list you changed is kept.</string>
+    <string name="builtin_update">Update now</string>
+    <string name="builtin_updating">Updating…</string>
+    <string name="builtin_updated">%1$s: updated (%2$s)</string>
+    <string name="builtin_same">%1$s: up to date (%2$s)</string>
+    <string name="builtin_kept">%1$s: changed by you, kept (%2$s)</string>
+    <string name="builtin_failed">%1$s: failed: %2$s</string>
     <string name="app_routes_title">Apps</string>
     <string name="app_routes_none">All apps follow the strategy and the lists</string>
     <string name="app_routes_summary">Through the proxy: %1$d, direct: %2$d</string>

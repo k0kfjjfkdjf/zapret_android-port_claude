@@ -78,17 +78,14 @@ object TorProxy {
 
     /** The default list (assets/lists/proxy.txt), created once; the user can edit it afterwards. */
     fun ensureList(context: Context) {
-        if (HostLists.file(context, LIST).exists()) return
-        val text = context.assets.open("lists/$LIST.txt").bufferedReader().use { it.readText() }
-        HostLists.save(context, LIST, text)
+        BuiltinLists.ensure(context, LIST)
     }
 
     const val EXCLUDE_LIST = "exclude"
 
     /** The exclusion list (assets/lists/exclude.txt), created once; the user edits it afterwards. */
     fun ensureExcludeList(context: Context) {
-        if (HostLists.file(context, EXCLUDE_LIST).exists()) return
-        HostLists.save(context, EXCLUDE_LIST, context.assets.open("lists/$EXCLUDE_LIST.txt").bufferedReader().use { it.readText() })
+        BuiltinLists.ensure(context, EXCLUDE_LIST)
     }
 
     /** The engine group in front of the strategy: listed hosts through the proxy, UDP too if [udp]. */
@@ -110,12 +107,8 @@ object TorProxy {
 
     /** Writes the Telegram files (site list "telegram", if missing; address ranges); the ranges file. */
     fun telegramFiles(context: Context): java.io.File {
-        if (!HostLists.file(context, TELEGRAM_LIST).exists()) {
-            HostLists.save(context, TELEGRAM_LIST, context.assets.open("lists/$TELEGRAM_LIST.txt").bufferedReader().use { it.readText() })
-        }
-        val ips = java.io.File(context.filesDir, "telegram-ip.txt")
-        ips.writeBytes(context.assets.open("telegram-ip.txt").use { it.readBytes() })
-        return ips
+        BuiltinLists.ensure(context, TELEGRAM_LIST)
+        return BuiltinLists.telegramIps(context)
     }
 
     /** A Telegram server (DC 2) for the self-check. */
