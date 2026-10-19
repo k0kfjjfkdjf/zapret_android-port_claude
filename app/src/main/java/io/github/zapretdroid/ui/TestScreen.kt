@@ -231,15 +231,8 @@ fun TestScreen(settings: Settings, onBack: () -> Unit, onApplied: () -> Unit) {
             }
             StrategyTester.report?.takeIf { !running }?.let { file ->
                 item {
-                    OutlinedButton(
-                        onClick = {
-                            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(file.lastModified()))
-                            shareFile(context, file, "zapretdroid-test-$stamp.txt", "strategy test report shared")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.test_share_report))
-                    }
+                    val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(file.lastModified()))
+                    ReportButtons(file, "byezapret-test-$stamp.txt", "strategy test report", R.string.test_share_report)
                 }
             }
             if (running || done > 0) {

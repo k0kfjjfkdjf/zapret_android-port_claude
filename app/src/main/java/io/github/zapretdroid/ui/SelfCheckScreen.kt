@@ -17,7 +17,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -95,15 +94,8 @@ fun SelfCheckScreen(settings: Settings, onBack: () -> Unit) {
                     )
                 }
                 item {
-                    OutlinedButton(
-                        onClick = {
-                            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(file.lastModified()))
-                            shareFile(context, file, "zapretdroid-selfcheck-$stamp.txt", "self-check report shared")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.selfcheck_share))
-                    }
+                    val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(file.lastModified()))
+                    ReportButtons(file, "byezapret-selfcheck-$stamp.txt", "self-check report", R.string.selfcheck_share)
                 }
             }
             items(SelfCheck.items) { check -> CheckLine(check) }

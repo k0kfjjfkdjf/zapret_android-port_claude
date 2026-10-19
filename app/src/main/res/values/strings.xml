@@ -435,6 +435,8 @@
     <string name="config_line">line %1$d</string>
     <string name="config_applied">Settings applied: %1$d</string>
     <string name="host_lists_rejected">Not domains, will be dropped (%1$d): %2$s</string>
+    <string name="report_save">Save to a file</string>
+    <string name="report_saved">Saved</string>
     <string name="app_routes_title">Apps</string>
     <string name="app_routes_none">All apps follow the strategy and the lists</string>
     <string name="app_routes_summary">Through the proxy: %1$d, direct: %2$d</string>
