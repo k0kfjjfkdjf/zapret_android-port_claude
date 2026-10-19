@@ -93,6 +93,11 @@ object BuiltinLists {
                 val same = local.exists() && HostLists.normalize(local.readText()).hosts == hosts
                 when {
                     same -> Result(name, Status.SAME, "${hosts.size} domains")
+                    // Not in use here yet: it will be made from the new default when needed.
+                    !local.exists() -> {
+                        if (apply) saveDefault(context, path, fresh)
+                        Result(name, Status.SAME, "${hosts.size} domains, not in use here")
+                    }
                     edited(context, name) -> {
                         if (apply) saveDefault(context, path, fresh)
                         Result(name, Status.KEPT_EDITED, "${hosts.size} domains upstream; yours is changed and kept")

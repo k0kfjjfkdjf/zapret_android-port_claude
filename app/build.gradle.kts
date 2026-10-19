@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.zapretdroid"
         minSdk = 24
         targetSdk = 35
-        versionCode = 52
-        versionName = "0.18.1"
+        versionCode = 53
+        versionName = "0.18.2"
 
         ndk {
             abiFilters += abis

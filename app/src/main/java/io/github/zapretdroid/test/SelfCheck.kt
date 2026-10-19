@@ -567,9 +567,11 @@ object SelfCheck {
                 return@check CheckStatus.INFO to "Telegram goes without a proxy: calls work where UDP gets through (see the STUN rows)"
             }
             val tgProxy = settings.proxyByName(settings.telegramProxy)
+            val label = tgProxy.name.ifEmpty { "the main proxy ${tgProxy.address}" }
             if (!tgProxy.udp) {
-                return@check CheckStatus.WARN to "proxy ${tgProxy.name} carries TCP only: messages go through it, calls do not " +
-                    "(Tor has no UDP); for calls pick a proxy with UDP (zapret-termux) for Telegram"
+                val withUdp = settings.extraProxies.filter { it.udp }.joinToString { it.name }
+                return@check CheckStatus.WARN to "$label carries TCP only: messages go through it, calls do not (Tor has no UDP); " +
+                    "for calls pick a proxy with UDP for Telegram" + if (withUdp.isNotEmpty()) " (here: $withUdp)" else " (zapret-termux)"
             }
             val proxy = runCatching { TorProxy.socketAddress(tgProxy.address) }.getOrNull()
                 ?: return@check CheckStatus.WARN to "bad proxy address ${tgProxy.address}"
@@ -583,11 +585,11 @@ object SelfCheck {
                 val ms = (System.nanoTime() - start) / 1_000_000
                 val data = reply.getOrNull()?.second
                 if (data != null && UdpProbe.isStunSuccess(data, txid)) {
-                    return@check CheckStatus.OK to "STUN $host:$port answered through ${tgProxy.name} in $ms ms: the proxy relays UDP, calls can go through it"
+                    return@check CheckStatus.OK to "STUN $host:$port answered through $label in $ms ms: the proxy relays UDP, calls can go through it"
                 }
                 tried += "$host: " + (reply.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "no reply in $ms ms")
             }
-            CheckStatus.WARN to "no STUN answer through ${tgProxy.name} (${tried.joinToString("; ")}): calls through it will not connect"
+            CheckStatus.WARN to "no STUN answer through $label (${tried.joinToString("; ")}): calls through it will not connect"
         }
         val testerDns = TestDns.spec(settings).let { if (it.startsWith("stamp:")) "${settings.dnsServers.size} DNSCrypt-mode servers" else it }
         check(g, "DNS as the tester resolves ($testerDns)") {
