@@ -402,6 +402,14 @@ fun HostListEditorScreen(initialName: String?, onBack: () -> Unit) {
                         .fillMaxWidth()
                         .weight(1f),
                 )
+                val rejected = remember(text) { HostLists.normalize(text).invalid }
+                if (rejected.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.host_lists_rejected, rejected.size, rejected.take(5).joinToString()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     stringResource(R.string.host_lists_format),
                     style = MaterialTheme.typography.bodySmall,

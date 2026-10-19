@@ -39,6 +39,7 @@ import io.github.zapretdroid.core.Updater
 import io.github.zapretdroid.service.VpnState
 import io.github.zapretdroid.service.VpnStatus
 import io.github.zapretdroid.ui.AppRoutesScreen
+import io.github.zapretdroid.ui.ConfigEditorScreen
 import io.github.zapretdroid.ui.AppsScreen
 import io.github.zapretdroid.ui.AutoHostScreen
 import io.github.zapretdroid.ui.CollectScreen
@@ -101,7 +102,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS, APP_ROUTES }
+private enum class Screen { HOME, SETTINGS, APPS, LOGS, TEST, LISTS, LIST_EDIT, AUTOHOST, SELFCHECK, DEEP, COLLECT, MONITOR, DNS_SERVERS, APP_ROUTES, CONFIG }
 
 @Composable
 private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
@@ -296,6 +297,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
             onOpenCollect = { screen = Screen.COLLECT },
             onOpenDnsServers = { screen = Screen.DNS_SERVERS },
             onOpenAppRoutes = { screen = Screen.APP_ROUTES },
+            onOpenConfig = { screen = Screen.CONFIG },
             onOpenClassic = { ClassicBridge.open(context) },
             onCheckUpdates = checkUpdates,
         )
@@ -306,6 +308,7 @@ private fun App(connectRequest: Boolean, onConnectRequestHandled: () -> Unit) {
         Screen.LOGS -> LogsScreen(onBack = { screen = logsReturn })
         Screen.DNS_SERVERS -> DnsServersScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
         Screen.APP_ROUTES -> AppRoutesScreen(settings = settings, onBack = { screen = Screen.SETTINGS })
+        Screen.CONFIG -> ConfigEditorScreen(onBack = { screen = Screen.SETTINGS })
         Screen.LISTS -> HostListsScreen(
             onBack = { screen = Screen.SETTINGS },
             onEdit = { name ->

@@ -258,8 +258,8 @@ class Settings(context: Context) {
 
         /** DNS setting value for the network's own DNS servers (usually the router). */
         const val SYSTEM_DNS = "system"
-        private const val KEY_STRATEGY = "strategy"
-        private const val KEY_CUSTOM_ARGS = "custom_args"
+        const val KEY_STRATEGY = "strategy"
+        const val KEY_CUSTOM_ARGS = "custom_args"
         private const val KEY_DNS = "dns"
         private const val KEY_IPV6 = "ipv6"
         private const val KEY_APP_FILTER = "app_filter"
@@ -272,17 +272,38 @@ class Settings(context: Context) {
         private const val KEY_DNS_MODE = "dns_mode"
         private const val KEY_DNS_PROVIDER = "dns_provider"
         private const val KEY_PROXY_ENABLED = "proxy_enabled"
-        private const val KEY_PROXY_ADDRESS = "proxy_address"
+        const val KEY_PROXY_ADDRESS = "proxy_address"
         private const val KEY_PROXY_LIST = "proxy_list"
         private const val KEY_PROXY_UDP = "proxy_udp"
         private const val KEY_PROXY_TELEGRAM = "proxy_telegram"
         private const val KEY_APP_ROUTES = "app_routes"
-        private const val KEY_EXTRA_PROXIES = "extra_proxies"
+        const val KEY_EXTRA_PROXIES = "extra_proxies"
         private const val KEY_EXCLUDE = "exclude_enabled"
         private const val KEY_APP_PROXIES = "app_proxies"
         private const val KEY_TELEGRAM_PROXY = "telegram_proxy"
         private const val KEY_APP_STRATEGIES = "app_strategies"
         private const val KEY_DNS_BLOCK = "dns_block"
         private const val KEY_DNS_SERVERS = "dns_servers"
+
+        /** Every setting and how it is stored: what the settings editor checks against. */
+        val SCHEMA: Map<String, ConfigCheck.Kind> = ConfigCheck.Kind.run {
+            mapOf(
+                KEY_STRATEGY to STRING, KEY_CUSTOM_ARGS to STRING, KEY_DNS to STRING, KEY_IPV6 to BOOLEAN,
+                KEY_APP_FILTER to STRING, KEY_APPS to SET, KEY_LOG_LEVEL to STRING, KEY_HOST_SCOPE to STRING,
+                KEY_HOST_LIST to STRING, KEY_AUTOHOST to BOOLEAN, KEY_COLLECT_APP to STRING, KEY_DNS_MODE to STRING,
+                KEY_DNS_PROVIDER to STRING, KEY_PROXY_ENABLED to BOOLEAN, KEY_PROXY_ADDRESS to STRING,
+                KEY_PROXY_LIST to STRING, KEY_PROXY_UDP to BOOLEAN, KEY_PROXY_TELEGRAM to BOOLEAN,
+                KEY_APP_ROUTES to SET, KEY_EXTRA_PROXIES to STRING, KEY_EXCLUDE to BOOLEAN, KEY_APP_PROXIES to SET,
+                KEY_TELEGRAM_PROXY to STRING, KEY_APP_STRATEGIES to SET, KEY_DNS_BLOCK to SET, KEY_DNS_SERVERS to STRING,
+            )
+        }
+
+        /** Settings that take one of a few words. */
+        val CHOICES: Map<String, List<String>> = mapOf(
+            KEY_APP_FILTER to AppFilterMode.entries.map { it.name },
+            KEY_LOG_LEVEL to LogLevel.entries.map { it.name },
+            KEY_HOST_SCOPE to HostScope.entries.map { it.name },
+            KEY_DNS_MODE to DnsMode.entries.map { it.name },
+        )
     }
 }
