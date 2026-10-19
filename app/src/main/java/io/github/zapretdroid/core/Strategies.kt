@@ -1,13 +1,103 @@
 package io.github.zapretdroid.core
 
+import android.content.Context
 import androidx.annotation.StringRes
 import io.github.zapretdroid.R
 
-/** A ready-made ByeDPI command line. */
-data class Strategy(val id: String, @StringRes val title: Int, @StringRes val description: Int, val args: String)
+/**
+ * A ready-made ByeDPI command line. A preset that comes from the downloaded presets file only has
+ * [name] and [about] instead of string resources.
+ */
+data class Strategy(
+    val id: String,
+    @StringRes val title: Int,
+    @StringRes val description: Int,
+    val args: String,
+    val name: String? = null,
+    val about: String? = null,
+) {
+    fun label(context: Context): String = name ?: if (title != 0) context.getString(title) else id
+    fun summary(context: Context): String = about ?: if (description != 0) context.getString(description) else ""
+}
 
 object Strategies {
-    val presets = listOf(
+    /** The presets file in the repository and the APK (assets/strategies/presets.txt). */
+    const val FILE = "strategies/presets.txt"
+
+    @Volatile private var context: Context? = null
+    @Volatile private var cache: Pair<Long, List<Strategy>>? = null
+
+    /** Called once per process: from now on [presets] follows the presets file. */
+    fun init(context: Context) {
+        this.context = context.applicationContext
+    }
+
+    /**
+     * The presets: the built-in ones with the command lines (and new presets) of the presets file,
+     * which is updated from the repository with the built-in lists, so a preset changes without
+     * an app update. Re-read when a new copy is downloaded, in every process.
+     */
+    val presets: List<Strategy>
+        get() {
+            val c = context ?: return bundled
+            val stamp = BuiltinLists.stamp(c, FILE)
+            cache?.let { if (it.first == stamp) return it.second }
+            val list = runCatching { merge(bundled, parse(BuiltinLists.text(c, FILE))) }
+                .onFailure { AppLog.w("presets file: ${it.message}; using the built-in presets") }
+                .getOrDefault(bundled)
+            cache = stamp to list
+            return list
+        }
+
+    /** One preset of the presets file: `[id] Name | Description`, then its command line. */
+    data class Entry(val id: String, val name: String?, val about: String?, val args: String)
+
+    private val HEADER = Regex("""^\[([a-z0-9_]+)]\s*(.*)$""")
+
+    /**
+     * Parses the presets file. Lines before the first `[id]` are comments; a preset's command line
+     * may span several lines with `#` comment lines between them, and is joined into one line. Throws on a header
+     * that is not `[id]` or a preset without a command line.
+     */
+    fun parse(text: String): List<Entry> {
+        val entries = ArrayList<Entry>()
+        var head: Triple<String, String?, String?>? = null
+        val body = StringBuilder()
+        fun flush() {
+            val h = head ?: return
+            val args = body.toString().trim().replace(Regex("""\s+"""), " ")
+            if (splitArgs(args).isEmpty()) throw IllegalArgumentException("preset [${h.first}] has no command line")
+            entries += Entry(h.first, h.second, h.third, args)
+            body.clear()
+        }
+        text.lineSequence().forEachIndexed { i, raw ->
+            val line = raw.trimEnd()
+            if (line.trimStart().startsWith("[")) {
+                val m = HEADER.matchEntire(line.trim()) ?: throw IllegalArgumentException("line ${i + 1}: expected [id] Name | Description")
+                flush()
+                val (name, about) = m.groupValues[2].split('|', limit = 2).map { it.trim().ifEmpty { null } }.let { it.getOrNull(0) to it.getOrNull(1) }
+                head = Triple(m.groupValues[1], name, about)
+            } else if (head != null && !line.trimStart().startsWith("#")) {
+                body.append(line).append(' ')
+            }
+        }
+        flush()
+        val dup = entries.groupBy { it.id }.filterValues { it.size > 1 }.keys
+        if (dup.isNotEmpty()) throw IllegalArgumentException("preset [${dup.first()}] appears twice")
+        if (entries.any { it.id == CUSTOM }) throw IllegalArgumentException("[$CUSTOM] is reserved")
+        return entries
+    }
+
+    /** The built-in presets with the file's command lines; presets new in the file go last. */
+    fun merge(base: List<Strategy>, entries: List<Entry>): List<Strategy> {
+        val byId = entries.associateBy { it.id }
+        val known = base.map { it.id }.toSet()
+        return base.map { p -> byId[p.id]?.let { e -> p.copy(args = e.args, name = e.name ?: p.name, about = e.about ?: p.about) } ?: p } +
+            entries.filter { it.id !in known }.map { e -> Strategy(e.id, 0, 0, e.args, e.name ?: e.id, e.about) }
+    }
+
+    /** The presets compiled into the app: used until the presets file is read, and as a fallback. */
+    val bundled = listOf(
         Strategy(
             "auto", R.string.strategy_auto, R.string.strategy_auto_desc,
             // The last group: fakes with an allowed SNI at a low TTL, for networks (and phones)

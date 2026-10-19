@@ -1,0 +1,60 @@
+# Пресеты стратегий ByeZapret. Файл обновляется из репозитория вместе со встроенными списками
+# (Настройки -> Встроенные списки -> Обновить сейчас, или сам при проверке обновлений), поэтому
+# менять пресет можно здесь, без новой сборки приложения.
+#
+# Формат:
+#   [id] Название | Описание
+#   аргументы движка, можно в несколько строк и с # комментариями
+#
+# У пресетов, встроенных в приложение, название и описание можно не писать: они берутся из
+# перевода приложения. Новый id добавляет новый пресет в конец списка (название обязательно).
+# Строки до первого [id] — комментарии.
+
+[auto]
+--disorder 1
+--auto=torst --tlsrec 1+s
+# если ни разбиение, ни TLS-записи не помогли: фейки с разрешённым SNI
+--auto=torst,ssl_err --fake -1 --ttl 4 --fake-tls-mod rand,orig --fake-sni www.google.com
+
+[disorder]
+--disorder 1
+
+[split_sni]
+--split 1+s --disorder 3+s
+
+[oob_sni]
+--oob 3+s
+
+[tlsrec]
+--tlsrec 1+s --auto=torst --timeout 3 --disorder 1
+
+[fake]
+--fake -1 --ttl 8
+
+[quic]
+--proto t,h --disorder 1 --tlsrec 1+s --auto=none
+--proto u --pf 443 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+
+[discord]
+--proto t,h --disorder 1 --tlsrec 1+s --auto=none
+--proto u --pf 50000-65535 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+--proto u --pf 19294-19344 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+--proto u --pf 3478-3481 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+--proto u --pf 443 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin}
+
+[discord_termux]
+--proto t,h --disoob 1 --disorder sniext+1 --disorder host+1 --disorder midsld-2 --disorder midsld --disorder midsld+2 --disorder endhost-1 --auto=none
+--proto u --pf 50000-65535 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+--proto u --pf 19294-19344 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+--proto u --pf 3478-3481 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin} --auto=none
+--proto u --pf 443 --ttl 4 --udp-fake 6 --udp-desync 4 --udp-proto-fake quic:{fake:quic_initial_www_google_com.bin} --udp-proto-fake discord:{fake:discord-ip-discovery-with-port.bin} --udp-proto-fake stun:{fake:stun.bin}
+
+[fake_google]
+--fake -1 --ttl 8 --fake-data {fake:tls_clienthello_www_google_com.bin}
+
+[tpws]
+--proto h --split method+2 -M hostcase,hostdot --auto=none
+--split 1 --disorder midsld --tlsrec sniext
+
+[byebyedpi]
+-o1 -a1 -r-5+se

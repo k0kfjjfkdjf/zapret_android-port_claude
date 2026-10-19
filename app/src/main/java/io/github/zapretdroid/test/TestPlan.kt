@@ -3,6 +3,7 @@ package io.github.zapretdroid.test
 import android.content.Context
 import androidx.annotation.StringRes
 import io.github.zapretdroid.R
+import io.github.zapretdroid.core.BuiltinLists
 import io.github.zapretdroid.core.Strategies
 
 /** A group of sites that are usually blocked together (assets/sites/<id>.sites, from ByeByeDPI). */
@@ -70,8 +71,10 @@ object TestPlan {
         Strategies.UDP_FAKES.replace("{fake:quic_initial_www_google_com.bin}", "{fake:quic_sni}").replace("--ttl 4", "--ttl 2"),
     ).map { "--proto u $it" }
 
+    // Strategy lists come updated from the repository (BuiltinLists); site lists from the APK.
     private fun readLines(context: Context, asset: String): List<String> =
-        context.assets.open(asset).bufferedReader().useLines { lines ->
+        if (asset.startsWith("strategies/")) BuiltinLists.lines(context, asset)
+        else context.assets.open(asset).bufferedReader().useLines { lines ->
             lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
         }
 

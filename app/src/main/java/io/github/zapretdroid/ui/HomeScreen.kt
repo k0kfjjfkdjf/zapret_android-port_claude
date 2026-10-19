@@ -211,8 +211,8 @@ private fun StrategyPicker(onDismiss: () -> Unit, onPickPreset: (String) -> Unit
                             .clickable { onPickPreset(preset.id) }
                             .padding(vertical = 6.dp),
                     ) {
-                        Text(stringResource(preset.title), style = MaterialTheme.typography.bodyMedium)
-                        Text(stringResource(preset.description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(preset.label(context), style = MaterialTheme.typography.bodyMedium)
+                        Text(preset.summary(context), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 if (history.isNotEmpty()) {

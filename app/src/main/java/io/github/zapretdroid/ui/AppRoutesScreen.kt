@@ -269,7 +269,7 @@ private fun AppStrategyDialog(current: String, onPick: (String) -> Unit, onDismi
                 LazyColumn(Modifier.heightIn(max = 320.dp).padding(top = 8.dp)) {
                     items(Strategies.presets, key = { "p-" + it.id }) { preset ->
                         Text(
-                            stringResource(preset.title),
+                            preset.label(context),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier
                                 .fillMaxWidth()

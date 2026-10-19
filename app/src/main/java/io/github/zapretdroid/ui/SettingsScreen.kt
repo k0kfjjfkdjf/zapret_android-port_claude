@@ -206,7 +206,7 @@ fun SettingsScreen(
     }
 
     val indexSummaries = IndexSummaries(
-        strategy = Strategies.byId(strategyId)?.let { stringResource(it.title) } ?: stringResource(R.string.strategy_custom),
+        strategy = Strategies.byId(strategyId)?.label(context) ?: stringResource(R.string.strategy_custom),
         lists = stringResource(
             when (hostScope) {
                 HostScope.ALL -> R.string.hosts_all
@@ -302,8 +302,8 @@ fun SettingsScreen(
                     }
                     items(Strategies.presets, key = { it.id }) { preset ->
                         RadioRow(
-                            title = stringResource(preset.title),
-                            subtitle = stringResource(preset.description),
+                            title = preset.label(context),
+                            subtitle = preset.summary(context),
                             selected = strategyId == preset.id,
                             onSelect = {
                                 strategyId = preset.id

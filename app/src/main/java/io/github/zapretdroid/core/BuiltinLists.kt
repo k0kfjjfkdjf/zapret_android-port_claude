@@ -8,8 +8,9 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * The lists that come with the app (proxy, telegram, exclude and Telegram's address ranges) are
- * also kept up to date from the repository, without an app update. A downloaded copy replaces
+ * The lists that come with the app (proxy, telegram, exclude, Telegram's address ranges, the
+ * strategy presets and the tester's strategy lists) are also kept up to date from the repository,
+ * without an app update. A downloaded copy replaces
  * the bundled one; a host list the user changed is left alone (it is told apart by the hash of
  * what was last put there).
  */
@@ -20,6 +21,9 @@ object BuiltinLists {
     private const val MAX_SIZE = 4 * 1024 * 1024
 
     val HOST_LISTS = listOf(TorProxy.LIST, TorProxy.TELEGRAM_LIST, TorProxy.EXCLUDE_LIST)
+
+    /** The tester's strategy lists (one command line per line). */
+    val STRATEGY_LISTS = listOf("strategies/zapretdroid.list", "strategies/byebyedpi.list", "strategies/termux_generated.list")
 
     enum class Status { UPDATED, SAME, KEPT_EDITED, FAILED }
 
@@ -37,6 +41,23 @@ object BuiltinLists {
         if (downloaded.exists()) return downloaded.readText()
         return context.assets.open(path).bufferedReader().use { it.readText() }
     }
+
+    /** When the downloaded copy of [path] was saved; 0 while the APK's copy is in use. */
+    fun stamp(context: Context, path: String): Long = File(dir(context), path.replace('/', '_')).lastModified()
+
+    /** Non-comment lines of [path]'s newest default. */
+    fun lines(context: Context, path: String): List<String> = nonComment(text(context, path))
+
+    private fun nonComment(text: String) = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
+
+    /** Problems of a downloaded presets file, or null. */
+    fun badPresets(text: String): String? = runCatching {
+        val entries = Strategies.parse(text)
+        if (entries.isEmpty()) return "no presets"
+        entries.firstOrNull { e -> splitArgs(e.args).any { it in setOf("-i", "--ip", "-p", "--port") } }
+            ?.let { return "preset [${it.id}] sets the listen address" }
+        null
+    }.getOrElse { it.message ?: "cannot be read" }
 
     /** Creates the host list [name] from its default once; the user edits it afterwards. */
     fun ensure(context: Context, name: String) {
@@ -122,10 +143,30 @@ object BuiltinLists {
             if (!same && apply) saveDefault(context, TELEGRAM_IPS, fresh)
             Result(TELEGRAM_IPS, if (same) Status.SAME else Status.UPDATED, "$count ranges")
         }.getOrElse { Result(TELEGRAM_IPS, Status.FAILED, it.message ?: it.javaClass.simpleName) }
-        val all = results + ips
+        val presets = file(context, Strategies.FILE, apply) { fresh ->
+            badPresets(fresh)?.let { throw IOException(it) }
+            "${Strategies.parse(fresh).size} presets"
+        }
+        val strategies = STRATEGY_LISTS.map { path ->
+            file(context, path, apply) { fresh ->
+                val n = nonComment(fresh).size
+                if (n == 0) throw IOException("no strategies")
+                "$n strategies"
+            }
+        }
+        val all = results + ips + presets + strategies
         if (apply) AppLog.i("built-in lists: " + all.joinToString { "${it.name} ${it.status.name.lowercase()} (${it.detail})" })
         return all
     }
+
+    /** A whole file replaced by its new version once [check] (which describes it) accepts it. */
+    private fun file(context: Context, path: String, apply: Boolean, check: (String) -> String): Result = runCatching {
+        val fresh = String(get(BASE + path), Charsets.UTF_8)
+        val detail = check(fresh)
+        val same = text(context, path).trim() == fresh.trim()
+        if (!same && apply) saveDefault(context, path, fresh)
+        Result(path.substringAfterLast('/'), if (same) Status.SAME else Status.UPDATED, detail)
+    }.getOrElse { Result(path.substringAfterLast('/'), Status.FAILED, it.message ?: it.javaClass.simpleName) }
 
     private fun saveDefault(context: Context, path: String, text: String) {
         val file = File(dir(context), path.replace('/', '_'))

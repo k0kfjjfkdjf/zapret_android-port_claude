@@ -386,5 +386,5 @@ private fun privateDnsServer(context: Context): String? = runCatching {
 }.getOrNull()
 
 private fun strategyTitle(context: Context, settings: Settings): String =
-    Strategies.byId(settings.strategyId)?.let { context.getString(it.title) }
+    Strategies.byId(settings.strategyId)?.label(context)
         ?: context.getString(R.string.strategy_custom)
