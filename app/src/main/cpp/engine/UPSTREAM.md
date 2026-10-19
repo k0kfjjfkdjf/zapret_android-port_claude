@@ -97,3 +97,7 @@ Changes in this fork:
   engine logs `group N: proxy ADDR refuses connections` once and counts the repeats of the
   next 10 s (`still refuses connections (K more since the last line)`), instead of a
   `socks send`, a `connect … FAILED` and a `block detected` line for every connection.
+- `--slot NAME`: the group gets an empty host list that the app fills while the engine runs
+  (`slot_assign(host, slot)`, JNI `ByeDpi.assignSlot`): a host moves between slot groups at
+  once, without a restart; new connections use the new group, open ones keep theirs. Reads of
+  slot lists and the moves take `slot_lock`. Not together with `--hosts` in the same group.

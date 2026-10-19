@@ -33,6 +33,17 @@ int on_connerr(struct poolhd *pool, struct eval *val);
 
 bool proxy_refused(struct eval *remote, int error);
 
+#include <pthread.h>
+
+/* ZapretDroid: host lists of --slot groups change while the engine runs. */
+extern pthread_mutex_t slot_lock;
+
+/*
+ * Moves [host] to the --slot group named [slot] (out of every other slot group), or out of all
+ * of them if [slot] is NULL. Callable from any thread. 0 on success, -1 if there is no such slot.
+ */
+int slot_assign(const char *host, const char *slot);
+
 /*
  * ZapretDroid --apps: the host's lookup of the app (uid) owning a connection from src_ip:src_port
  * to dst_ip:dst_port (proto: IPPROTO_TCP or IPPROTO_UDP); -1 if unknown. Unset: no app groups match.

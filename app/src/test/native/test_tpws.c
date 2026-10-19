@@ -11,6 +11,8 @@
 #include "packets.h"
 #include "tpws.h"
 #include "udphost.h"
+#include "extend.h"
+#include "mpool.h"
 
 int parse_offset(struct part *part, const char *str);
 int parse_args(int argc, char **argv);
@@ -318,6 +320,35 @@ static void test_dns_options(void)
     engine_reset();
 }
 
+/* --slot groups: hosts moved between them at run time; --slot with --hosts is refused. */
+static void test_slots(void)
+{
+    char *args[] = { "ciadpi", "--slot", "a", "--disorder", "1", "-A", "none", "--slot", "b", "--split", "1", 0 };
+    engine_reset();
+    CHECK_EQ(parse_args(11, args), 0);
+    struct desync_params *a = params.dp, *b = a ? a->next : 0;
+    CHECK(a && b && a->slot && b->slot);
+    if (a && b) {
+        CHECK_EQ(slot_assign("example.com", "a"), 0);
+        CHECK(mem_get(a->hosts, "example.com", 11) != 0);
+        CHECK(mem_get(b->hosts, "example.com", 11) == 0);
+        CHECK_EQ(slot_assign("example.com", "b"), 0);
+        CHECK(mem_get(a->hosts, "example.com", 11) == 0);
+        CHECK(mem_get(b->hosts, "example.com", 11) != 0);
+        CHECK_EQ(slot_assign("example.com", "nope"), -1);
+        CHECK(mem_get(b->hosts, "example.com", 11) == 0);
+        CHECK_EQ(slot_assign("example.com", "a"), 0);
+        CHECK_EQ(slot_assign("example.com", 0), 0);
+        CHECK(mem_get(a->hosts, "example.com", 11) == 0);
+    }
+    clear_params(0, 0);
+    char *both[] = { "ciadpi", "--slot", "a", "--hosts", "/dev/null", 0 };
+    engine_reset();
+    CHECK(parse_args(5, both) != 0);
+    clear_params(0, 0);
+    engine_reset();
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -334,6 +365,7 @@ int main(int argc, char **argv)
     test_dns_cache();
     test_early_stop();
     test_dns_options();
+    test_slots();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

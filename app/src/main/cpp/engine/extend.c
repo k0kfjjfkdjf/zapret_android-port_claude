@@ -268,10 +268,44 @@ static int reconnect(struct poolhd *pool, struct eval *val)
 }
 
 
+pthread_mutex_t slot_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static bool host_in(struct mphdr *hosts, const char *host, int len)
 {
+    bool dynamic = hosts->flags & MF_DYNAMIC;
+    if (dynamic) pthread_mutex_lock(&slot_lock);
     struct elem *v = mem_get(hosts, host, len);
-    return v && v->len <= len;
+    bool in = v && v->len <= len;
+    if (dynamic) pthread_mutex_unlock(&slot_lock);
+    return in;
+}
+
+
+int slot_assign(const char *host, const char *slot)
+{
+    int len = strlen(host);
+    if (len <= 0 || len > 255) {
+        return -1;
+    }
+    pthread_mutex_lock(&slot_lock);
+    int found = slot ? -1 : 0;
+    for (struct desync_params *dp = params.dp; dp; dp = dp->next) {
+        if (!dp->slot) {
+            continue;
+        }
+        mem_delete(dp->hosts, host, len);
+        if (slot && !strcmp(dp->slot, slot)) {
+            char *copy = strdup(host);
+            if (copy && mem_add(dp->hosts, copy, len, sizeof(struct elem))) {
+                found = 0;
+            }
+        }
+    }
+    pthread_mutex_unlock(&slot_lock);
+    if (found == 0) {
+        LOG(LOG_S, "slot: %s -> %s\n", host, slot ? slot : "none");
+    }
+    return found;
 }
 
 

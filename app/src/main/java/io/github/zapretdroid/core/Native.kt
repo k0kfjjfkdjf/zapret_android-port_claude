@@ -16,6 +16,14 @@ class ByeDpi {
             System.loadLibrary("byedpi")
         }
 
+        /**
+         * Moves [host] (lowercase, subdomains included) to the --slot group named [slot] of the
+         * running engine, or out of every slot if [slot] is null: new connections to it use that
+         * group at once, open ones keep theirs. 0 on success, -1 if the engine or the slot is missing.
+         */
+        @JvmStatic
+        external fun assignSlot(host: String, slot: String?): Int
+
         /** Set by the VPN service: the uid of the app owning a connection (proto, source, destination), -1 if unknown. */
         @Volatile
         var ownerLookup: ((Int, InetSocketAddress, InetSocketAddress) -> Int)? = null

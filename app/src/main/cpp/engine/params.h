@@ -142,6 +142,8 @@ struct desync_params {
     // looked up from the client's source address (see conev.h, app_src).
     int *apps;
     int apps_n;
+    // ZapretDroid --slot: the group's host list is filled while the engine runs (slot_assign).
+    char *slot;
     union sockaddr_u out_addr;
     
     int _optind;

@@ -13,6 +13,8 @@
 
 #define MF_STATIC 1
 #define MF_EXTRA 2
+// ZapretDroid: changed while the engine runs (--slot): reads and writes take slot_lock.
+#define MF_DYNAMIC 4
 
 #pragma pack(push, 1)
 

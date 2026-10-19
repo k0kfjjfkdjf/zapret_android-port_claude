@@ -148,3 +148,22 @@ Java_io_github_zapretdroid_core_ByeDpi_stopProxy(JNIEnv *env, jobject thiz)
     }
     pthread_mutex_unlock(&lock);
 }
+
+/* ZapretDroid: moves a host to a --slot group of the running engine (NULL slot: out of all). */
+int slot_assign(const char *host, const char *slot);
+
+JNIEXPORT jint JNICALL
+Java_io_github_zapretdroid_core_ByeDpi_assignSlot(JNIEnv *env, jclass cls, jstring host, jstring slot)
+{
+    const char *h = host ? (*env)->GetStringUTFChars(env, host, NULL) : NULL;
+    const char *s = slot ? (*env)->GetStringUTFChars(env, slot, NULL) : NULL;
+    int result = -1;
+    pthread_mutex_lock(&lock);
+    if (running && h) {
+        result = slot_assign(h, s);
+    }
+    pthread_mutex_unlock(&lock);
+    if (h) (*env)->ReleaseStringUTFChars(env, host, h);
+    if (s) (*env)->ReleaseStringUTFChars(env, slot, s);
+    return result;
+}

@@ -14,6 +14,7 @@
 #include "error.h"
 #include "conev.h"
 #include "tpws.h"
+#include "extend.h"
 
 /* Long-only options without a letter. */
 #define OPT_MSS 0x101
@@ -21,6 +22,7 @@
 #define OPT_DNS_REDIRECT 0x103
 #define OPT_UDP_PROXY 0x104
 #define OPT_APPS 0x105
+#define OPT_SLOT 0x106
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -209,6 +211,7 @@ const struct option options[] = {
     {"dns-redirect",  1, 0, OPT_DNS_REDIRECT},
     {"udp-proxy",     0, 0, OPT_UDP_PROXY},
     {"apps",          1, 0, OPT_APPS},
+    {"slot",          1, 0, OPT_SLOT},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -793,8 +796,11 @@ void clear_params(char *line, char **argv)
     }
     params.need_free_n = 0;
     
+    // slot_assign() from another thread walks the groups: not while they are freed.
+    pthread_mutex_lock(&slot_lock);
     struct desync_params *dp = params.dp;
     while (dp) {
+        free(dp->slot);
         free(dp->parts);
         free(dp->tlsrec);
         free(dp->fake_data.data);
@@ -815,6 +821,7 @@ void clear_params(char *line, char **argv)
         free(t);
     }
     params.dp = 0;
+    pthread_mutex_unlock(&slot_lock);
 }
 
 
@@ -967,6 +974,14 @@ int parse_args(int argc, char **argv)
 
         case OPT_UDP_PROXY:
             dp->udp_proxy = 1;
+            break;
+
+        case OPT_SLOT:
+            // An empty host list the app fills at run time; not together with --hosts.
+            if (dp->hosts || dp->slot || !(dp->slot = strdup(optarg))
+                    || !(dp->hosts = mem_pool(MF_DYNAMIC, CMP_HOST))) {
+                invalid = 1;
+            }
             break;
 
         case OPT_APPS: {
@@ -1246,6 +1261,10 @@ int parse_args(int argc, char **argv)
             break;
             
         case 'H':
+            if (dp->slot) {
+                invalid = 1;
+                continue;
+            }
             if (!dp->hosts && 
                     !(dp->hosts = mem_pool(MF_STATIC, CMP_HOST))) {
                 return -1;
