@@ -74,6 +74,11 @@
                 android:value="vpn" />
         </service>
 
+        <!-- Runs the strategy script's @try search in the main process, asked by the VPN service. -->
+        <service
+            android:name=".test.ScriptSearch$Request"
+            android:exported="false" />
+
         <!-- Keeps the app process alive during long strategy tests (deep check). -->
         <service
             android:name=".test.TestService"

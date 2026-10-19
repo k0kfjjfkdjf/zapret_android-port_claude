@@ -40,6 +40,8 @@ import io.github.zapretdroid.core.StrategyArgs
 import io.github.zapretdroid.core.StrategyGroups
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.test.ScriptSearch
+import io.github.zapretdroid.core.ScriptCache
 import io.github.zapretdroid.core.LogLevel
 import io.github.zapretdroid.core.StrategyScript
 import io.github.zapretdroid.core.Script
@@ -80,6 +82,11 @@ class ZapretVpnService : VpnService() {
     private var paused = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SCRIPT_RESULT) {
+            onScriptResult(intent)
+            if (state == VpnState.STOPPED) stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             AppLog.i("stop requested")
             stop(null)
@@ -131,6 +138,7 @@ class ZapretVpnService : VpnService() {
                 throw IllegalStateException(withEngineOutput(getString(R.string.error_engine_start)))
             }
             AppLog.i("byedpi is listening on $PROXY_HOST:$PROXY_PORT")
+            applyTries()
             startTunnel(settings, hevLog, logLevel)
         } catch (e: Throwable) {
             AppLog.e("failed to start: ${e.message}", e)
@@ -202,7 +210,10 @@ class ZapretVpnService : VpnService() {
                 engine?.stopProxy()
                 engineThread?.join(STOP_TIMEOUT_MS)
                 startEngine(args)
-                if (awaitProxy()) AppLog.i("engine restarted")
+                if (awaitProxy()) {
+                    AppLog.i("engine restarted")
+                    applyTries()
+                }
                 else handler.post { stop(withEngineOutput(getString(R.string.error_engine_start))) }
             }
         }
@@ -474,6 +485,50 @@ class ZapretVpnService : VpnService() {
     @Volatile
     private var scriptOnNetwork = false
 
+    /** The compiled strategy script of the running engine and the network type it was compiled for. */
+    @Volatile
+    private var scriptResult: Script.Result? = null
+
+    @Volatile
+    private var scriptNetwork = "other"
+
+    /**
+     * The script's @try/@fallback blocks: their sites go to the slot of the known winner (the
+     * first variant if none yet); blocks without a fresh winner for this network are searched
+     * by the app (ScriptSearch), whose result arrives as ACTION_SCRIPT_RESULT.
+     */
+    private fun applyTries() {
+        val r = scriptResult ?: return
+        if (r.tries.isEmpty()) return
+        r.tries.forEach { t ->
+            val index = if (t.kind == Script.TryKind.TRY) ScriptCache.choice(this, scriptNetwork, t) ?: 0 else 0
+            val failed = t.sites.count { ByeDpi.assignSlot(it, t.slots[index]) != 0 }
+            AppLog.i(
+                "script: ${t.kind.name.lowercase()} ${t.name} -> " +
+                    (if (t.kind == Script.TryKind.TRY) "variant ${index + 1} [${t.variants[index]}]" else "${t.variants.size} variants") +
+                    " for ${t.sites.size} site(s)" + if (failed > 0) ", $failed not assigned" else "",
+            )
+        }
+        val stale = r.tries.filter { it.kind == Script.TryKind.TRY && ScriptCache.stale(this, scriptNetwork, it) }
+        if (stale.isNotEmpty() && scriptNetwork != "other") {
+            AppLog.i("script: searching ${stale.joinToString { it.name }} on $scriptNetwork in the background")
+            ScriptSearch.Request.send(this, scriptNetwork, stale)
+        }
+    }
+
+    private fun onScriptResult(intent: Intent) {
+        val network = intent.getStringExtra("network") ?: return
+        val name = intent.getStringExtra("name") ?: return
+        val index = intent.getIntExtra("index", -1)
+        val hash = intent.getIntExtra("hash", 0)
+        if (index < 0) return
+        ScriptCache.save(this, network, name, index, hash)
+        val t = scriptResult?.tries?.firstOrNull { it.name == name } ?: return
+        if (state != VpnState.RUNNING || network != scriptNetwork || ScriptCache.hash(t) != hash || index !in t.slots.indices) return
+        val failed = t.sites.count { ByeDpi.assignSlot(it, t.slots[index]) != 0 }
+        AppLog.i("script: ${t.name} -> variant ${index + 1} [${t.variants[index]}], without a restart" + if (failed > 0) " ($failed not assigned)" else "")
+    }
+
     /** The strategy's own command line uses a proxy (-C): proxy apps must bypass the VPN. */
     @Volatile
     private var strategyProxy = false
@@ -621,8 +676,14 @@ class ZapretVpnService : VpnService() {
         val script = settings.strategyArgs
         scriptOnNetwork = Script.dependsOnNetwork(script)
         if (Script.hasDirectives(script)) AppLog.i("strategy script compiled for network: $network")
+        val compiled = StrategyScript.compile(this, settings, script, network)
+        compiled.errors.firstOrNull()?.let { e ->
+            throw IllegalStateException(if (e.line > 0) "strategy line ${e.line}: ${e.message}" else "strategy: ${e.message}")
+        }
+        scriptResult = compiled
+        scriptNetwork = network
         val strategy = try {
-            ArgTemplates.resolve(splitArgs(StrategyScript.text(this, settings, script, network)), FakePayloads.install(this), HostLists.dir(this))
+            ArgTemplates.resolve(splitArgs(compiled.text), FakePayloads.install(this), HostLists.dir(this))
         } catch (e: ArgTemplates.UnknownReference) {
             throw IllegalStateException(unknownReference(e))
         }
@@ -789,6 +850,8 @@ class ZapretVpnService : VpnService() {
         const val ACTION_START = "io.github.zapretdroid.START"
         const val ACTION_STOP = "io.github.zapretdroid.STOP"
         const val ACTION_PAUSE = "io.github.zapretdroid.PAUSE"
+        /** From the app's @try search (ScriptSearch): a block's winning variant. */
+        const val ACTION_SCRIPT_RESULT = "io.github.zapretdroid.SCRIPT_RESULT"
         private const val PAUSED_NOTIFICATION_ID = 3
 
         private const val NATIVE_LOG_LIMIT = 8L * 1024 * 1024

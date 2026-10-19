@@ -69,6 +69,7 @@ import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.BuiltinLists
 import io.github.zapretdroid.core.StrategyScript
 import io.github.zapretdroid.core.Script
+import io.github.zapretdroid.core.ScriptCache
 import io.github.zapretdroid.core.splitArgs
 import io.github.zapretdroid.core.Backup
 import io.github.zapretdroid.core.DnsFilter
@@ -1468,6 +1469,16 @@ private fun ScriptPanel(text: String, disabled: Set<String>, onBlocks: (Set<Stri
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+        result.tries.forEach { t ->
+            val known = if (t.kind == Script.TryKind.TRY) ScriptCache.choice(context, network, t) else null
+            Text(
+                stringResource(
+                    if (t.kind == Script.TryKind.TRY) R.string.script_try else R.string.script_fallback,
+                    t.name, t.variants.size, t.sites.joinToString(),
+                ) + if (t.kind == Script.TryKind.TRY) " " + (known?.let { stringResource(R.string.script_try_winner, it + 1) } ?: stringResource(R.string.script_try_unknown)) else "",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         result.blocks.forEach { block ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

@@ -51,7 +51,7 @@ class TestService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun busy() = DeepCheck.running || StrategyTester.running || AutoFixTester.running
+    private fun busy() = DeepCheck.running || StrategyTester.running || AutoFixTester.running || ScriptSearch.running
 
     private fun text(): String = when {
         DeepCheck.running -> {
@@ -63,6 +63,7 @@ class TestService : Service() {
             val (done, total) = StrategyTester.progress
             getString(R.string.test_notification, done, total)
         }
+        ScriptSearch.running -> ScriptSearch.current
         AutoFixTester.running -> {
             val (done, total) = AutoFixTester.progress
             getString(R.string.test_notification, done, total)

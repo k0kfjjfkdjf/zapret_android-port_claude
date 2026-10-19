@@ -55,7 +55,7 @@ class ScriptTest {
 
     @Test
     fun errorsHaveLines() {
-        val r = Script.compile("--split 1\n@if moon\n@end\n@end\n@block\n@try\n@frobnicate", Script.Env("wifi"))
+        val r = Script.compile("--split 1\n@if moon\n@end\n@end\n@block\n@on\n@frobnicate", Script.Env("wifi"))
         val byLine = r.errors.associate { it.line to it.message }
         assertTrue(byLine[2]!!.contains("@if takes"))
         assertTrue(byLine[4]!!.contains("@end without"))
@@ -63,5 +63,52 @@ class ScriptTest {
         assertTrue(byLine[7]!!.contains("unknown directive"))
         // the @block on line 5 has no name and no @end
         assertTrue(r.errors.count { it.line == 5 } == 2)
+    }
+
+    @Test
+    fun tryBecomesSlots() {
+        val text = "@sites dc = discord.com, gateway.discord.gg\n@for dc\n@try\n--disorder 1\n@or\n--oob 3 -A torst --split 1\n@end\n--disorder 1"
+        val r = Script.compile(text, Script.Env("wifi"))
+        assertEquals(emptyList<Script.Issue>(), r.errors)
+        val t = r.tries.single()
+        assertEquals("dc", t.name)
+        assertEquals(listOf("discord.com", "gateway.discord.gg"), t.sites)
+        assertEquals(listOf("dc.1", "dc.2"), t.slots)
+        assertEquals(
+            listOf(
+                "--slot", "dc.1", "--disorder", "1", "--auto=none",
+                "--slot", "dc.2", "--oob", "3", "-A", "torst", "--slot", "dc.2", "--split", "1", "--auto=none",
+                "--disorder", "1",
+            ),
+            splitArgs(r.text),
+        )
+    }
+
+    @Test
+    fun fallbackBecomesAutoGroups() {
+        val text = "@sites yt = youtube.com\n@for yt\n@fallback\n--disorder 1\n@or\n-C {proxy:termux}\n@end"
+        val r = Script.compile(text, Script.Env("mobile"))
+        assertEquals(emptyList<Script.Issue>(), r.errors)
+        assertEquals(listOf("yt.fb"), r.tries.single().slots)
+        assertEquals(
+            listOf("--slot", "yt.fb", "--disorder", "1", Script.FALLBACK_DETECT, "--slot", "yt.fb", "-C", "{proxy:termux}", "--auto=none"),
+            splitArgs(r.text),
+        )
+    }
+
+    @Test
+    fun tryErrors() {
+        assertTrue(Script.compile("@try\n--split 1\n@end", Script.Env("wifi")).errors.single().message.contains("@for"))
+        assertTrue(Script.compile("@for nope\n@try\n--split 1\n@end", Script.Env("wifi")).errors.any { "no @sites" in it.message })
+        assertTrue(Script.compile("@sites a = x.com\n@for a\n@try\n--split 1", Script.Env("wifi")).errors.any { "without @end" in it.message })
+        // A @try inside a block that is off records nothing.
+        val off = Script.compile("@sites a = x.com\n@block B\n@for a\n@try\n--split 1\n@end\n@end", Script.Env("wifi", setOf("B")))
+        assertTrue(off.tries.isEmpty())
+    }
+
+    @Test
+    fun quoteRoundTrips() {
+        val tokens = listOf("a b", "it's", "#x", "plain", "")
+        assertEquals(tokens, splitArgs(Script.quote(tokens)))
     }
 }

@@ -72,6 +72,25 @@ object StrategyArgs {
         add("--auto=none")
     }
 
+    /**
+     * The strategy as the engine's --slot [slot] groups: every group gets "--slot <name>" (the
+     * engine fills their host lists while it runs, see ByeDpi.assignSlot).
+     */
+    fun withSlot(strategy: List<String>, slot: String): List<String> = buildList {
+        val tag = listOf("--slot", slot)
+        groups(strategy).filter { it.isNotEmpty() }.forEach { group ->
+            if (isGroupStart(group[0])) {
+                val head = if (group[0] == "-A" || group[0] == "--auto") 2 else 1
+                addAll(group.take(head))
+                addAll(tag)
+                addAll(group.drop(head))
+            } else {
+                addAll(tag)
+                addAll(group)
+            }
+        }
+    }
+
     /** Whether [arg] starts a new group (-A/--auto, with its value attached or next). */
     fun isGroupStart(arg: String) = arg == "-A" || arg == "--auto" || arg.startsWith("--auto=") || (arg.startsWith("-A") && arg.length > 2)
 
