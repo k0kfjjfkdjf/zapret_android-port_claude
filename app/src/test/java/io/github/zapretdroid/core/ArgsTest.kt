@@ -14,6 +14,17 @@ class ArgsTest {
     }
 
     @Test
+    fun blockHeadingsEndAtTheirClosingMarks() {
+        // The command line from the settings flattened to one line keeps its groups.
+        assertEquals(
+            listOf("--apps", "1", "--auto=none", "--hosts", "a", "-C", "x", "--auto=none", "--disorder", "1"),
+            splitArgs("--apps 1 --auto=none # === Apps via: main === --hosts a -C x --auto=none # === Main strategy === --disorder 1"),
+        )
+        // Unclosed, it is an ordinary comment.
+        assertEquals(listOf("a"), splitArgs("a # === no end --split 2"))
+    }
+
+    @Test
     fun splitsOnWhitespace() {
         assertEquals(listOf("-o1", "-a1", "-r-5+se"), splitArgs("  -o1 \t-a1\n-r-5+se "))
     }

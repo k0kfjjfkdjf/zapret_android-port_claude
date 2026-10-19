@@ -27,6 +27,7 @@ import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.isIpLiteral
+import io.github.zapretdroid.core.StrategyArgs
 import io.github.zapretdroid.core.splitArgs
 import io.github.zapretdroid.service.VpnStatus
 import java.io.File
@@ -472,6 +473,13 @@ object SelfCheck {
         }
         // References in the strategy's command line ({app:…}, {proxy:…}, {list:…}…): all found?
         check(g, "strategy command line") {
+            // A "#" comment runs to the line end: options after it on the same line are lost.
+            settings.strategyArgs.lines().firstOrNull { line ->
+                val at = Regex("""(^|\s)#""").find(line)?.range?.last ?: return@firstOrNull false
+                splitArgs(line.substring(at)).isEmpty() && Regex("""\s-{1,2}[A-Za-z]""").containsMatchIn(line.substring(at))
+            }?.let { line ->
+                return@check CheckStatus.WARN to "a # comment hides options on its line: \"${line.trim().take(80)}…\"; put the comment on its own line"
+            }
             runCatching { ArgTemplates.resolve(splitArgs(settings.strategyArgs), fakeDir, listDir) }.fold(
                 onSuccess = { args ->
                     CheckStatus.OK to "${args.size} arguments" +
@@ -564,6 +572,13 @@ object SelfCheck {
         // Through the Telegram proxy they need its UDP ASSOCIATE: a STUN request through it.
         check(g, "Telegram calls (UDP)") {
             if (!settings.proxyTelegram) {
+                // The command line from the settings may carry the Telegram group ({ipset:telegram}).
+                val group = StrategyArgs.groups(splitArgs(settings.strategyArgs)).firstOrNull { "{ipset:telegram}" in it }
+                if (group != null) {
+                    val proxy = group.getOrNull(group.indexOf("-C") + 1).takeIf { "-C" in group } ?: "?"
+                    return@check if ("--udp-proxy" in group) CheckStatus.INFO to "Telegram goes through $proxy in the command line, with --udp-proxy: calls go there if the proxy relays UDP"
+                    else CheckStatus.WARN to "Telegram goes through $proxy in the command line without --udp-proxy: messages go through it, calls do not"
+                }
                 return@check CheckStatus.INFO to "Telegram goes without a proxy: calls work where UDP gets through (see the STUN rows)"
             }
             val tgProxy = settings.proxyByName(settings.telegramProxy)

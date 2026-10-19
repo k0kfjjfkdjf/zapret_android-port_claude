@@ -41,12 +41,20 @@ object SavedStrategies {
     fun parse(text: String): List<SavedStrategy> = text.lineSequence().mapNotNull { line ->
         val p = line.split('\t')
         if (p.size < 4 || p[3].isBlank()) null
-        else SavedStrategy(p[2], p[3], p[0] == "1", p[1].toLongOrNull() ?: 0)
+        else SavedStrategy(p[2], unescape(p[3]), p[0] == "1", p[1].toLongOrNull() ?: 0)
     }.toList()
 
     fun format(list: List<SavedStrategy>): String = list.joinToString("") {
-        "${if (it.pinned) 1 else 0}\t${it.time}\t${clean(it.name)}\t${clean(it.args)}\n"
+        "${if (it.pinned) 1 else 0}\t${it.time}\t${clean(it.name)}\t${escape(it.args.trim())}\n"
     }
 
     private fun clean(s: String) = s.replace('\t', ' ').replace('\n', ' ').trim()
+
+    // A strategy keeps its line breaks (a comment ends at the line end): a control character
+    // stands for them in the one-line-per-strategy file.
+    private const val NEWLINE = "\u0001n"
+
+    private fun escape(s: String) = s.replace('\t', ' ').replace("\r", "").replace("\n", NEWLINE)
+
+    private fun unescape(s: String) = s.replace(NEWLINE, "\n")
 }

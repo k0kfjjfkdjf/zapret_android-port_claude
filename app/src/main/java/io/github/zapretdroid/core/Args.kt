@@ -21,8 +21,13 @@ fun splitArgs(line: String): List<String> {
             }
             quote == '"' -> current.append(c)
             // "# …" to the end of the line is a comment (as in shell scripts), when it starts a word.
+            // A block heading "# === … ===" (the command line from the settings) ends at its
+            // closing "===", so a command line flattened to one line keeps its options.
             c == '#' && !inArg -> {
-                while (i + 1 < line.length && line[i + 1] != '\n') i++
+                val close = if (line.startsWith("# ===", i)) line.indexOf("===", i + 5) else -1
+                val eol = line.indexOf('\n', i).let { if (it < 0) line.length else it }
+                if (close in 0 until eol) i = close + 2
+                else while (i + 1 < line.length && line[i + 1] != '\n') i++
             }
             c == '"' || c == '\'' -> {
                 quote = c
