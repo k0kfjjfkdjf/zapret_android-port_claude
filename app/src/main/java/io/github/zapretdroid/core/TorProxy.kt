@@ -95,13 +95,19 @@ object TorProxy {
      * and sends no name to match. Calls are UDP: they need a proxy that relays UDP ([udp]).
      */
     fun telegramGroups(context: Context, address: String, udp: Boolean): List<String> {
+        val ips = telegramFiles(context)
+        val upstream = listOf("-C", "socks5://$address") + (if (udp) listOf("--udp-proxy") else emptyList()) + "--auto=none"
+        return listOf("--hosts", HostLists.file(context, TELEGRAM_LIST).absolutePath) + upstream + listOf("--ipset", ips.absolutePath) + upstream
+    }
+
+    /** Writes the Telegram files (site list "telegram", if missing; address ranges); the ranges file. */
+    fun telegramFiles(context: Context): java.io.File {
         if (!HostLists.file(context, TELEGRAM_LIST).exists()) {
             HostLists.save(context, TELEGRAM_LIST, context.assets.open("lists/$TELEGRAM_LIST.txt").bufferedReader().use { it.readText() })
         }
         val ips = java.io.File(context.filesDir, "telegram-ip.txt")
         ips.writeBytes(context.assets.open("telegram-ip.txt").use { it.readBytes() })
-        val upstream = listOf("-C", "socks5://$address") + (if (udp) listOf("--udp-proxy") else emptyList()) + "--auto=none"
-        return listOf("--hosts", HostLists.file(context, TELEGRAM_LIST).absolutePath) + upstream + listOf("--ipset", ips.absolutePath) + upstream
+        return ips
     }
 
     /** A Telegram server (DC 2) for the self-check. */

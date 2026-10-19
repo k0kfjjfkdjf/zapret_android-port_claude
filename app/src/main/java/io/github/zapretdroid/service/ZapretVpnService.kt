@@ -292,7 +292,7 @@ class ZapretVpnService : VpnService() {
             }
             // The proxy apps' own connections (Tor relays and bridges, tpws of zapret-termux,
             // sing-box…) go around the VPN: through it they would loop back into the engine.
-            val proxyInUse = settings.proxyEnabled || settings.proxyTelegram ||
+            val proxyInUse = settings.proxyEnabled || settings.proxyTelegram || strategyProxy ||
                 settings.appRoutes.containsValue(AppRoutes.Route.PROXY)
             if (proxyInUse) {
                 TorProxy.installed(this).forEach { (provider, pkg) ->
@@ -351,6 +351,7 @@ class ZapretVpnService : VpnService() {
         }
         setState(VpnState.STOPPING)
         appRouting = false
+        strategyProxy = false
         handler.removeCallbacks(statsTick)
         thread(name = "vpn-stop") {
             if (wasActive) teardown()
@@ -412,6 +413,10 @@ class ZapretVpnService : VpnService() {
     /** Routing by app is on in this session: hev passes source addresses, the engine asks for owners. */
     @Volatile
     private var appRouting = false
+
+    /** The strategy's own command line uses a proxy (-C): proxy apps must bypass the VPN. */
+    @Volatile
+    private var strategyProxy = false
 
     /** The encrypted resolver, or null for plain DNS (also when it cannot start: plain then). */
     private fun startSecureDns(settings: Settings): SecureDns.Server? {
@@ -555,8 +560,7 @@ class ZapretVpnService : VpnService() {
         val strategy = try {
             ArgTemplates.resolve(splitArgs(settings.strategyArgs), FakePayloads.install(this), HostLists.dir(this))
         } catch (e: ArgTemplates.UnknownReference) {
-            val res = if (e.kind == "fake") R.string.error_unknown_fake else R.string.error_unknown_list
-            throw IllegalStateException(getString(res, e.name))
+            throw IllegalStateException(unknownReference(e))
         }
         val scope = settings.hostScope
         val listPath = if (scope == HostScope.ALL) {
@@ -572,8 +576,7 @@ class ZapretVpnService : VpnService() {
             try {
                 ArgTemplates.resolve(splitArgs(args), FakePayloads.install(this), HostLists.dir(this))
             } catch (e: ArgTemplates.UnknownReference) {
-                val res = if (e.kind == "fake") R.string.error_unknown_fake else R.string.error_unknown_list
-                throw IllegalStateException(getString(res, e.name))
+                throw IllegalStateException(unknownReference(e))
             }
         }
         if (appStrategy.isNotEmpty()) {
@@ -582,7 +585,27 @@ class ZapretVpnService : VpnService() {
             val pkgs = settings.appRoutes.filterValues { it == AppRoutes.Route.STRATEGY }.keys
             AppLog.i("apps with their own strategy: ${pkgs.sorted()}")
         }
+        // The strategy's own command line can route by app (--apps {app:…}) and send groups to a
+        // proxy (-C {proxy:…}) just as the settings do: switch on what that needs.
+        if (ArgTemplates.usesApps(strategy)) {
+            appRouting = true
+            ByeDpi.ownerLookup = { proto, local, remote -> AppRoutes.ownerUid(this, proto, local, remote) }
+            AppLog.i("the strategy routes by app (--apps)")
+        }
+        if (ArgTemplates.usesProxy(strategy)) {
+            strategyProxy = true
+            TorProxy.requestStart(this)
+            AppLog.i("the strategy sends groups to a proxy (-C)")
+        }
         return appGroups(settings) + proxyGroup(settings) + telegramGroup(settings) + appStrategy + StrategyArgs.build(strategy, scope, listPath, autohostLog)
+    }
+
+    private fun unknownReference(e: ArgTemplates.UnknownReference): String = when (e.kind) {
+        "fake" -> getString(R.string.error_unknown_fake, e.name)
+        "list" -> getString(R.string.error_unknown_list, e.name)
+        "app" -> getString(R.string.error_unknown_app, e.name)
+        "proxy" -> getString(R.string.error_unknown_proxy, e.name)
+        else -> getString(R.string.error_unknown_ipset, e.name)
     }
 
     /** Apps routed wholly through the proxy or direct, in front of every other group (see AppRoutes). */

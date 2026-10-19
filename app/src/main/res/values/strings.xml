@@ -46,7 +46,7 @@
     <string name="strategy_custom">Custom</string>
     <string name="strategy_custom_desc">Your own ByeDPI command line</string>
     <string name="strategy_args">ByeDPI arguments</string>
-    <string name="strategy_args_hint">Editing switches to a custom strategy. --ip and --port are set by the app. Positions accept zapret markers (host, endhost, sld, midsld, endsld, sniext, method, e.g. midsld+1); -M accepts tpws modifications (hostcase, hostdot, hosttab, hostnospace, hostpad=N, methodspace, methodeol, unixeol).</string>
+    <string name="strategy_args_hint">Editing switches to a custom strategy. --ip and --port are set by the app. Positions accept zapret markers (host, endhost, sld, midsld, endsld, sniext, method, e.g. midsld+1); -M accepts tpws modifications (hostcase, hostdot, hosttab, hostnospace, hostpad=N, methodspace, methodeol, unixeol). Several lines and # comments are allowed; {app:package}, {proxy:name}, {list:name}, {ipset:telegram} are references.</string>
 
     <string name="section_network">Network</string>
     <string name="dns_server">DNS server</string>
@@ -395,6 +395,22 @@
     <string name="proxies_add_termux">+ zapret-termux (127.0.0.1:1080, UDP)</string>
     <string name="proxies_edit">Edit proxy</string>
     <string name="proxies_save">Save</string>
+    <string name="error_unknown_app">The strategy names an app that is not installed: %1$s</string>
+    <string name="error_unknown_proxy">The strategy names a proxy that does not exist or has a bad address: %1$s</string>
+    <string name="error_unknown_ipset">Unknown address list in the strategy: %1$s (known: telegram)</string>
+    <string name="cmd_block_direct">Apps direct (no bypass, no proxy)</string>
+    <string name="cmd_block_apps_proxy">Apps through the proxy: %1$s</string>
+    <string name="cmd_block_sites_proxy">Sites of the list %1$s through the main proxy</string>
+    <string name="cmd_block_telegram">Telegram (its sites and address ranges) through the proxy: %1$s</string>
+    <string name="cmd_block_app_strategy">Own strategy of %1$s</string>
+    <string name="cmd_block_main">Main strategy</string>
+    <string name="cmd_scope_note">applied to the list %1$s only / except it, as set in Domain lists</string>
+    <string name="cmd_title">Command line from the settings</string>
+    <string name="cmd_desc">What the VPN builds from the settings: apps, proxies, Telegram and the strategy, as one command line with # comments for each block. References: {app:package} — an app, {proxy} / {proxy:name} — the main or a named proxy, {list:name} — a domain list, {ipset:telegram} — Telegram\'s addresses. Lines starting with # are comments.</string>
+    <string name="cmd_copy">Copy</string>
+    <string name="cmd_move">Move into my strategy</string>
+    <string name="cmd_move_confirm">The command line becomes your strategy (and is saved in My strategies); the routes set by switches (apps, sites through the proxy, Telegram) are turned off so that nothing is doubled. Go on?</string>
+    <string name="cmd_copied">Command line copied</string>
     <string name="app_routes_title">Apps</string>
     <string name="app_routes_none">All apps follow the strategy and the lists</string>
     <string name="app_routes_summary">Through the proxy: %1$d, direct: %2$d</string>

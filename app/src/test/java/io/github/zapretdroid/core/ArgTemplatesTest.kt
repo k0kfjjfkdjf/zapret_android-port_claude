@@ -16,6 +16,31 @@ class ArgTemplatesTest {
     }
 
     @Test
+    fun resolvesReferences() {
+        ArgTemplates.refs = object : ArgTemplates.Refs {
+            override fun uid(pkg: String) = mapOf("com.discord" to 10100, "org.telegram.messenger" to 10200)[pkg]
+            override fun proxy(name: String) = mapOf("" to "socks5://127.0.0.1:9050", "termux" to "socks5://127.0.0.1:1080")[name]
+            override fun ipset(name: String) = if (name == "telegram") "/data/telegram-ip.txt" else null
+        }
+        try {
+            assertEquals(
+                listOf("--apps", "10100,10200", "-C", "socks5://127.0.0.1:1080", "--ipset", "/data/telegram-ip.txt", "-C", "socks5://127.0.0.1:9050"),
+                ArgTemplates.resolve(
+                    listOf("--apps", "{app:com.discord,org.telegram.messenger}", "-C", "{proxy:termux}", "--ipset", "{ipset:telegram}", "-C", "{proxy}"),
+                    fakeDir, listDir,
+                ),
+            )
+            val e = assertThrows(ArgTemplates.UnknownReference::class.java) {
+                ArgTemplates.resolve(listOf("--apps", "{app:not.installed}"), fakeDir, listDir)
+            }
+            assertEquals("app", e.kind)
+            assertThrows(ArgTemplates.UnknownReference::class.java) { ArgTemplates.resolve(listOf("-C", "{proxy:nope}"), fakeDir, listDir) }
+        } finally {
+            ArgTemplates.refs = null
+        }
+    }
+
+    @Test
     fun resolvesPlaceholders() {
         val stun = fakeDir.resolve("stun.bin").absolutePath
         val list = listDir.resolve("youtube.txt").absolutePath

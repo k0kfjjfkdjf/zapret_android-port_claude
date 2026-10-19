@@ -18,6 +18,7 @@ import io.github.zapretdroid.core.DnsMode
 import io.github.zapretdroid.core.DnsServers
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.HostLists
+import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.InviZible
 import io.github.zapretdroid.core.NativeLog
 import io.github.zapretdroid.core.SecureDns
@@ -459,6 +460,17 @@ object SelfCheck {
                     "(answers cannot be spoofed, names for host lists always known)"
                 else -> CheckStatus.WARN to "neither DoH nor DoT gets through on this network"
             }
+        }
+        // References in the strategy's command line ({app:…}, {proxy:…}, {list:…}…): all found?
+        check(g, "strategy command line") {
+            runCatching { ArgTemplates.resolve(splitArgs(settings.strategyArgs), fakeDir, listDir) }.fold(
+                onSuccess = { args ->
+                    CheckStatus.OK to "${args.size} arguments" +
+                        (if (ArgTemplates.usesApps(args)) ", routes by app" else "") +
+                        (if (ArgTemplates.usesProxy(args)) ", uses a proxy" else "")
+                },
+                onFailure = { CheckStatus.WARN to "${it.message}: the VPN will not start with this strategy" },
+            )
         }
         // The "Download InviZible Pro" button: is there a file for this phone in its releases?
         check(g, "InviZible Pro download") {

@@ -44,7 +44,7 @@
     <string name="strategy_custom">Своя</string>
     <string name="strategy_custom_desc">Собственная командная строка ByeDPI</string>
     <string name="strategy_args">Аргументы ByeDPI</string>
-    <string name="strategy_args_hint">Правка переключает на свою стратегию. --ip и --port задаёт приложение. В позициях можно использовать маркеры zapret (host, endhost, sld, midsld, endsld, sniext, method, например midsld+1); в -M — модификации tpws (hostcase, hostdot, hosttab, hostnospace, hostpad=N, methodspace, methodeol, unixeol).</string>
+    <string name="strategy_args_hint">Правка переключает на свою стратегию. --ip и --port задаёт приложение. В позициях можно использовать маркеры zapret (host, endhost, sld, midsld, endsld, sniext, method, например midsld+1); в -M — модификации tpws (hostcase, hostdot, hosttab, hostnospace, hostpad=N, methodspace, methodeol, unixeol). Можно писать в несколько строк и с комментариями #; {app:пакет}, {proxy:имя}, {list:имя}, {ipset:telegram} — ссылки.</string>
 
     <string name="section_network">Сеть</string>
     <string name="dns_server">DNS-сервер</string>
@@ -393,6 +393,22 @@
     <string name="proxies_add_termux">+ zapret-termux (127.0.0.1:1080, UDP)</string>
     <string name="proxies_edit">Изменить прокси</string>
     <string name="proxies_save">Сохранить</string>
+    <string name="error_unknown_app">В стратегии указано приложение, которое не установлено: %1$s</string>
+    <string name="error_unknown_proxy">В стратегии указан прокси, которого нет или у которого неверный адрес: %1$s</string>
+    <string name="error_unknown_ipset">Неизвестный список адресов в стратегии: %1$s (есть: telegram)</string>
+    <string name="cmd_block_direct">Приложения напрямую (без обхода и без прокси)</string>
+    <string name="cmd_block_apps_proxy">Приложения через прокси: %1$s</string>
+    <string name="cmd_block_sites_proxy">Сайты из списка %1$s через основной прокси</string>
+    <string name="cmd_block_telegram">Telegram (сайты и диапазоны адресов) через прокси: %1$s</string>
+    <string name="cmd_block_app_strategy">Своя стратегия %1$s</string>
+    <string name="cmd_block_main">Основная стратегия</string>
+    <string name="cmd_scope_note">только для списка %1$s / кроме него, как задано в «Списках доменов»</string>
+    <string name="cmd_title">Командная строка из настроек</string>
+    <string name="cmd_desc">То, что VPN собирает из настроек: приложения, прокси, Telegram и стратегия — одной командной строкой с комментариями # для каждого блока. Ссылки: {app:пакет} — приложение, {proxy} / {proxy:имя} — основной или названный прокси, {list:имя} — список доменов, {ipset:telegram} — адреса Telegram. Строки, начинающиеся с #, — комментарии.</string>
+    <string name="cmd_copy">Копировать</string>
+    <string name="cmd_move">Перенести в свою стратегию</string>
+    <string name="cmd_move_confirm">Командная строка станет вашей стратегией (и сохранится в «Моих стратегиях»), а маршруты, заданные переключателями (приложения, сайты через прокси, Telegram), выключатся, чтобы ничего не дублировалось. Продолжить?</string>
+    <string name="cmd_copied">Командная строка скопирована</string>
     <string name="app_routes_title">Приложения</string>
     <string name="app_routes_none">Все приложения идут по стратегии и спискам</string>
     <string name="app_routes_summary">Через прокси: %1$d, напрямую: %2$d</string>

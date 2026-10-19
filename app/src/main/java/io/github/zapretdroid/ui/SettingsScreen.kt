@@ -77,6 +77,7 @@ import io.github.zapretdroid.core.SavedStrategies
 import io.github.zapretdroid.core.SavedStrategy
 import io.github.zapretdroid.core.SecureDns
 import io.github.zapretdroid.core.AppRoutes
+import io.github.zapretdroid.core.CommandLine
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.ProxyEntry
 import io.github.zapretdroid.core.Strategies
@@ -127,6 +128,8 @@ fun SettingsScreen(
     var autohost by remember { mutableStateOf(settings.autohost) }
     var listPicker by remember { mutableStateOf(false) }
     var saveDialog by remember { mutableStateOf(false) }
+    // The command line from the settings waiting for "move into my strategy" to be confirmed.
+    var moveDialog by remember { mutableStateOf<String?>(null) }
     var extraProxies by remember { mutableStateOf(settings.extraProxies) }
     var telegramProxy by remember { mutableStateOf(settings.telegramProxy) }
     var addProxy by remember { mutableStateOf(false) }
@@ -359,6 +362,27 @@ fun SettingsScreen(
                             },
                             modifier = Modifier.selectable(selected = current, onClick = { setCustomArgs(s.args) }),
                         )
+                    }
+                    item { SectionHeader(R.string.cmd_title) }
+                    item {
+                        val generated = remember(section, strategyId, customArgs) { CommandLine.fromSettings(context, settings) }
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            Text(stringResource(R.string.cmd_desc), style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                generated,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                FilledTonalButton(onClick = {
+                                    val clip = context.getSystemService(android.content.ClipboardManager::class.java)
+                                    clip?.setPrimaryClip(android.content.ClipData.newPlainText("ByeZapret", generated))
+                                    Toast.makeText(context, R.string.cmd_copied, Toast.LENGTH_SHORT).show()
+                                }) { Text(stringResource(R.string.cmd_copy)) }
+                                Button(onClick = { moveDialog = generated }) { Text(stringResource(R.string.cmd_move)) }
+                            }
+                        }
                     }
                 }
                 Section.LISTS -> {
@@ -1013,6 +1037,33 @@ fun SettingsScreen(
                 }) { Text(stringResource(if (editing == null) R.string.proxies_add else R.string.proxies_save)) }
             },
             dismissButton = { TextButton(onClick = { addProxy = false }) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
+
+    moveDialog?.let { text ->
+        AlertDialog(
+            onDismissRequest = { moveDialog = null },
+            title = { Text(stringResource(R.string.cmd_move)) },
+            text = { Text(stringResource(R.string.cmd_move_confirm)) },
+            confirmButton = {
+                Button(onClick = {
+                    setCustomArgs(text)
+                    SavedStrategies.remember(context, text, context.getString(R.string.cmd_title))
+                    saved = SavedStrategies.all(context).sortedWith(compareByDescending<SavedStrategy> { it.pinned }.thenByDescending { it.time })
+                    // The routes now live in the command line: switched off here so that they are not doubled.
+                    settings.appRoutes = emptyMap()
+                    settings.proxyEnabled = false
+                    proxyEnabled = false
+                    settings.proxyTelegram = false
+                    proxyTelegram = false
+                    if (settings.hostScope != HostScope.ALL) {
+                        settings.hostScope = HostScope.ALL
+                        hostScope = HostScope.ALL
+                    }
+                    moveDialog = null
+                }) { Text(stringResource(R.string.cmd_move)) }
+            },
+            dismissButton = { TextButton(onClick = { moveDialog = null }) { Text(stringResource(android.R.string.cancel)) } },
         )
     }
 

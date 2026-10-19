@@ -4,6 +4,8 @@ import android.app.Application
 import android.os.Build
 import android.os.Process
 import io.github.zapretdroid.core.AppLog
+import io.github.zapretdroid.core.AppRefs
+import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.service.VpnStatus
 
 class ZapretApp : Application() {
@@ -11,6 +13,7 @@ class ZapretApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLog.init(this)
+        ArgTemplates.refs = AppRefs(this)
         val vpnRunning = VpnStatus.isServiceRunning(this)
         // The VPN process trims right before a session; the UI process only when no session writes.
         if (!vpnRunning && !AppLog.inEngineProcess) AppLog.trimIfLarge()

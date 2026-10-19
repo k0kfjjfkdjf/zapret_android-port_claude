@@ -5,6 +5,15 @@ import org.junit.Test
 
 class ArgsTest {
     @Test
+    fun commentsAndLines() {
+        assertEquals(
+            listOf("--disorder", "1", "--auto=none", "--split", "2", "--fake-sni", "a#b"),
+            splitArgs("# Discord\n--disorder 1 # first group\n--auto=none\n  # UDP\n--split 2 --fake-sni a#b"),
+        )
+        assertEquals(listOf("x", "#not"), splitArgs("x '#not' # but this is"))
+    }
+
+    @Test
     fun splitsOnWhitespace() {
         assertEquals(listOf("-o1", "-a1", "-r-5+se"), splitArgs("  -o1 \t-a1\n-r-5+se "))
     }

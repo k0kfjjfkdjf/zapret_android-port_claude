@@ -20,6 +20,10 @@ fun splitArgs(line: String): List<String> {
                 inArg = true
             }
             quote == '"' -> current.append(c)
+            // "# …" to the end of the line is a comment (as in shell scripts), when it starts a word.
+            c == '#' && !inArg -> {
+                while (i + 1 < line.length && line[i + 1] != '\n') i++
+            }
             c == '"' || c == '\'' -> {
                 quote = c
                 inArg = true
