@@ -28,7 +28,7 @@
 
     <string name="section_strategy">Bypass strategy</string>
     <string name="strategy_auto">Adaptive</string>
-    <string name="strategy_auto_desc">Disorder; if a connection looks blocked, switches to splitting TLS records</string>
+    <string name="strategy_auto_desc">Disorder; if a connection looks blocked, switches to splitting TLS records, then to fakes with the SNI of google.com</string>
     <string name="strategy_disorder">Disorder</string>
     <string name="strategy_disorder_desc">Sends the first byte out of order</string>
     <string name="strategy_split_sni">Split at SNI</string>

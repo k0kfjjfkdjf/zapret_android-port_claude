@@ -26,7 +26,7 @@
 
     <string name="section_strategy">Стратегия обхода</string>
     <string name="strategy_auto">Адаптивная</string>
-    <string name="strategy_auto_desc">Disorder; если соединение похоже на заблокированное, переключается на разбиение TLS-записей</string>
+    <string name="strategy_auto_desc">Disorder; если соединение похоже на заблокированное, переключается на разбиение TLS-записей, затем на фейки с SNI google.com</string>
     <string name="strategy_disorder">Disorder</string>
     <string name="strategy_disorder_desc">Отправляет первый байт не по порядку</string>
     <string name="strategy_split_sni">Разбиение по SNI</string>

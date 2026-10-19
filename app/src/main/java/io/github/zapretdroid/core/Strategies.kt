@@ -10,7 +10,10 @@ object Strategies {
     val presets = listOf(
         Strategy(
             "auto", R.string.strategy_auto, R.string.strategy_auto_desc,
-            "--disorder 1 --auto=torst --tlsrec 1+s",
+            // The last group: fakes with an allowed SNI at a low TTL, for networks (and phones)
+            // where no splitting gets through but fakes do.
+            "--disorder 1 --auto=torst --tlsrec 1+s " +
+                "--auto=torst,ssl_err --fake -1 --ttl 4 --fake-tls-mod rand,orig --fake-sni www.google.com",
         ),
         Strategy(
             "disorder", R.string.strategy_disorder, R.string.strategy_disorder_desc,
