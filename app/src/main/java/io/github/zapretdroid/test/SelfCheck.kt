@@ -560,6 +560,35 @@ object SelfCheck {
                 }
             }
         }
+        // Telegram calls are UDP (relays in Telegram's ranges, or peer to peer found with STUN).
+        // Through the Telegram proxy they need its UDP ASSOCIATE: a STUN request through it.
+        check(g, "Telegram calls (UDP)") {
+            if (!settings.proxyTelegram) {
+                return@check CheckStatus.INFO to "Telegram goes without a proxy: calls work where UDP gets through (see the STUN rows)"
+            }
+            val tgProxy = settings.proxyByName(settings.telegramProxy)
+            if (!tgProxy.udp) {
+                return@check CheckStatus.WARN to "proxy ${tgProxy.name} carries TCP only: messages go through it, calls do not " +
+                    "(Tor has no UDP); for calls pick a proxy with UDP (zapret-termux) for Telegram"
+            }
+            val proxy = runCatching { TorProxy.socketAddress(tgProxy.address) }.getOrNull()
+                ?: return@check CheckStatus.WARN to "bad proxy address ${tgProxy.address}"
+            val tried = mutableListOf<String>()
+            for ((host, port) in listOf("stun.cloudflare.com" to 3478, "stun.l.google.com" to 19302)) {
+                val addr = runCatching { InetAddress.getAllByName(host).firstOrNull { it is Inet4Address } as Inet4Address? }.getOrNull()
+                if (addr == null) { tried += "$host: no address"; continue }
+                val txid = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+                val start = System.nanoTime()
+                val reply = runCatching { UdpProbe.exchange(proxy, addr, port, UdpProbe.stunBindingRequest(txid), TIMEOUT_MS) }
+                val ms = (System.nanoTime() - start) / 1_000_000
+                val data = reply.getOrNull()?.second
+                if (data != null && UdpProbe.isStunSuccess(data, txid)) {
+                    return@check CheckStatus.OK to "STUN $host:$port answered through ${tgProxy.name} in $ms ms: the proxy relays UDP, calls can go through it"
+                }
+                tried += "$host: " + (reply.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "no reply in $ms ms")
+            }
+            CheckStatus.WARN to "no STUN answer through ${tgProxy.name} (${tried.joinToString("; ")}): calls through it will not connect"
+        }
         val testerDns = TestDns.spec(settings).let { if (it.startsWith("stamp:")) "${settings.dnsServers.size} DNSCrypt-mode servers" else it }
         check(g, "DNS as the tester resolves ($testerDns)") {
             val notes = names.mapNotNull { TestDns.resolve(it, TestDns.spec(settings)).note }
