@@ -159,6 +159,8 @@ dependencies {
     implementation("com.google.code.gson:gson:2.14.0")
 
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for unit tests (android.jar has only stubs that throw).
+    testImplementation("org.json:json:20240303")
 }
 
 tasks.withType<Test>().configureEach {
