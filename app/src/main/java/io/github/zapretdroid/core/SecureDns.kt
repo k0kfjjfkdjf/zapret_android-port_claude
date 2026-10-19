@@ -107,7 +107,12 @@ object SecureDns {
 
         private class Conn(val socket: SSLSocket, val input: InputStream, val output: OutputStream) {
             var uses = 0
+            var http2: Http2? = null
         }
+
+        /** The server refused HTTP/1.1 (505, 400): DoH over HTTP/2 from now on. */
+        @Volatile
+        private var h2 = false
 
         private val idle = ArrayBlockingQueue<Conn>(4)
 
@@ -150,6 +155,7 @@ object SecureDns {
             raw.soTimeout = TIMEOUT_MS
             // By IP: no SNI in the ClientHello. The certificate must still be the provider's.
             val ssl = socketFactory.createSocket(raw, provider.ip, port, true) as SSLSocket
+            val wantH2 = h2 && mode == DnsMode.DOH && Http2.offerH2(ssl)
             val verified = runCatching {
                 ssl.startHandshake()
                 certifiedFor(ssl, provider.tlsName) || certifiedFor(ssl, provider.ip)
@@ -158,7 +164,16 @@ object SecureDns {
                 runCatching { ssl.close() }
                 return openWithSni(port)
             }
+            if (wantH2) checkH2(ssl)
             return Conn(ssl, BufferedInputStream(ssl.inputStream), ssl.outputStream)
+        }
+
+        private fun checkH2(ssl: SSLSocket) {
+            val chosen = Http2.negotiated(ssl)
+            if (chosen != "h2") {
+                runCatching { ssl.close() }
+                throw HttpStatusException("${provider.title} refuses HTTP/1.1 and did not agree to HTTP/2 (ALPN: ${chosen ?: "none"})")
+            }
         }
 
         /** Servers that give their own certificate only for the name in SNI. */
@@ -170,11 +185,13 @@ object SecureDns {
             ssl.sslParameters = ssl.sslParameters.apply {
                 serverNames = listOf(SNIHostName(provider.tlsName))
             }
+            val wantH2 = h2 && mode == DnsMode.DOH && Http2.offerH2(ssl)
             ssl.startHandshake()
             if (!certifiedFor(ssl, provider.tlsName)) {
                 ssl.close()
                 throw IOException("certificate of ${provider.ip} is not for ${provider.tlsName}")
             }
+            if (wantH2) checkH2(ssl)
             return Conn(ssl, BufferedInputStream(ssl.inputStream), ssl.outputStream)
         }
 
@@ -186,6 +203,7 @@ object SecureDns {
         }
 
         private fun doh(conn: Conn, query: ByteArray): ByteArray {
+            if (h2) return doh2(conn, query)
             val head = "POST ${provider.dohPath} HTTP/1.1\r\nHost: ${provider.tlsName}\r\n" +
                 "Content-Type: application/dns-message\r\nAccept: application/dns-message\r\n" +
                 "Content-Length: ${query.size}\r\n\r\n"
@@ -222,10 +240,30 @@ object SecureDns {
             }
             if (code == 505 || code == 400) {
                 // Servers that speak only HTTP/2 answer an HTTP/1.1 request like this.
-                throw HttpStatusException("HTTP $code from ${provider.title}: probably HTTP/2 only (not supported yet), use DoT or another server")
+                h2 = true
+                conn.uses = MAX_USES
+                throw IOException("HTTP $code from ${provider.title}, retrying over HTTP/2")
             }
             if (code != 200) throw HttpStatusException("HTTP $code from ${provider.title}")
             return body
+        }
+
+        private fun doh2(conn: Conn, query: ByteArray): ByteArray {
+            if (conn.http2 == null && Http2.negotiated(conn.socket) != "h2") {
+                // A connection opened before the switch.
+                conn.uses = MAX_USES
+                throw IOException("connection without HTTP/2")
+            }
+            val client = conn.http2 ?: Http2(conn.input, conn.output, provider.tlsName).also { conn.http2 = it }
+            val r = client.post(provider.dohPath, "application/dns-message", query)
+            if (r.status == 421 && !sniOnly) {
+                sniOnly = true
+                conn.uses = MAX_USES
+                throw IOException("HTTP 421 from ${provider.title}, retrying with SNI")
+            }
+            // 0: the status was a reference to the server's header table; the body is checked anyway.
+            if (r.status != 200 && !(r.status == 0 && r.body.isNotEmpty())) throw HttpStatusException("HTTP ${r.status} from ${provider.title} (HTTP/2)")
+            return r.body
         }
 
         private fun readToEnd(input: InputStream): ByteArray {
