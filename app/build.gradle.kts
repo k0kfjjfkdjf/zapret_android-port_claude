@@ -56,6 +56,11 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // The test builds are what the releases ship: shrink them like a release, or every
+            // library (Compose, Material, AppCompat, Gson…) goes in whole, ~14 MB of dex.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -147,8 +152,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
 
     // ByeByeDPI interface (classic/), same libraries as ByeByeDPI 1.8.2.
     implementation("androidx.appcompat:appcompat:1.7.1")

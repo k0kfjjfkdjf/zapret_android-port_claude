@@ -10,3 +10,6 @@
 -keep,allowoptimization class io.github.zapretdroid.classic.data.** { <fields>; }
 -keepattributes Signature
 -keepattributes *Annotation*
+
+# Keep names: crash stack traces in the self-check report stay readable (open source anyway).
+-dontobfuscate
