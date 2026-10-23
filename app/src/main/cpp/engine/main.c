@@ -167,6 +167,12 @@ static const char help_text[] = {
     "    --dns-redirect <ip>=<ip:port>  UDP DNS to the first address goes to the second\n"
     "    --udp-proxy               UDP of a -C socks5 group through the proxy too\n"
     "    --apps <uid,...>          Group only for these apps (source address from the SOCKS5 user)\n"
+    "    -C, --connect-to <addr>   Connect through this proxy: [socks5://]ip:port\n"
+    "    -z, --udp-desync <N[:K]>  UDP fakes before the first N datagrams, then every K-th\n"
+    "    -G, --udp-proto-fake <p>:<f>  Fake for quic|discord|stun flows: file, dir or :str\n"
+    "    --slot <name>             Empty host list filled at run time (slot_assign)\n"
+    "    -k, --conn-log            Log every connection, UDP flow and detected block\n"
+    "    -J, --autohost-log <file> Append blocked hosts to the file (needs an --auto group)\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
