@@ -12,5 +12,5 @@ build/
 # The debug key is public on purpose (see app/build.gradle.kts).
 !app/debug.keystore
 *.jks
-# Test-only self-signed certificate for SiteProbeTest
-!app/src/test/resources/probe-test.jks
+# Test-only self-signed certificate for SiteProbeTest and SecureDnsTest
+!core/src/test/resources/probe-test.jks

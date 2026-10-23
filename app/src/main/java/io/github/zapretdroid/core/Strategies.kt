@@ -49,47 +49,11 @@ object Strategies {
             return list
         }
 
-    /** One preset of the presets file: `[id] Name | Description`, then its command line. */
-    data class Entry(val id: String, val name: String?, val about: String?, val args: String)
-
-    private val HEADER = Regex("""^\[([a-z0-9_]+)]\s*(.*)$""")
-
-    /**
-     * Parses the presets file. Lines before the first `[id]` are comments; a preset's command line
-     * may span several lines with `#` comment lines between them, and is joined into one line. Throws on a header
-     * that is not `[id]` or a preset without a command line.
-     */
-    fun parse(text: String): List<Entry> {
-        val entries = ArrayList<Entry>()
-        var head: Triple<String, String?, String?>? = null
-        val body = StringBuilder()
-        fun flush() {
-            val h = head ?: return
-            val args = body.toString().trim().replace(Regex("""\s+"""), " ")
-            if (splitArgs(args).isEmpty()) throw IllegalArgumentException("preset [${h.first}] has no command line")
-            entries += Entry(h.first, h.second, h.third, args)
-            body.clear()
-        }
-        text.lineSequence().forEachIndexed { i, raw ->
-            val line = raw.trimEnd()
-            if (line.trimStart().startsWith("[")) {
-                val m = HEADER.matchEntire(line.trim()) ?: throw IllegalArgumentException("line ${i + 1}: expected [id] Name | Description")
-                flush()
-                val (name, about) = m.groupValues[2].split('|', limit = 2).map { it.trim().ifEmpty { null } }.let { it.getOrNull(0) to it.getOrNull(1) }
-                head = Triple(m.groupValues[1], name, about)
-            } else if (head != null && !line.trimStart().startsWith("#")) {
-                body.append(line).append(' ')
-            }
-        }
-        flush()
-        val dup = entries.groupBy { it.id }.filterValues { it.size > 1 }.keys
-        if (dup.isNotEmpty()) throw IllegalArgumentException("preset [${dup.first()}] appears twice")
-        if (entries.any { it.id == CUSTOM }) throw IllegalArgumentException("[$CUSTOM] is reserved")
-        return entries
-    }
+    /** See [PresetFile.parse]. */
+    fun parse(text: String): List<PresetFile.Entry> = PresetFile.parse(text)
 
     /** The built-in presets with the file's command lines; presets new in the file go last. */
-    fun merge(base: List<Strategy>, entries: List<Entry>): List<Strategy> {
+    fun merge(base: List<Strategy>, entries: List<PresetFile.Entry>): List<Strategy> {
         val byId = entries.associateBy { it.id }
         val known = base.map { it.id }.toSet()
         return base.map { p -> byId[p.id]?.let { e -> p.copy(args = e.args, name = e.name ?: p.name, about = e.about ?: p.about) } ?: p } +
@@ -166,7 +130,7 @@ object Strategies {
         ),
     )
 
-    const val CUSTOM = "custom"
+    const val CUSTOM = PresetFile.CUSTOM
 
     /** zapret-termux "discord": tpws --split-pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1 --disorder --oob. */
     const val DISCORD_TERMUX_TCP = "--disoob 1 --disorder sniext+1 --disorder host+1 --disorder midsld-2 " +

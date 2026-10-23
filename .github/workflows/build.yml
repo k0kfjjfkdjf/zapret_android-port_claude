@@ -111,6 +111,36 @@ jobs:
             --title "ByeZapret $version" \
             --notes-file release-notes.md
 
+  # The Linux desktop app (Compose): built without the Android SDK, uploaded as a tar.gz.
+  desktop:
+    if: ${{ !inputs.stable }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Core tests and desktop app
+        run: ./gradlew --no-daemon -PnoAndroid :core:test :desktop:createDistributable
+
+      - name: Pack
+        run: |
+          dist=desktop/build/compose/binaries/main/app
+          ls -R "$dist" | head -40
+          tar -czf byezapret-desktop-linux-x64.tar.gz -C "$dist" .
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: byezapret-desktop-linux-x64
+          path: byezapret-desktop-linux-x64.tar.gz
+          if-no-files-found: error
+
   # Keeps the descriptions of published releases in step with CHANGELOG.md.
   release-notes:
     if: github.event_name == 'push' && github.ref == 'refs/heads/claude/zapret-android-no-root-632xp0'
