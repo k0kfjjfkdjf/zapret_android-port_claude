@@ -112,3 +112,5 @@ Changes in this fork:
   the buffer gave negative or oversized `memmove` lengths, a record that claims more than the
   buffer wrote its padding far past it; `randomize_tls()` had the same key-share bound. Every
   move and write is now bounded by the buffer (found with a mutation fuzzer under ASan).
+- Fix (upstream): a SOCKS5 request with an unknown address type read its port from two bytes
+  before the buffer and went on with no address; it is now refused (reply 8).

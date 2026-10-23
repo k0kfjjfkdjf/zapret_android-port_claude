@@ -318,6 +318,12 @@ static int s5_get_addr(const char *buffer,
     size_t o = (r->atp == S_ATP_I4 ? S_SIZE_I4 : 
             (r->atp == S_ATP_ID ? r->dst.id.len + S_SIZE_ID : 
             (r->atp == S_ATP_I6 ? S_SIZE_I6 : 0)));
+    // ZapretDroid: an unknown address type (o == 0) read the port from buffer[-2] and
+    // returned an offset of 0 with no address.
+    if (!o) {
+        LOG(LOG_E, "ss: bad address type\n");
+        return -S_ER_ATP;
+    }
     if (n < o)  {
         LOG(LOG_E, "ss: bad request\n");
         return -S_ER_GEN;
