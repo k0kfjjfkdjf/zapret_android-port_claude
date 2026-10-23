@@ -147,5 +147,10 @@ class ScriptTest {
         assertTrue(Script.compile("@on block Not_A_Domain! -> notify", env).errors.single().message.contains("domain"))
         assertTrue(Script.compile("@on block -> explode", env).errors.single().message.contains("action"))
         assertTrue(Script.compile("@on block -> autofix", env).errors.single().message.contains("candidates"))
+        // Numbers too big for the counter or the window: errors, not exceptions out of compile().
+        assertTrue(Script.compile("@on block x99999999999/1m -> notify", env).errors.single().message.contains("xN/T"))
+        assertTrue(Script.compile("@on block x2/99999999999999999999h -> notify", env).errors.single().message.contains("xN/T"))
+        assertTrue(Script.compile("@on block x2/9999999h -> notify", env).errors.single().message.contains("xN/T"))
+        assertEquals(86_400_000L, Script.compile("@on block x2/24h -> notify", env).rules.single().windowMs)
     }
 }

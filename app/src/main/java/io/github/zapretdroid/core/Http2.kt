@@ -201,6 +201,8 @@ class Http2(private val input: InputStream, private val output: OutputStream, pr
                 var shift = 0
                 while (at < end) {
                     val c = b[at++].toInt() and 0xff
+                    // More than 4 continuation bytes would overflow an Int: no header needs that.
+                    if (shift > 21) return -1
                     v += (c and 0x7f) shl shift
                     shift += 7
                     if (c and 0x80 == 0) break
@@ -229,7 +231,8 @@ class Http2(private val input: InputStream, private val output: OutputStream, pr
                         if (r.at >= to) return 0
                         val huffman = block[r.at].toInt() and 0x80 != 0
                         val len = r.integer(7)
-                        if (r.at + len > to) return 0
+                        // An integer past 31 bits wraps around: negative, not a length.
+                        if (len < 0 || len > to - r.at) return 0
                         val raw = block.copyOfRange(r.at, r.at + len)
                         val text = if (huffman) huffmanDigits(raw) else String(raw, Charsets.US_ASCII)
                         return text?.toIntOrNull() ?: 0

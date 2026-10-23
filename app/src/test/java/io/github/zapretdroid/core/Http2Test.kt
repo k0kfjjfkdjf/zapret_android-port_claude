@@ -23,6 +23,9 @@ class Http2Test {
         assertEquals(200, Http2.statusOf(byteArrayOf(0x20, 0x88.toByte()), 0, 2))
         // A reference to the server's dynamic table: unknown.
         assertEquals(0, Http2.statusOf(byteArrayOf(0xbe.toByte()), 0, 1))
+        // A value length past 31 bits (found by fuzzing): unknown, not an exception.
+        val huge = byteArrayOf(0x48, 0x7f, 0xff.toByte(), 0xff.toByte(), 0xff.toByte(), 0xff.toByte(), 0x0f)
+        assertEquals(0, Http2.statusOf(huge, 0, huge.size))
     }
 
     @Test

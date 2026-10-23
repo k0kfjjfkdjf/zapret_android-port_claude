@@ -877,7 +877,8 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                 // a broadcast address, a full buffer) is lost like any datagram; it must not
                 // close the association, and with it the app's working flows (a call).
                 int err = get_e();
-                if (params.conn_log && !pair->udp_send_errors++) {
+                bool first_error = !pair->udp_send_errors++;
+                if (params.conn_log && first_error) {
                     INIT_ADDR_STR((addr));
                     fprintf(ENGINE_LOG, "udp %d: datagram to %s:%d not sent, dropped: %s\n",
                         pair->fd, ADDR_STR, ntohs(addr.in.sin_port), strerror(err));

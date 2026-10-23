@@ -85,6 +85,7 @@ object Script {
     private val LATER = setOf("scenario")
     val REASONS = setOf("block", "freeze", "noreply", "connfail", "udp-noreply", "proxy-down", "any")
     private val THRESHOLD = Regex("""^x(\d+)/(\d+)([smh])$""")
+    private const val MAX_WINDOW_MS = 24 * 3_600_000L
     private val MASK = Regex("""^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*$""")
     private val RESTART = setOf("restart", "restart-delay", "restart-idle", "restart-limit", "restart-keep")
 
@@ -266,8 +267,17 @@ object Script {
                 when {
                     lw == "tcp" || lw == "udp" -> proto = lw
                     th != null -> {
-                        count = th.groupValues[1].toInt().coerceAtLeast(1)
-                        window = th.groupValues[2].toLong() * when (th.groupValues[3]) { "s" -> 1000L; "m" -> 60_000L; else -> 3_600_000L }
+                        // Digits only, but any number of them: "x99999999999/1m" is a script error,
+                        // not an exception out of compile() (the editor compiles while typing).
+                        val n = th.groupValues[1].toIntOrNull()
+                        val unit = when (th.groupValues[3]) { "s" -> 1000L; "m" -> 60_000L; else -> 3_600_000L }
+                        val ms = th.groupValues[2].toLongOrNull()?.takeIf { it <= MAX_WINDOW_MS / unit }?.times(unit)
+                        if (n == null || ms == null) {
+                            error(line, "@on: xN/T with N up to ${Int.MAX_VALUE} and T up to 24h: \"$w\"")
+                            return ""
+                        }
+                        count = n.coerceAtLeast(1)
+                        window = ms
                     }
                     else -> {
                         val list = lw.split(',').filter { it.isNotEmpty() }
