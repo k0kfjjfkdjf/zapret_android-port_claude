@@ -47,5 +47,11 @@ object Paths {
         resources?.let { File(it, "ciadpi") },
         File(data, "ciadpi"),
         repo?.let { File(it, "app/src/main/cpp/engine/ciadpi") },
-    ).firstOrNull { it.isFile && it.canExecute() }
+    ).firstOrNull { it.isFile }?.let { f ->
+        // Packaging can drop the executable bit; in a read-only install the copy in data/ runs.
+        if (f.canExecute() || f.setExecutable(true)) return@let f
+        val copy = File(data, "ciadpi")
+        runCatching { f.copyTo(copy, overwrite = true); copy.setExecutable(true) }
+        copy.takeIf { it.canExecute() }
+    }
 }
