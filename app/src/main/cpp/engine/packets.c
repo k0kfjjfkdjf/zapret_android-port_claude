@@ -113,7 +113,7 @@ static size_t find_ext_block(const char *data, size_t size)
 
 static int merge_tls_records(char *buffer, ssize_t n)
 {
-    if (n < 5) {
+    if (n < 9) { // ZapretDroid: the header writes below reach byte 8
         return 0;
     }
     uint16_t full_sz = 0;
@@ -127,8 +127,11 @@ static int merge_tls_records(char *buffer, ssize_t n)
             break;
         }
         r_sz = ANTOHS(buffer, 5 + full_sz + 3);
-        
-        if (full_sz + 10 + r_sz > n) {
+
+        // ZapretDroid: an empty record does not move full_sz on, and the memmove below leaves
+        // the last bytes in place, so records of length 0 looped forever (the client's own
+        // ClientHello with --fake-tls-mod orig: any app could freeze the engine).
+        if (!r_sz || full_sz + 10 + r_sz > n) {
             break;
         }
         memmove(buffer + 5 + full_sz, 
@@ -176,7 +179,7 @@ static int remove_ks_group(char *buffer,
     ssize_t g_offs = ks_offs + 4 + 2;
     while (g_offs + 4 < ks_offs + 4 + ks_sz) {
         uint16_t g_sz = ANTOHS(buffer, g_offs + 2);
-        if (ks_offs + 4 + g_sz > n) {
+        if (g_offs + 4 + g_sz > n) { // ZapretDroid: the group's own end, not ks_offs
             return 0;
         }
         uint16_t g_tp = ANTOHS(buffer, g_offs);
@@ -212,7 +215,7 @@ static int remove_tls_ext(char *buffer,
 
 
 static int resize_ech_ext(char *buffer, 
-        ssize_t n, size_t skip, int inc)
+        ssize_t n, ssize_t cap, size_t skip, int inc)
 {
     ssize_t ech_offs = find_tls_ext_offset(0xfe0d, buffer, n, skip);
     if (!ech_offs) {
@@ -226,6 +229,11 @@ static int resize_ech_ext(char *buffer,
     }
     uint16_t enc_sz = ANTOHS(buffer, ech_offs + 4 + 6);
     ssize_t pay_offs = ech_offs + 4 + 8 + enc_sz;
+    // ZapretDroid: lengths from the ClientHello are checked before use (with --fake-tls-mod
+    // orig it is any app's own first packet); moves stay inside the buffer ([cap] bytes).
+    if (8 + enc_sz + 2 > ech_sz) {
+        return 0;
+    }
     uint16_t pay_sz = ech_sz - (8 + enc_sz + 2);
     
     if (pay_offs + 2 > n) {
@@ -234,15 +242,25 @@ static int resize_ech_ext(char *buffer,
     if (pay_sz < -inc) {
         inc = -pay_sz;
     }
+    if (ech_end + inc > cap) {
+        return 0;
+    }
+    // The rest of the message, [ech_end, n), moves by inc: within the buffer, and nothing
+    // when the extension is the last one (it was n - (ech_end + inc): negative there, and
+    // past the buffer when shrinking).
+    ssize_t len = n - ech_end;
+    if (len > cap - (ech_end + inc)) len = cap - (ech_end + inc);
     SHTONA(buffer, ech_offs + 2, ech_sz + inc);
     SHTONA(buffer, pay_offs, pay_sz + inc);
     
-    memmove(buffer + ech_end + inc, buffer + ech_end, n - (ech_end + inc));
+    if (len > 0) {
+        memmove(buffer + ech_end + inc, buffer + ech_end, len);
+    }
     return inc;
 }
 
 
-static void resize_sni(char *buffer, ssize_t n,
+static void resize_sni(char *buffer, ssize_t n, ssize_t cap,
         ssize_t sni_offs, ssize_t sni_sz, ssize_t new_sz)
 {
     SHTONA(buffer, sni_offs + 2, new_sz + 5);
@@ -250,20 +268,37 @@ static void resize_sni(char *buffer, ssize_t n,
     SHTONA(buffer, sni_offs + 7, new_sz);
     
     ssize_t sni_end = sni_offs + 4 + sni_sz;
-    memmove(buffer + sni_end + new_sz - (sni_sz - 5), buffer + sni_end, n - sni_end);
+    ssize_t to = sni_end + new_sz - (sni_sz - 5);
+    // ZapretDroid: a longer name moves the rest right; nothing is written past the buffer.
+    ssize_t len = n - sni_end;
+    if (len > cap - to) len = cap - to;
+    if (len > 0) {
+        memmove(buffer + to, buffer + sni_end, len);
+    }
 }
 
 
 int change_tls_sni(const char *host, char *buffer, ssize_t n, ssize_t nn)
 {
+    // ZapretDroid: with --fake-tls-mod orig the buffer is the client's own ClientHello, so
+    // its lengths are checked against the buffer, which holds max(n, nn) bytes (both callers),
+    // before anything is written.
+    ssize_t cap = n > nn ? n : nn;
+    if (n < 9) {
+        return -1;
+    }
     int avail = merge_tls_records(buffer, n);
     avail += (nn - n);
     
-    uint16_t r_sz = ANTOHS(buffer, 3);
-    r_sz += avail;
+    // In int before it goes into 16 bits: a wrapped size would move writes before the buffer.
+    int full_sz = ANTOHS(buffer, 3) + avail;
+    if (full_sz < 0 || full_sz > 0xffff) {
+        return -1;
+    }
+    uint16_t r_sz = full_sz;
     
     size_t skip = find_ext_block(buffer, n);
-    if (!skip) {
+    if (!skip || (ssize_t) skip + 2 > cap) {
         return -1;
     }
     ssize_t sni_offs = find_tls_ext_offset(0x00, buffer, n, skip);
@@ -279,12 +314,15 @@ int change_tls_sni(const char *host, char *buffer, ssize_t n, ssize_t nn)
     int diff = (int )new_sz - (sni_sz - 5);
     avail -= diff;
     
+    if (sni_offs + 9 + new_sz > cap) {
+        return -1;
+    }
     if (diff < 0 && avail > 0) {
-        resize_sni(buffer, n, sni_offs, sni_sz, new_sz);
+        resize_sni(buffer, n, cap, sni_offs, sni_sz, new_sz);
         diff = 0;
     }
     if (avail) {
-        avail -= resize_ech_ext(buffer, n, skip, avail);
+        avail -= resize_ech_ext(buffer, n, cap, skip, avail);
     }
     if (avail < -50) {
         avail += remove_ks_group(buffer, n, skip, 0x11ec);
@@ -310,13 +348,21 @@ int change_tls_sni(const char *host, char *buffer, ssize_t n, ssize_t nn)
     if (!(sni_offs = find_tls_ext_offset(0x00, buffer, n, skip))) {
         return -1;
     }
+    if (sni_offs + 9 + new_sz > cap) {
+        return -1;
+    }
     if (diff) {
-        resize_sni(buffer, n, sni_offs, sni_sz, new_sz);
+        resize_sni(buffer, n, cap, sni_offs, sni_sz, new_sz);
     }
     copy_name(buffer + sni_offs + 9, host, new_sz);
     
     if (avail > 0) {
-        avail -= resize_ech_ext(buffer, n, skip, avail);
+        avail -= resize_ech_ext(buffer, n, cap, skip, avail);
+    }
+    if (avail >= 4 && (avail > r_sz || 5 + (ssize_t) r_sz > cap)) {
+        // ZapretDroid: the padding would start before the record or end past the buffer (a
+        // record that claims more than the buffer holds, a hello split over segments).
+        return -1;
     }
     if (avail >= 4) {
         SHTONA(buffer, 5 + r_sz - avail, 0x0015);
@@ -658,7 +704,7 @@ void randomize_tls(char *buffer, ssize_t n)
     ssize_t g_offs = ks_offs + 4 + 2;
     while (g_offs + 4 < ks_offs + 4 + ks_sz) {
         uint16_t g_sz = ANTOHS(buffer, g_offs + 2);
-        if (ks_offs + 4 + g_sz > n) {
+        if (g_offs + 4 + g_sz > n) { // ZapretDroid: the group's own end, not ks_offs
             return;
         }
         gen_rand_array(buffer + g_offs + 4, g_sz);

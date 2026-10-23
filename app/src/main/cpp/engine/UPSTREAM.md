@@ -101,3 +101,14 @@ Changes in this fork:
   (`slot_assign(host, slot)`, JNI `ByeDpi.assignSlot`): a host moves between slot groups at
   once, without a restart; new connections use the new group, open ones keep theirs. Reads of
   slot lists and the moves take `slot_lock`. Not together with `--hosts` in the same group.
+- UDP send errors: with one unconnected socket for every destination of an app's socket, a
+  datagram that cannot be sent (no IPv6 route to a WebRTC candidate, a broadcast address, a
+  full buffer) or that has no group for a further destination is dropped; it no longer closes
+  the association with the app's working flows. A failed UDP fake restores the socket's TTL.
+  `--udp-desync` counts datagrams per destination.
+- Fix (upstream): `change_tls_sni()` and its helpers trusted lengths from the ClientHello. With
+  `--fake-tls-mod orig` and `--fake-sni` that is any app's own first packet: TLS records of
+  length 0 looped forever in `merge_tls_records()`, a key-share group or ECH extension past
+  the buffer gave negative or oversized `memmove` lengths, a record that claims more than the
+  buffer wrote its padding far past it; `randomize_tls()` had the same key-share bound. Every
+  move and write is now bounded by the buffer (found with a mutation fuzzer under ASan).

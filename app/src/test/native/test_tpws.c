@@ -17,6 +17,7 @@
 #include "conev.h"
 
 #include <arpa/inet.h>
+#include <unistd.h>
 
 int parse_offset(struct part *part, const char *str);
 int parse_args(int argc, char **argv);
@@ -381,6 +382,57 @@ static void test_ups_relay(void)
     CHECK(!ups_is_relay(&remote, &u.relay));
 }
 
+/*
+ * --fake-sni on real ClientHellos (Chrome's with Kyber too): the SNI is replaced, longer or
+ * shorter, and the hello still parses, in place (nn = n, --fake-tls-mod orig) and grown from
+ * a smaller fake into a bigger buffer.
+ */
+static void test_change_sni(const char *fakes)
+{
+    static const char *files[] = {
+        "tls_clienthello_www_google_com.bin", "tls_clienthello_vk_com_kyber.bin",
+        "tls_clienthello_rutracker_org_kyber.bin",
+    };
+    static const char *names[] = { "www.google.com", "a.co", "averyveryverylonghostname.example.com" };
+    for (size_t i = 0; i < sizeof(files) / sizeof(*files); i++) {
+        uint8_t orig[8192];
+        size_t n = read_fake(fakes, files[i], orig, sizeof(orig));
+        CHECK(n > 0);
+        if (!n) continue;
+        for (size_t j = 0; j < sizeof(names) / sizeof(*names); j++) {
+            for (int grow = 0; grow < 2; grow++) {
+                size_t nn = grow ? n + 64 : n;
+                char *buf = malloc(nn);
+                memcpy(buf, orig, n);
+                int r = change_tls_sni(names[j], buf, n, nn);
+                char *host = 0;
+                int len = r ? 0 : parse_tls(buf, nn, &host);
+                if (r || len != (int) strlen(names[j]) || memcmp(host, names[j], len)) {
+                    failures++;
+                    fprintf(stderr, "change_tls_sni(%s, %s, nn=%zu): %d, parsed %d\n", files[i], names[j], nn, r, len);
+                }
+                free(buf);
+            }
+        }
+    }
+}
+
+/*
+ * --fake-tls-mod orig with --fake-sni rewrites the client's own ClientHello. TLS records of
+ * length 0 made merge_tls_records() loop forever (found by fuzzing): any app could freeze the
+ * engine with such a first packet. The alarm turns a hang into a failure.
+ */
+static void test_empty_tls_records(void)
+{
+    char buf[200] = { 0 };
+    for (int i = 0; i + 5 <= 50; i += 5) {
+        memcpy(buf + i, "\x16\x03\x01\x00\x00", 5);
+    }
+    alarm(10);
+    change_tls_sni("www.example.com", buf, 50, sizeof(buf));
+    alarm(0);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -399,6 +451,8 @@ int main(int argc, char **argv)
     test_dns_options();
     test_slots();
     test_ups_relay();
+    test_empty_tls_records();
+    if (argc > 2) test_change_sni(argv[2]);
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
