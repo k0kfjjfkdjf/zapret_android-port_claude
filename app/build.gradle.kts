@@ -17,8 +17,10 @@ android {
         applicationId = "io.github.zapretdroid"
         minSdk = 24
         targetSdk = 35
-        versionCode = 60
-        versionName = "0.23.0"
+        // Test (debug) builds: the numbers below. Stable releases: CI passes -PappVersionName
+        // and -PappVersionCode (their own numbering, 0.0.1 on).
+        versionCode = (findProperty("appVersionCode") as String?)?.toInt() ?: 60
+        versionName = findProperty("appVersionName") as String? ?: "0.23.0"
 
         ndk {
             abiFilters += abis
@@ -51,7 +53,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release")
+            // Without a release keystore in the environment (CI secret), the repository key, so
+            // that the APK installs; a stable build is a separate app (no ".debug" suffix).
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -71,6 +75,11 @@ android {
             include(*abis.toTypedArray())
             isUniversalApk = true
         }
+    }
+
+    // Lint never ran on the test builds; the stable (release) build should not be the first to stop on it.
+    lint {
+        checkReleaseBuilds = false
     }
 
     buildFeatures {

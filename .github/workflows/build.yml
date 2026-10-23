@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish a pre-release with this version (e.g. 0.1.0); leave empty to only build"
+        description: "Publish a release with this version (e.g. 0.1.0); leave empty to only build"
         required: false
         default: ""
+      stable:
+        description: "Stable release: a release build (io.github.zapretdroid), not a pre-release"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build:
@@ -41,11 +46,23 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Build debug APKs
+        if: ${{ !inputs.stable }}
         run: ./gradlew --no-daemon assembleDebug
+
+      # Stable releases: numbered on their own (0.0.1 on); versionCode = major*10000+minor*100+patch.
+      - name: Build release APKs
+        if: ${{ inputs.stable }}
+        env:
+          INPUT_VERSION: ${{ inputs.release }}
+        run: |
+          version="${INPUT_VERSION#v}"
+          case "$version" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "stable needs a version like 0.0.1"; exit 1 ;; esac
+          IFS=. read -r major minor patch <<< "$version"
+          ./gradlew --no-daemon assembleRelease -PappVersionName="$version" -PappVersionCode=$((major * 10000 + minor * 100 + patch))
 
       - name: Check native libraries in the APK
         run: |
-          apk=app/build/outputs/apk/debug/app-universal-debug.apk
+          apk=$(ls app/build/outputs/apk/*/app-universal-*.apk | head -1)
           unzip -l "$apk" | grep '\.so$'
           for abi in armeabi-v7a arm64-v8a x86 x86_64; do
             for lib in libbyedpi.so libhev-socks5-tunnel.so; do
@@ -55,9 +72,9 @@ jobs:
 
       - uses: actions/upload-artifact@v5
         with:
-          name: zapretdroid-debug
+          name: zapretdroid-${{ inputs.stable && 'release' || 'debug' }}
           path: |
-            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/*/*.apk
           if-no-files-found: error
 
       - name: Publish release
@@ -65,19 +82,31 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.release }}
+          STABLE: ${{ inputs.stable }}
         run: |
           if [ -n "$INPUT_VERSION" ]; then version="${INPUT_VERSION#v}"; else version="${GITHUB_REF_NAME#v}"; fi
           tag="v$version"
           mkdir -p release
-          for apk in app/build/outputs/apk/debug/*.apk; do
-            abi=$(basename "$apk" | sed -E 's/^app-(.*)-debug\.apk$/\1/')
-            cp "$apk" "release/zapretdroid-$version-$abi.apk"
-          done
+          if [ "$STABLE" = true ]; then
+            for apk in app/build/outputs/apk/release/*.apk; do
+              abi=$(basename "$apk" | sed -E 's/^app-(.*)-release\.apk$/\1/')
+              cp "$apk" "release/byezapret-$version-$abi.apk"
+            done
+            kind=stable
+            flag=--latest
+          else
+            for apk in app/build/outputs/apk/debug/*.apk; do
+              abi=$(basename "$apk" | sed -E 's/^app-(.*)-debug\.apk$/\1/')
+              cp "$apk" "release/zapretdroid-$version-$abi.apk"
+            done
+            kind=test
+            flag=--prerelease
+          fi
           (cd release && sha256sum *.apk > SHA256SUMS.txt)
-          sh .github/notes.sh "$version" > release-notes.md
+          sh .github/notes.sh "$version" "$kind" > release-notes.md
           # Creates the tag at the built commit if it does not exist yet.
           gh release create "$tag" release/* \
-            --prerelease \
+            $flag \
             --target "$GITHUB_SHA" \
             --title "ByeZapret $version" \
             --notes-file release-notes.md
@@ -95,8 +124,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           for v in $(grep -E '^## [0-9]+\.[0-9]+\.[0-9]+$' CHANGELOG.md | cut -c4-); do
-            if gh release view "v$v" > /dev/null 2>&1; then
-              sh .github/notes.sh "$v" > notes.md
+            if pre=$(gh release view "v$v" --json isPrerelease -q .isPrerelease 2>/dev/null); then
+              if [ "$pre" = true ]; then kind=test; else kind=stable; fi
+              sh .github/notes.sh "$v" "$kind" > notes.md
               gh release edit "v$v" --notes-file notes.md && echo "v$v updated"
             fi
           done

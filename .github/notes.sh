@@ -1,10 +1,15 @@
 #!/bin/sh
-# Release notes for version $1: its section of CHANGELOG.md, then the common notes.
+# Release notes for version $1: its section of CHANGELOG.md, then the common notes
+# ($2 = "stable" for a stable release, otherwise a test build).
 set -e
 v="$1"
 section=$(awk -v h="## $v" '$0 == h { on = 1; next } on && /^## / { exit } on { print }' CHANGELOG.md)
 if [ -n "$section" ]; then
   printf '**Что изменилось в %s**\n%s\n\n---\n\n' "$v" "$section"
+fi
+if [ "$2" = stable ]; then
+  cat .github/release-notes-stable.md
+  exit 0
 fi
 # The Tor module exists since 0.11.0: older releases get the notes without its paragraph.
 major=$(echo "$v" | cut -d. -f1); minor=$(echo "$v" | cut -d. -f2)

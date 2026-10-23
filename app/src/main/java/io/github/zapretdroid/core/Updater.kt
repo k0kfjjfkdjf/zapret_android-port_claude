@@ -16,8 +16,9 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Updates from the project's GitHub releases (pre-releases included, as all builds so far are):
- * the newest version above the installed one, its APK for this device's ABI, checked against
+ * Updates from the project's GitHub releases, each build from its own channel: test (debug)
+ * builds from the pre-releases, stable builds from the releases. The newest version above the
+ * installed one, its APK for this device's ABI, checked against
  * the release's SHA256SUMS.txt, then handed to Android's installer (which always asks). Builds
  * from 0.9.3 on share one signing key, so they install over each other.
  */
@@ -39,6 +40,7 @@ object Updater {
         val assets: Map<String, String>,
         /** File name -> SHA-256 (hex) that GitHub reports for the asset, when it does. */
         val digests: Map<String, String> = emptyMap(),
+        val prerelease: Boolean = false,
     )
 
     /** "0.9.4-debug" -> [0, 9, 4]; non-numeric parts end the version. */
@@ -58,7 +60,7 @@ object Updater {
     /** The newest release above the installed version, or null. Network: call off the main thread. */
     fun check(context: Context): Release? {
         prefs(context).edit { putLong(KEY_LAST_CHECK, System.currentTimeMillis()) }
-        val releases = releases()
+        val releases = releases().filter { it.prerelease == BuildConfig.DEBUG }
         val best = releases.maxWithOrNull { a, b -> if (newer(a.version, b.version)) 1 else if (newer(b.version, a.version)) -1 else 0 }
         return best?.takeIf { newer(it.version, BuildConfig.VERSION_NAME) }
     }
@@ -84,6 +86,7 @@ object Updater {
                 digests = (0 until assets.length()).map { assets.getJSONObject(it) }
                     .mapNotNull { a -> a.optString("digest").takeIf { it.startsWith("sha256:") }?.let { a.getString("name") to it.removePrefix("sha256:").lowercase() } }
                     .toMap(),
+                prerelease = o.optBoolean("prerelease"),
             )
         }
     }
@@ -103,7 +106,10 @@ object Updater {
 
     /** The APK for this device: its first ABI, else the universal one. */
     fun apkFor(release: Release): Pair<String, String>? {
-        val names = Build.SUPPORTED_ABIS.map { "zapretdroid-${release.version}-$it.apk" } + "zapretdroid-${release.version}-universal.apk"
+        // Stable releases name their APKs byezapret-…, test builds zapretdroid-….
+        val names = listOf("byezapret", "zapretdroid").flatMap { prefix ->
+            Build.SUPPORTED_ABIS.map { "$prefix-${release.version}-$it.apk" } + "$prefix-${release.version}-universal.apk"
+        }
         return names.firstNotNullOfOrNull { name -> release.assets[name]?.let { name to it } }
     }
 
