@@ -179,6 +179,33 @@ class SecureDnsTest {
         }
     }
 
+    /** A body bigger than any DNS message is an error, not an allocation of what the header claims. */
+    @Test
+    fun oversizedBodyIsRefused() {
+        val ks = KeyStore.getInstance("JKS").apply {
+            load(requireNotNull(SecureDnsTest::class.java.getResourceAsStream("/probe-test.jks")), "password".toCharArray())
+        }
+        val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(ks, "password".toCharArray()) }
+        val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, null, null) }
+        val liar = ctx.serverSocketFactory.createServerSocket(0, 50, InetAddress.getLoopbackAddress()) as SSLServerSocket
+        serve(liar) { s ->
+            val input = BufferedInputStream(s.getInputStream())
+            while (line(input).isNotEmpty()) Unit
+            s.getOutputStream().apply {
+                write("HTTP/1.1 200 OK\r\nContent-Length: 2000000000\r\n\r\n".toByteArray())
+                flush()
+            }
+        }
+        val up = SecureDns.Upstream(DnsProvider("liar", "Liar", "127.0.0.1", "localhost", dohPort = liar.localPort), DnsMode.DOH)
+        try {
+            val e = runCatching { up.exchange(DnsClient.buildQuery(0x4444, "big.example")) }.exceptionOrNull()
+            assertTrue("expected an IOException, got $e", e is java.io.IOException)
+        } finally {
+            up.close()
+            liar.close()
+        }
+    }
+
     @Test
     fun customProviders() {
         val p = SecureDns.provider("https://localhost:8443/q")

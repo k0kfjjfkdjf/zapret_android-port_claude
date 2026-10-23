@@ -225,6 +225,9 @@ object SecureDns {
                     "connection" -> close = value.equals("close", ignoreCase = true)
                 }
             }
+            // A DNS message is at most 64 KB: a bigger body is a broken or hostile server, not an
+            // answer (and must not make the app allocate whatever the header claims).
+            if (length > MAX_MESSAGE) throw IOException("HTTP body of $length bytes from ${provider.title}")
             val body = when {
                 chunked -> readChunked(conn.input)
                 length >= 0 -> readFully(conn.input, length)
@@ -280,11 +283,13 @@ object SecureDns {
         private fun readChunked(input: InputStream): ByteArray {
             val out = ByteArrayOutputStream()
             while (true) {
-                val size = readLine(input).substringBefore(';').trim().toInt(16)
+                val size = readLine(input).substringBefore(';').trim().toIntOrNull(16)
+                    ?: throw IOException("bad chunk size")
                 if (size == 0) {
                     while (readLine(input).isNotEmpty()) Unit
                     return out.toByteArray()
                 }
+                if (size < 0 || out.size() + size > MAX_MESSAGE) throw IOException("HTTP body too large")
                 out.write(readFully(input, size))
                 readLine(input)
             }
@@ -361,9 +366,13 @@ object SecureDns {
             if (query.size < 12) return null
             queries.incrementAndGet()
             val key = Cache.key(query) ?: return null
-            filter?.blocked(key.substringBefore('/'))?.let { category ->
-                if (blocked.incrementAndGet() <= 200) AppLog.i("DNS filter: ${key.substringBefore('/').trimEnd('.')} blocked ($category)")
-                return blockedAnswer(query, key.split('/').let { it[1].toInt() shl 8 or it[2].toInt() })
+            // The key ends with the type and class bytes ("/t1/t2/c1/c2"); a label may itself hold
+            // a '/', so the name is what comes before those four fields.
+            val fields = key.split('/')
+            val name = fields.dropLast(4).joinToString("/")
+            filter?.blocked(name)?.let { category ->
+                if (blocked.incrementAndGet() <= 200) AppLog.i("DNS filter: ${name.trimEnd('.')} blocked ($category)")
+                return blockedAnswer(query, fields[fields.size - 4].toInt() shl 8 or fields[fields.size - 3].toInt())
             }
             cache.get(key)?.let {
                 hits.incrementAndGet()
@@ -563,6 +572,8 @@ object SecureDns {
 
     private const val TIMEOUT_MS = 3000
     private const val MAX_USES = 40
+    /** The largest DNS message (RFC 1035 over TCP, RFC 8484): a 16-bit length. */
+    private const val MAX_MESSAGE = 65_535
 
     private fun ByteArray.withId(query: ByteArray): ByteArray = copyOf().also {
         it[0] = query[0]

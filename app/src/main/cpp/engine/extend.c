@@ -1048,9 +1048,13 @@ void udp_flow_report(struct eval *remote, const char *state)
     if (remote->udp_in_pkts) {
         snprintf(reply, sizeof(reply), ", first reply %lld ms", remote->udp_first_reply_ms);
     }
-    char retries[32] = "";
+    char retries[64] = "";
     if (remote->udp_retries) {
         snprintf(retries, sizeof(retries), ", retries %u", remote->udp_retries);
+    }
+    if (remote->udp_send_errors) {
+        size_t used = strlen(retries);
+        snprintf(retries + used, sizeof(retries) - used, ", not sent %u", remote->udp_send_errors);
     }
     fprintf(ENGINE_LOG, "udp %d %s: -> %s:%d %s, out %u pkts/%lld B, in %u pkts/%lld B, fakes %u%s%s, "
         "max gap out %lld ms, in %lld ms, stalls %u, %lld s%s\n",
@@ -1402,13 +1406,9 @@ static ssize_t ups_dgram(struct poolhd *pool, struct eval *remote, struct desync
 bool ups_is_relay(struct eval *remote, const union sockaddr_u *from)
 {
     struct udp_upstream *u = remote->ups;
-    if (!u || u->state != 3 || from->sa.sa_family != u->relay.sa.sa_family
-            || from->in.sin_port != u->relay.in.sin_port) {
-        return 0;
-    }
-    return from->sa.sa_family == AF_INET
-        ? !memcmp(&from->in.sin_addr, &u->relay.in.sin_addr, 4)
-        : !memcmp(&from->in6.sin6_addr, &u->relay.in6.sin6_addr, 16);
+    // IPv4-mapped-aware: on a dual-stack socket (the default bind address on phones) recvfrom
+    // gives ::ffff:a.b.c.d while the proxy names its relay in IPv4.
+    return u && u->state == 3 && same_addr(from, &u->relay, 1);
 }
 
 
@@ -1463,9 +1463,13 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
     // other destinations of the same app socket get theirs in val->udp_dests.
     bool first = dest_equ(dst, &val->addr);
     struct desync_params *dp = 0;
-    unsigned int dindex = index - val->udp_dp_base;
+    // Datagram index within the destination's group: --udp-desync counts the datagrams to this
+    // destination only, not those the same socket sends elsewhere.
+    unsigned int dindex = 0, first_index = 0;
     if (first) {
         dp = pair->dp;
+        first_index = val->udp_first_out++;
+        dindex = first_index - val->udp_dp_base;
     }
     else {
         struct udp_dest *d = 0;
@@ -1480,10 +1484,22 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
             const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host), 0);
             struct desync_params *found = udp_find_dp(pair, dst, source ? host : 0, is_dns(source));
             if (!found) {
-                return -1;
+                // No group for this destination: its datagram is dropped, the association (and the
+                // destinations the socket already talks to) goes on.
+                if (params.conn_log) {
+                    INIT_ADDR_STR((*dst));
+                    fprintf(ENGINE_LOG, "udp %d: -> %s:%d dropped, no group for another destination of the socket\n",
+                        val->fd, ADDR_STR, ntohs(dst->in.sin_port));
+                }
+                udp_maybe_report(val, now);
+                return n;
             }
-            // Beyond UDP_DESTS destinations the oldest entry makes room.
-            d = &val->udp_dests[val->udp_dests_n < UDP_DESTS ? val->udp_dests_n++ : (int) (index % UDP_DESTS)];
+            // Beyond UDP_DESTS destinations the oldest one makes room.
+            if (val->udp_dests_n == UDP_DESTS) {
+                memmove(val->udp_dests, val->udp_dests + 1, (UDP_DESTS - 1) * sizeof(*val->udp_dests));
+                val->udp_dests_n--;
+            }
+            d = &val->udp_dests[val->udp_dests_n++];
             d->addr = *dst;
             d->dp = found;
             d->pkts = 0;
@@ -1501,7 +1517,7 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
         char host[256];
         const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host), 1);
         if (!(dp = udp_find_dp(pair, dst, source ? host : 0, is_dns(source)))) {
-            return -1;
+            return UDP_NO_GROUP;
         }
         pair->dp = dp;
         if (params.conn_log) {
@@ -1517,7 +1533,7 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
         char host[256];
         quic_add_initial(val->udp_quic, (const uint8_t *) buffer, n);
         int len = quic_crypto_sni(val->udp_quic, host, sizeof(host));
-        if (len || index >= 3) {
+        if (len || first_index >= 3) {
             free(val->udp_quic);
             val->udp_quic = 0;
         }
@@ -1525,11 +1541,11 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
         if (found && found != dp) {
             if (params.conn_log) {
                 fprintf(ENGINE_LOG, "udp %d: host %s (sni in Initial %u), group %d -> %d\n",
-                    val->fd, host, index + 1, dp->id, found->id);
+                    val->fd, host, first_index + 1, dp->id, found->id);
             }
             pair->dp = dp = found;
             // The new group counts --udp-desync from this datagram, so its fakes go before it.
-            val->udp_dp_base = index;
+            val->udp_dp_base = first_index;
             dindex = 0;
         }
     }

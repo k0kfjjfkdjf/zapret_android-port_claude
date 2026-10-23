@@ -11,8 +11,9 @@ import java.io.OutputStream
  * (Quad9, bortzmeyer: 505; a-and-a: 400): POST requests one after another on one connection.
  * Requests are sent with HPACK literals that the server does not index; of the response headers
  * only :status is read, which servers send from the static table or as a literal of digits.
- * Responses fit the default flow-control window (a DNS answer is far below 64 KB), so no
- * WINDOW_UPDATE is ever needed from this side.
+ * A response fits a stream's default flow-control window (a DNS answer is below 64 KB); the
+ * connection's window, which all the requests of a connection share, is given back after
+ * every DATA frame.
  */
 class Http2(private val input: InputStream, private val output: OutputStream, private val authority: String) {
     class Response(val status: Int, val body: ByteArray)
@@ -54,6 +55,15 @@ class Http2(private val input: InputStream, private val output: OutputStream, pr
                 ((header[7].toInt() and 0xff) shl 8) or (header[8].toInt() and 0xff)
             if (length > MAX_FRAME) throw IOException("HTTP/2 frame of $length bytes")
             val payload = readFully(length)
+            // Flow control: every DATA frame (padding included) uses up the connection's window,
+            // shared by all the streams of the connection. Given back at once, else a connection
+            // stalls once 64 KB of answers have come over it (a few large DNSSEC or TXT answers).
+            // Sent with the next request; a stream's own window is fresh for every request.
+            if (type == TYPE_DATA && length > 0) {
+                writeFrame(TYPE_WINDOW_UPDATE, 0, 0, byteArrayOf(
+                    (length shr 24).toByte(), (length shr 16).toByte(), (length shr 8).toByte(), length.toByte(),
+                ))
+            }
             when (type) {
                 TYPE_SETTINGS -> if (flags and FLAG_ACK == 0) {
                     writeFrame(TYPE_SETTINGS, FLAG_ACK, 0, ByteArray(0))
@@ -150,6 +160,7 @@ class Http2(private val input: InputStream, private val output: OutputStream, pr
         private const val TYPE_SETTINGS = 4
         private const val TYPE_PING = 6
         private const val TYPE_GOAWAY = 7
+        private const val TYPE_WINDOW_UPDATE = 8
         private const val FLAG_END_STREAM = 0x1
         private const val FLAG_ACK = 0x1
         private const val FLAG_END_HEADERS = 0x4

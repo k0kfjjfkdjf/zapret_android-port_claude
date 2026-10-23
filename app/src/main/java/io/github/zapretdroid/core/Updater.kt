@@ -181,6 +181,7 @@ object Updater {
         var current = url
         // GitHub sends asset downloads on to its CDN: follow redirects (also https -> https hosts).
         repeat(5) {
+            if (!current.startsWith("https://", ignoreCase = true)) throw IOException("not an HTTPS URL: $current")
             val conn = URL(current).openConnection() as HttpURLConnection
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
@@ -189,8 +190,11 @@ object Updater {
             conn.setRequestProperty("Accept", if (current.startsWith("https://api.github.com")) "application/vnd.github+json" else "*/*")
             val code = conn.responseCode
             if (code in 300..399) {
-                current = conn.getHeaderField("Location") ?: throw IOException("redirect without Location")
+                val location = conn.getHeaderField("Location") ?: throw IOException("redirect without Location")
                 conn.disconnect()
+                // Relative locations are resolved against the current URL; only HTTPS is followed:
+                // an APK, its checksums and the release list never come over plain HTTP.
+                current = URL(URL(current), location).toString()
                 return@repeat
             }
             if (code != 200) {

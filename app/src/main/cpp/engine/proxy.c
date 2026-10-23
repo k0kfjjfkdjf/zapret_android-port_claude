@@ -850,7 +850,12 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                 map_fix(&addr, 6);
             }
             if (params.baddr.sa.sa_family != addr.sa.sa_family) {
-                return -1;
+                // An IPv6 destination with an IPv4-only engine: unreachable from here. Only the
+                // first datagram decides the association; later ones are just lost.
+                if (!pair->addr.in.sin_port) {
+                    return -1;
+                }
+                continue;
             }
             // ZapretDroid: the remote socket is not connect()ed to the first destination. hev
             // keeps one association per UDP socket of an app (full cone), and a socket may talk
@@ -858,11 +863,27 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
             // own destination and replies from any of them come back.
             if (!pair->addr.in.sin_port) {
                 INIT_ADDR_STR((addr));
-                LOG(LOG_S, "udp addr: fd=%d, addr=%s:%d\n", 
+                LOG(LOG_S, "udp addr: fd=%d, addr=%s:%d\n",
                     val->fd, ADDR_STR, ntohs(addr.in.sin_port));
                 pair->addr = addr;
             }
             ns = udp_hook(pool, pair, data + offs, n - offs, &addr);
+            if (ns == UDP_NO_GROUP) {
+                return -1;
+            }
+            if (ns < 0) {
+                // ZapretDroid: with one unconnected socket for every destination of the app's
+                // socket, a datagram that cannot be sent (no IPv6 route to a WebRTC candidate,
+                // a broadcast address, a full buffer) is lost like any datagram; it must not
+                // close the association, and with it the app's working flows (a call).
+                int err = get_e();
+                if (params.conn_log && !pair->udp_send_errors++) {
+                    INIT_ADDR_STR((addr));
+                    fprintf(ENGINE_LOG, "udp %d: datagram to %s:%d not sent, dropped: %s\n",
+                        pair->fd, ADDR_STR, ntohs(addr.in.sin_port), strerror(err));
+                }
+                continue;
+            }
         }
         else {
             // ZapretDroid: replies through the upstream proxy's relay carry a SOCKS5 UDP header

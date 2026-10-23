@@ -140,6 +140,10 @@ struct eval {
     // ZapretDroid: datagram index where the current group of the first destination began
     // (a group chosen again on the second QUIC Initial starts its --udp-desync count there).
     unsigned int udp_dp_base;
+    // Datagrams sent to the first destination (udp_dp_base and --udp-desync count these).
+    unsigned int udp_first_out;
+    // Datagrams the socket could not send (dropped; logged once with --conn-log).
+    unsigned int udp_send_errors;
     // ZapretDroid --apps: the address the client's app connected from, given by
     // hev-socks5-tunnel as the SOCKS5 user name, and the app's uid once looked up.
     union sockaddr_u app_src;

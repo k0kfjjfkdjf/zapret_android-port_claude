@@ -13,6 +13,10 @@
 #include "udphost.h"
 #include "extend.h"
 #include "mpool.h"
+#include "proxy.h"
+#include "conev.h"
+
+#include <arpa/inet.h>
 
 int parse_offset(struct part *part, const char *str);
 int parse_args(int argc, char **argv);
@@ -349,6 +353,34 @@ static void test_slots(void)
     engine_reset();
 }
 
+/*
+ * --udp-proxy: replies from the proxy's relay are recognised however recvfrom names the sender.
+ * On a dual-stack socket (phones) an IPv4 relay comes back as ::ffff:a.b.c.d.
+ */
+static void test_ups_relay(void)
+{
+    struct udp_upstream u = { 0 };
+    struct eval remote = { 0 };
+    remote.ups = &u;
+    u.state = 3;
+    u.relay.in.sin_family = AF_INET;
+    u.relay.in.sin_port = htons(40000);
+    inet_pton(AF_INET, "127.0.0.1", &u.relay.in.sin_addr);
+
+    union sockaddr_u from = u.relay;
+    CHECK(ups_is_relay(&remote, &from));
+    map_fix(&from, 6); // as a dual-stack socket reports it
+    CHECK_EQ(from.sa.sa_family, AF_INET6);
+    CHECK(ups_is_relay(&remote, &from));
+    from.in6.sin6_port = htons(40001);
+    CHECK(!ups_is_relay(&remote, &from));
+    from = u.relay;
+    inet_pton(AF_INET, "127.0.0.2", &from.in.sin_addr);
+    CHECK(!ups_is_relay(&remote, &from));
+    u.state = 2; // no relay yet
+    CHECK(!ups_is_relay(&remote, &u.relay));
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -366,6 +398,7 @@ int main(int argc, char **argv)
     test_early_stop();
     test_dns_options();
     test_slots();
+    test_ups_relay();
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

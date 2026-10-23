@@ -50,4 +50,39 @@ class Http2Test {
         val ack = byteArrayOf(0, 0, 0, 4, 1, 0, 0, 0, 0)
         assertTrue(sent.toList().windowed(9).any { it == ack.toList() })
     }
+
+    /**
+     * The connection's flow-control window is shared by all requests of a connection: without
+     * WINDOW_UPDATE on stream 0 a server stops sending after 64 KB of answers in total.
+     */
+    @Test
+    fun connectionWindowIsGivenBack() {
+        val body = ByteArray(4000) { it.toByte() }
+        val padded = byteArrayOf(3) + body + ByteArray(3) // PADDED: pad length 3, three zero bytes
+        val responses = (0 until 20).map { i ->
+            val stream = 1 + 2 * i
+            frame(1, 0x4, stream, byteArrayOf(0x88.toByte())) + frame(0, 0x1 or 0x8, stream, padded)
+        }
+        val out = ByteArrayOutputStream()
+        val client = Http2(responses.reduce { a, b -> a + b }.inputStream(), out, "dns.example")
+        repeat(20) {
+            val r = client.post("/dns-query", "application/dns-message", byteArrayOf(1))
+            assertArrayEquals(body, r.body)
+        }
+        // Every DATA frame's length (padding included) went back to the connection's window.
+        val sent = out.toByteArray()
+        var returned = 0L
+        var at = 24 // after the preface
+        while (at + 9 <= sent.size) {
+            val len = ((sent[at].toInt() and 0xff) shl 16) or ((sent[at + 1].toInt() and 0xff) shl 8) or (sent[at + 2].toInt() and 0xff)
+            val type = sent[at + 3].toInt()
+            val stream = sent[at + 8].toInt()
+            if (type == 8 && stream == 0) {
+                returned += ((sent[at + 9].toLong() and 0x7f) shl 24) or ((sent[at + 10].toLong() and 0xff) shl 16) or
+                    ((sent[at + 11].toLong() and 0xff) shl 8) or (sent[at + 12].toLong() and 0xff)
+            }
+            at += 9 + len
+        }
+        assertEquals(20L * padded.size, returned)
+    }
 }

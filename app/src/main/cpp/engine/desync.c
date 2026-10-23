@@ -749,7 +749,12 @@ ssize_t desync_udp(int sfd, char *buffer, ssize_t n, const struct sockaddr *dst,
             }
             ssize_t len = sendto(sfd, pkt.data, pkt.size, 0, dst, (dst->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in)));
             if (len < 0) {
+                int err = errno;
                 uniperror("send");
+                // The socket lives on (other datagrams, other destinations): without its usual
+                // TTL every later datagram would die on the way like the fakes.
+                setttl(sfd, params.def_ttl);
+                errno = err;
                 return -1;
             }
             if (fakes_sent) (*fakes_sent)++;

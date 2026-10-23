@@ -24,7 +24,14 @@ void udp_reply_hook(struct eval *val, const char *buffer, ssize_t n, const union
 
 bool ups_is_relay(struct eval *remote, const union sockaddr_u *from);
 
-ssize_t udp_hook(struct poolhd *pool, struct eval *val, 
+/*
+ * Sends one datagram of the client to [dst]. Returns the bytes sent, -1 if the datagram could
+ * not be sent (errno says why: lost like any datagram, the association goes on), or
+ * UDP_NO_GROUP if no group takes the association's first destination (it is closed).
+ */
+#define UDP_NO_GROUP (-2)
+
+ssize_t udp_hook(struct poolhd *pool, struct eval *val,
         char *buffer, ssize_t n, const union sockaddr_u *dst);
     
 static bool check_l34(struct desync_params *dp, int st, const union sockaddr_u *dst);

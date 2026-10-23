@@ -14,3 +14,7 @@ cc $flags -I"$engine" -c "$here/test_tpws.c" -o "$out/test_tpws.o"
 cc $flags "$out"/*.o -o "$out/test_tpws" -lpthread
 "$out/test_tpws" "$root/src/main/assets/fake/tls_clienthello_www_google_com.bin" "$root/src/main/assets/fake"
 python3 "$here/check_strategies.py" "$out/test_tpws" "$root"
+# The engine as a program (its own main), for the tests that talk to it over sockets.
+cc $flags -I"$engine" "$engine"/*.c -o "$out/ciadpi" -lpthread
+python3 "$here/udp_assoc_test.py" "$out/ciadpi"
+python3 "$here/udp_assoc_test.py" "$out/ciadpi" --udp-fake 1 --udp-desync 1:3 --conn-log
