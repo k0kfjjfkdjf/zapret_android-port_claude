@@ -15,29 +15,24 @@ import io.github.zapretdroid.classic.data.STOP_ACTION
 import io.github.zapretdroid.classic.receiver.ServiceActionReceiver
 import io.github.zapretdroid.classic.services.ServiceManager
 import io.github.zapretdroid.classic.services.appStatus
+import io.github.zapretdroid.classic.utility.HistoryUtils
 import io.github.zapretdroid.classic.utility.getCmdArgs
 import io.github.zapretdroid.classic.utility.getPreferences
 import io.github.zapretdroid.classic.utility.mode
 import io.github.zapretdroid.classic.utility.shellSplit
+import io.github.zapretdroid.core.ExternalStrategy
 
 class ToggleActivity : Activity() {
 
     companion object {
         private const val TAG = "ToggleServiceActivity"
 
-        private val LISTEN_OPTIONS = setOf("-i", "--ip", "-p", "--port", "-E", "--transparent", "-D", "--daemon", "-w", "--pidfile")
-
         /**
          * ZapretDroid: this activity is exported for automation apps, so any app can send a
-         * strategy. A file path (--fake-data /data/..., -H /...) would let it send the app's
-         * private files to the network, and listen options would open the proxy elsewhere:
-         * such strategies are refused; {fake:name} and {list:name} still work.
+         * strategy. File paths, listen options and options that send the traffic or DNS to
+         * another server are refused (see ExternalStrategy); {fake:name} and {list:name} still work.
          */
-        fun isSafeStrategy(strategy: String): Boolean =
-            shellSplit(strategy).none { arg ->
-                '/' in arg || arg.substringBefore('=') in LISTEN_OPTIONS ||
-                    LISTEN_OPTIONS.any { it.length == 2 && arg.startsWith(it) && arg.length > 2 && !arg.startsWith("--") }
-            }
+        fun isSafeStrategy(strategy: String): Boolean = ExternalStrategy.isSafe(shellSplit(strategy))
     }
 
     private lateinit var prefs: SharedPreferences
@@ -132,8 +127,11 @@ class ToggleActivity : Activity() {
 
     private fun updateStrategy(strategy: String?): Boolean {
         val current = prefs.getCmdArgs()
-        if (strategy != null && !isSafeStrategy(strategy)) {
-            Log.w(TAG, "Strategy from another app rejected: file paths and listen options are not accepted")
+        // The app's own shortcuts send the user's pinned commands: those are the user's choice,
+        // whatever options they use. Anything else may come from any app and is checked.
+        val pinned = strategy != null && HistoryUtils(this).getHistory().any { it.pinned && it.text == strategy }
+        if (strategy != null && !pinned && !isSafeStrategy(strategy)) {
+            Log.w(TAG, "Strategy from another app rejected: file paths, listen options, proxies (-C), DNS redirection and \$variables are not accepted")
             return false
         }
         if (strategy != null && strategy != current) {
