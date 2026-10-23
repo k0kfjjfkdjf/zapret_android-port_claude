@@ -301,12 +301,12 @@ object SecureDns {
      * provider (the other presets if it fails), cached for their TTL. With several servers
      * (DNSCrypt mode) the fastest of those that answer is asked first.
      */
-    class Server(servers: List<DnsProvider>, mode: DnsMode, filter: DnsFilter.Matcher? = null) {
-        constructor(provider: DnsProvider, mode: DnsMode, filter: DnsFilter.Matcher? = null) : this(withFallbacks(provider), mode, filter)
+    class Server(servers: List<DnsProvider>, mode: DnsMode, filter: DnsBlocklist.Matcher? = null) {
+        constructor(provider: DnsProvider, mode: DnsMode, filter: DnsBlocklist.Matcher? = null) : this(withFallbacks(provider), mode, filter)
 
         /** Replaced when the lists are updated while the VPN runs. */
         @Volatile
-        var filter: DnsFilter.Matcher? = filter
+        var filter: DnsBlocklist.Matcher? = filter
 
         private class Stat(var ms: Double, var failedUntil: Long = 0)
 

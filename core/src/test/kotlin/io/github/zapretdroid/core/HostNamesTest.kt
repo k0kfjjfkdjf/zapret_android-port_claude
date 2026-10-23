@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class HostListsTest {
+class HostNamesTest {
     @Test
     fun normalizesZapretAndLooseInput() {
         val text = """
@@ -17,7 +17,7 @@ class HostListsTest {
             youtube.com
             bad_host!  [::1]
         """.trimIndent()
-        val result = HostLists.normalize(text)
+        val result = HostNames.normalize(text)
         assertEquals(
             listOf("youtube.com", "googlevideo.com", "www.instagram.com", "x.com", "ggpht.com", "xn--e1afmkfd.xn--p1ai"),
             result.hosts,
@@ -28,15 +28,15 @@ class HostListsTest {
     @Test
     fun acceptsWindowsZapretAndRouterListFormats() {
         // Flowseal marks exact matches with "^"; itdoginfo lists whole zones as ".ua".
-        val result = HostLists.normalize("^dns.google\n^cloudflare-dns.com\n.ua\ndiscord.media\n")
+        val result = HostNames.normalize("^dns.google\n^cloudflare-dns.com\n.ua\ndiscord.media\n")
         assertEquals(listOf("dns.google", "cloudflare-dns.com", "ua", "discord.media"), result.hosts)
         assertTrue(result.invalid.isEmpty())
     }
 
     @Test
     fun validNames() {
-        assertEquals(true, HostLists.isValidName("youtube_2"))
-        assertEquals(false, HostLists.isValidName("../etc"))
-        assertEquals(false, HostLists.isValidName(""))
+        assertEquals(true, HostNames.isValidName("youtube_2"))
+        assertEquals(false, HostNames.isValidName("../etc"))
+        assertEquals(false, HostNames.isValidName(""))
     }
 }

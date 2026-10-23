@@ -147,7 +147,7 @@ class SiteProbeTest {
         assertEquals("big:x.org/a", ProbeTarget.parse("big:x.org/a").spec)
     }
     @Test fun chromeHandshake() {
-        val dir = listOf("src/main/assets/fake", "app/src/main/assets/fake").map { java.io.File(it) }.first { it.isDirectory }
+        val dir = listOf("../app/src/main/assets/fake", "app/src/main/assets/fake").map { java.io.File(it) }.first { it.isDirectory }
         SiteProbe.browserHello = java.io.File(dir, TestEngine.BROWSER_HELLO).readBytes()
         val r = run("ok", tls = TlsMode.CHROME)
         assertTrue(r.summary(), r.ok)

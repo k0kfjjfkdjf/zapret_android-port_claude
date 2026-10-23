@@ -1,9 +1,5 @@
 package io.github.zapretdroid.core
 
-import android.app.Application
-import android.content.Context
-import android.os.Build
-import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -20,7 +16,9 @@ import java.util.Locale
  * VPN session holds it open (app start without a session, or right before a session starts).
  */
 object AppLog {
-    private const val TAG = "ByeZapret"
+    const val INFO = 4
+    const val WARN = 5
+    const val ERROR = 6
     private const val TRIM_ABOVE = 4L * 1024 * 1024
     private const val KEEP = 2 * 1024 * 1024
 
@@ -33,21 +31,22 @@ object AppLog {
 
     val file: File get() = File(dir, "app.log")
 
-    fun init(context: Context) {
-        dir = File(context.filesDir, "logs").apply { mkdirs() }
+    /**
+     * Also prints every entry (Android: logcat), with [INFO], [WARN] or [ERROR]; the error's stack
+     * trace is part of the message.
+     */
+    @Volatile
+    var console: ((priority: Int, message: String) -> Unit)? = null
+
+    /** The journal goes to [logDir]/app.log; [engineProcess]: the VPN process (source "vpn"). */
+    fun init(logDir: File, engineProcess: Boolean) {
+        dir = logDir.apply { mkdirs() }
         // Files of versions before the single journal.
         File(dir, "session.log").delete()
         File(dir, "previous.log").delete()
-        inEngineProcess = processName().endsWith(":engine")
-        source = if (inEngineProcess) "vpn" else "ui"
+        inEngineProcess = engineProcess
+        source = if (engineProcess) "vpn" else "ui"
     }
-
-    private fun processName(): String =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Application.getProcessName()
-        } else {
-            runCatching { File("/proc/self/cmdline").readText().trimEnd('\u0000') }.getOrDefault("")
-        }
 
     /** Keeps the last part of the journal if it is too large. Not while a session writes to it. */
     @Synchronized
@@ -73,21 +72,21 @@ object AppLog {
         runCatching { RandomAccessFile(file, "rw").use { it.setLength(0) } }
     }
 
-    fun i(message: String, source: String? = null) = write(Log.INFO, message, null, source)
+    fun i(message: String, source: String? = null) = write(INFO, message, null, source)
 
-    fun w(message: String, error: Throwable? = null, source: String? = null) = write(Log.WARN, message, error, source)
+    fun w(message: String, error: Throwable? = null, source: String? = null) = write(WARN, message, error, source)
 
-    fun e(message: String, error: Throwable? = null, source: String? = null) = write(Log.ERROR, message, error, source)
+    fun e(message: String, error: Throwable? = null, source: String? = null) = write(ERROR, message, error, source)
 
     @Synchronized
     private fun write(priority: Int, message: String, error: Throwable?, sourceOverride: String?) {
-        // Unit tests run without Android's Log (not mocked) and without init(): both skipped.
-        runCatching { Log.println(priority, TAG, if (error != null) "$message\n${Log.getStackTraceString(error)}" else message) }
+        // Unit tests run without a console and without init(): both skipped.
+        console?.let { out -> runCatching { out(priority, if (error != null) "$message\n${error.stackTraceToString()}" else message) } }
         if (!::dir.isInitialized) return
         val src = sourceOverride ?: source
         val level = when (priority) {
-            Log.ERROR -> "E/"
-            Log.WARN -> "W/"
+            ERROR -> "E/"
+            WARN -> "W/"
             else -> ""
         }
         val text = buildString {

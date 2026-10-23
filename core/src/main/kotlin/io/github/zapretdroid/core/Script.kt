@@ -209,7 +209,7 @@ object Script {
                     }
                     "sites" -> if (active()) {
                         val m = SET.find(arg)
-                        val hosts = m?.let { HostLists.normalize(substitute(it.groupValues[2], line)).hosts }.orEmpty()
+                        val hosts = m?.let { HostNames.normalize(substitute(it.groupValues[2], line)).hosts }.orEmpty()
                         when {
                             m == null -> error(line, "@sites name = site site …")
                             hosts.isEmpty() -> error(line, "@sites ${m.groupValues[1]}: no sites")

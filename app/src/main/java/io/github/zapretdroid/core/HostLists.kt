@@ -2,7 +2,6 @@ package io.github.zapretdroid.core
 
 import android.content.Context
 import java.io.File
-import java.net.IDN
 import java.util.zip.GZIPInputStream
 
 /**
@@ -10,11 +9,9 @@ import java.util.zip.GZIPInputStream
  * Lists are stored normalized (lowercase ASCII, one domain per line), which is what the engine's
  * --hosts expects, and are referenced from arguments as {list:name}.
  */
-object HostLists {
-    data class Normalized(val hosts: List<String>, val invalid: List<String>)
+typealias Normalized = HostNames.Normalized
 
-    private val NAME = Regex("^[A-Za-z0-9_-]{1,40}$")
-    private val DOMAIN = Regex("^[a-z0-9_-]+(\\.[a-z0-9_-]+)*$")
+object HostLists {
     private const val MAX_IMPORT = 32 * 1024 * 1024
 
     fun dir(context: Context): File = File(context.filesDir, "lists").apply { mkdirs() }
@@ -25,7 +22,10 @@ object HostLists {
         dir(context).listFiles { f -> f.isFile && f.name.endsWith(".txt") }.orEmpty()
             .map { it.name.removeSuffix(".txt") }.sortedBy { it.lowercase() }
 
-    fun isValidName(name: String) = NAME.matches(name)
+    fun isValidName(name: String) = HostNames.isValidName(name)
+
+    /** See [HostNames.normalize]. */
+    fun normalize(text: String): Normalized = HostNames.normalize(text)
 
     fun count(context: Context, name: String): Int =
         file(context, name).takeIf { it.exists() }?.useLines { lines -> lines.count { it.isNotBlank() } } ?: 0
@@ -79,37 +79,6 @@ object HostLists {
     fun delete(context: Context, name: String) {
         File(dir(context), "$name.src").delete()
         file(context, name).delete()
-    }
-
-    /**
-     * Accepts zapret lists and loose input: comments, several domains per line, URLs,
-     * "*.example.com", ports, uppercase and IDN names.
-     */
-    fun normalize(text: String): Normalized {
-        val hosts = LinkedHashSet<String>()
-        val invalid = mutableListOf<String>()
-        text.lineSequence().forEach { raw ->
-            val line = raw.substringBefore('#').trim()
-            if (line.isEmpty()) return@forEach
-            line.split(Regex("[\\s,;]+")).filter { it.isNotEmpty() }.forEach { token ->
-                val host = cleanHost(token)
-                if (host != null) hosts += host else invalid += token
-            }
-        }
-        return Normalized(hosts.toList(), invalid)
-    }
-
-    private fun cleanHost(token: String): String? {
-        var h = token.trim().lowercase()
-        h = h.substringAfter("://")
-        h = h.substringBefore('/').substringBefore('?')
-        if (h.startsWith("[")) return null // IPv6 literal
-        h = h.substringBefore(':')
-        // "^domain" is an exact-match marker in some Windows zapret lists (Flowseal).
-        h = h.removePrefix("^").removePrefix("*.").trimStart('.').trimEnd('.')
-        if (h.isEmpty()) return null
-        val ascii = runCatching { IDN.toASCII(h, IDN.ALLOW_UNASSIGNED) }.getOrNull()?.lowercase() ?: return null
-        return ascii.takeIf { it.length <= 253 && DOMAIN.matches(it) }
     }
 
     private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {

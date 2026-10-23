@@ -43,7 +43,7 @@ jobs:
         run: app/src/test/native/run.sh
 
       - name: Unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: ./gradlew --no-daemon testDebugUnitTest :core:test
 
       - name: Build debug APKs
         if: ${{ !inputs.stable }}

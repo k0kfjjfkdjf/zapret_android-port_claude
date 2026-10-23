@@ -5,7 +5,7 @@ import org.junit.Test
 import java.io.File
 
 class ClientHelloTest {
-    private val fakeDir = listOf("src/main/assets/fake", "app/src/main/assets/fake").map(::File).first { it.isDirectory }
+    private val fakeDir = listOf("../app/src/main/assets/fake", "app/src/main/assets/fake").map(::File).first { it.isDirectory }
 
     @Test
     fun replacesSniAndKeepsLengthsConsistent() {

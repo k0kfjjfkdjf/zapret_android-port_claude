@@ -15,4 +15,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "ZapretDroid"
-include(":app")
+include(":core")
+if (!providers.gradleProperty("noAndroid").isPresent) include(":app")

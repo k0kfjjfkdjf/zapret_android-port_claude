@@ -10,10 +10,10 @@ import org.junit.Test
 import java.io.File
 import java.net.InetAddress
 
-class DnsFilterTest {
+class DnsBlocklistTest {
     @Test
     fun parsesCommonFormats() {
-        val hashes = DnsFilter.parse(
+        val hashes = DnsBlocklist.parse(
             sequenceOf(
                 "# comment", "! adblock comment", "", "ads.example.com", "0.0.0.0 tracker.example.net # inline",
                 "||Banner.Example.org^", "*.wild.example", "localhost", "127.0.0.1 localhost", "bad name!", "ads.example.com",
@@ -25,7 +25,7 @@ class DnsFilterTest {
 
     @Test
     fun matchesSubdomainsNotParentsOrTld() {
-        val set = DnsFilter.HashSet(DnsFilter.parse(sequenceOf("ads.example.com", "com")))
+        val set = DnsBlocklist.HashSet(DnsBlocklist.parse(sequenceOf("ads.example.com", "com")))
         assertTrue(set.matches("ads.example.com."))
         assertTrue(set.matches("x.y.ADS.example.com"))
         assertFalse(set.matches("example.com"))
@@ -36,9 +36,9 @@ class DnsFilterTest {
 
     @Test
     fun allowWins() {
-        val m = DnsFilter.Matcher(
-            listOf("ads" to DnsFilter.HashSet(DnsFilter.parse(sequenceOf("doubleclick.net")))),
-            DnsFilter.HashSet(DnsFilter.parse(sequenceOf("ok.doubleclick.net"))),
+        val m = DnsBlocklist.Matcher(
+            listOf("ads" to DnsBlocklist.HashSet(DnsBlocklist.parse(sequenceOf("doubleclick.net")))),
+            DnsBlocklist.HashSet(DnsBlocklist.parse(sequenceOf("ok.doubleclick.net"))),
         )
         assertEquals("ads", m.blocked("ad.doubleclick.net."))
         assertNull(m.blocked("ok.doubleclick.net."))
@@ -49,9 +49,9 @@ class DnsFilterTest {
     fun fileRoundTrip() {
         val f = File.createTempFile("dnsfilter", ".bin")
         try {
-            val hashes = DnsFilter.parse(sequenceOf("a.example", "b.example", "c.example"))
-            DnsFilter.write(f, hashes)
-            assertArrayEquals(hashes, DnsFilter.read(f))
+            val hashes = DnsBlocklist.parse(sequenceOf("a.example", "b.example", "c.example"))
+            DnsBlocklist.write(f, hashes)
+            assertArrayEquals(hashes, DnsBlocklist.read(f))
         } finally {
             f.delete()
         }

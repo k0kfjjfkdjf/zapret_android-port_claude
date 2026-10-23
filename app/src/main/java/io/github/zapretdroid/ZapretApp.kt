@@ -3,17 +3,27 @@ package io.github.zapretdroid
 import android.app.Application
 import android.os.Build
 import android.os.Process
+import android.util.Log
 import io.github.zapretdroid.core.AppLog
 import io.github.zapretdroid.core.AppRefs
 import io.github.zapretdroid.core.ArgTemplates
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.service.VpnStatus
+import java.io.File
 
 class ZapretApp : Application() {
 
+    private fun processName(): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Application.getProcessName()
+        } else {
+            runCatching { File("/proc/self/cmdline").readText().trimEnd('\u0000') }.getOrDefault("")
+        }
+
     override fun onCreate() {
         super.onCreate()
-        AppLog.init(this)
+        AppLog.console = { priority, message -> Log.println(priority, "ByeZapret", message) }
+        AppLog.init(File(filesDir, "logs"), processName().endsWith(":engine"))
         ArgTemplates.refs = AppRefs(this)
         Strategies.init(this)
         val vpnRunning = VpnStatus.isServiceRunning(this)

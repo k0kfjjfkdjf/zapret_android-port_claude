@@ -154,6 +154,7 @@ tasks.named("preBuild") {
 }
 
 dependencies {
+    implementation(project(":core"))
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
     implementation(composeBom)
     implementation("androidx.core:core-ktx:1.17.0")
