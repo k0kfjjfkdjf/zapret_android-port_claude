@@ -52,9 +52,15 @@ object ArgTemplates {
             val kind = match.groupValues[1]
             val name = match.groupValues[2]
             when (kind) {
-                "app" -> name.split(',').filter { it.isNotBlank() }
-                    .map { pkg -> r.uid(pkg.trim()) ?: throw UnknownReference("app", pkg.trim()) }
-                    .joinToString(",")
+                "app" -> {
+                    // An app removed since the strategy was written (a command line moved into
+                    // "My strategy" names every routed app) must not keep the VPN from starting:
+                    // it is left out; a group none of whose apps is installed matches no app.
+                    val pkgs = name.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    val uids = pkgs.mapNotNull { pkg -> r.uid(pkg).also { if (it == null) AppLog.w("{app:…}: $pkg is not installed, left out") } }
+                    if (pkgs.isEmpty()) throw UnknownReference("app", name)
+                    uids.ifEmpty { listOf(NO_APP) }.joinToString(",")
+                }
                 "proxy" -> r.proxy(name) ?: throw UnknownReference("proxy", name.ifEmpty { "main" })
                 else -> r.ipset(name) ?: throw UnknownReference("ipset", name)
             }
@@ -62,4 +68,7 @@ object ArgTemplates {
     }
 
     fun fake(name: String) = "{fake:$name}"
+
+    /** A uid no app has (the engine takes uids up to 2^31-1): an --apps group for no app. */
+    const val NO_APP = Int.MAX_VALUE
 }

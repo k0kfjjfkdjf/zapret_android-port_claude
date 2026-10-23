@@ -11,7 +11,12 @@ import io.github.zapretdroid.classic.core.ByeDpiProxyUIPreferences
 import io.github.zapretdroid.classic.utility.getPreferences
 import io.github.zapretdroid.classic.utility.getStringNotNull
 import io.github.zapretdroid.core.AppFilterMode
+import io.github.zapretdroid.classic.utility.DomainListUtils
+import io.github.zapretdroid.classic.utility.getCmdArgs
+import io.github.zapretdroid.classic.utility.getCmdEnable
 import io.github.zapretdroid.core.AppLog
+import io.github.zapretdroid.core.ClassicCommand
+import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.Settings
 import io.github.zapretdroid.core.Strategies
 import io.github.zapretdroid.core.isIpLiteral
@@ -27,6 +32,8 @@ import io.github.zapretdroid.core.isIpLiteral
 object ClassicBridge {
     private const val PREFS = "ui"
     private const val KEY_CLASSIC = "classic"
+    /** The command line last handed between the two interfaces: unchanged means nothing to take over. */
+    private const val KEY_SYNCED = "classic_synced_cmd"
 
     /** Whether the launcher should open the ByeByeDPI interface. */
     fun isClassic(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_CLASSIC, false)
@@ -46,38 +53,42 @@ object ClassicBridge {
     }
 
     /** Removes --ip/--port (-i/-p) from engine arguments: the VPN service sets its own. */
-    fun stripListen(args: List<String>): List<String> {
-        val out = mutableListOf<String>()
-        var i = 0
-        while (i < args.size) {
-            val a = args[i]
-            when {
-                a == "--ip" || a == "--port" || a == "-i" || a == "-p" -> i++
-                a.startsWith("--ip=") || a.startsWith("--port=") -> Unit
-                a.length > 2 && (a.startsWith("-i") || a.startsWith("-p")) && !a.startsWith("--") -> Unit
-                else -> out += a
-            }
-            i++
-        }
-        return out
-    }
+    fun stripListen(args: List<String>): List<String> = ClassicCommand.stripListen(args)
 
-    fun quote(arg: String): String =
-        if (arg.isNotEmpty() && arg.none { it.isWhitespace() || it == '"' || it == '\'' || it == '\\' }) arg
-        else "\"" + arg.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    fun quote(arg: String): String = ClassicCommand.quote(arg)
 
-    /** Classic settings -> ZapretDroid settings, before a start from the classic interface. */
-    fun toZapret(context: Context) {
+    /**
+     * Classic settings -> ZapretDroid settings, before a start through the classic code (its
+     * interface, its tile and shortcuts, automation, boot).
+     *
+     * The command line is taken over only when it changed since the two sides last exchanged it
+     * (edited in the classic interface, or sent by another app: [force]). An unchanged one is the
+     * strategy ByeZapret already has, preset or script, which stays as it is; it used to be
+     * flattened into one line and stored as a custom strategy at every start, which cut it at its
+     * first comment. When it changed, its lines, comments and directives are kept.
+     * DNS, IPv6 and the app list follow only from the classic interface itself: a start from the
+     * tile or at boot in ByeZapret's interface must not reset them to ByeByeDPI's defaults.
+     */
+    fun toZapret(context: Context, force: Boolean = false) {
         val prefs = context.getPreferences()
+        val ui = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val settings = Settings(context)
-        val args = classicArgs(context).joinToString(" ") { quote(it) }
-        if (args.isNotBlank()) {
-            if (settings.strategyId != Strategies.CUSTOM || settings.customArgs != args) {
-                AppLog.i("ByeByeDPI interface: strategy '$args'")
+        val classic = isClassic(context)
+        if (prefs.getCmdEnable()) {
+            val raw = prefs.getCmdArgs()
+            val synced = ui.getString(KEY_SYNCED, null)
+            if (raw != synced && (classic || synced != null || force)) {
+                val args = ClassicCommand.toZapret(
+                    ClassicCommand.expandLists(raw, { classicDomains(context, it) }, { HostLists.file(context, it).isFile }),
+                )
+                if (args.isNotBlank()) setCustom(settings, args)
+                ui.edit { putString(KEY_SYNCED, raw) }
             }
-            settings.customArgs = args
-            settings.strategyId = Strategies.CUSTOM
+        } else if (classic) {
+            val args = classicArgs(context).joinToString(" ") { quote(it) }
+            if (args.isNotBlank()) setCustom(settings, args)
         }
+        if (!classic) return
         prefs.getStringNotNull("dns_ip", "").trim().takeIf { isIpLiteral(it) }?.let { if (settings.dns != it) settings.dns = it }
         val ipv6 = prefs.getBoolean("ipv6_enable", false)
         if (settings.ipv6 != ipv6) settings.ipv6 = ipv6
@@ -90,6 +101,17 @@ object ClassicBridge {
         val apps = prefs.getStringSet("selected_apps", emptySet()).orEmpty()
         if (settings.selectedApps != apps) settings.selectedApps = apps
     }
+
+    private fun setCustom(settings: Settings, args: String) {
+        if (settings.strategyId != Strategies.CUSTOM || settings.customArgs != args) {
+            AppLog.i("ByeByeDPI interface: strategy '$args'")
+        }
+        settings.customArgs = args
+        settings.strategyId = Strategies.CUSTOM
+    }
+
+    private fun classicDomains(context: Context, name: String): List<String>? =
+        DomainListUtils.getLists(context).find { it.name.equals(name, ignoreCase = true) }?.domains
 
     /** Switches to the ByeByeDPI interface with ZapretDroid's current settings. */
     fun open(context: Context) {
@@ -115,9 +137,10 @@ object ClassicBridge {
     fun fromZapret(context: Context) {
         val settings = Settings(context)
         val prefs = context.getPreferences()
+        val cmd = prefs.getBoolean("byedpi_enable_cmd_settings", true)
         prefs.edit {
             // The UI editor cannot show an arbitrary command line: only the command line follows.
-            if (prefs.getBoolean("byedpi_enable_cmd_settings", true)) {
+            if (cmd) {
                 putString("byedpi_cmd_args", settings.strategyArgs)
             }
             if (isIpLiteral(settings.dns)) putString("dns_ip", settings.dns)
@@ -131,6 +154,9 @@ object ClassicBridge {
                 },
             )
             putStringSet("selected_apps", settings.selectedApps)
+        }
+        if (cmd) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY_SYNCED, settings.strategyArgs) }
         }
     }
 }

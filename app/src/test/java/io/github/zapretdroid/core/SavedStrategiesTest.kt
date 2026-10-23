@@ -41,4 +41,22 @@ class SavedStrategiesTest {
         assertTrue(back[0].pinned)
         assertEquals("-o1", back[1].args)
     }
+
+    /**
+     * A strategy pasted with Windows line breaks (or a tab) was a second entry with the same text
+     * once saved: two list rows with one key, and the app crashed until one was deleted.
+     */
+    @Test
+    fun oneEntryPerStrategyWhateverTheLineBreaks() {
+        var list = SavedStrategies.add(emptyList(), "--split 1\n--auto=none", null, 1)
+        list = SavedStrategies.parse(SavedStrategies.format(list))
+        list = SavedStrategies.add(list, "--split 1\r\n--auto=none", null, 2)
+        list = SavedStrategies.add(list, " --split 1\n--auto=none\t", null, 3)
+        assertEquals(1, SavedStrategies.parse(SavedStrategies.format(list)).size)
+        // A file written by the old version, with the same strategy twice: read as one, pinned kept.
+        val old = "0\t5\t\t--split 1\n1\t4\tmine\t--split 1\n0\t3\t\t-o1\n"
+        val back = SavedStrategies.parse(old)
+        assertEquals(listOf("--split 1", "-o1"), back.map { it.args })
+        assertTrue(back[0].pinned)
+    }
 }

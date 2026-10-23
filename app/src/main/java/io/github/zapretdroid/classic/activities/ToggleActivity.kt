@@ -7,6 +7,7 @@ import android.net.VpnService
 import android.os.Bundle
 import android.util.Log
 import androidx.core.content.edit
+import io.github.zapretdroid.classic.ClassicBridge
 import io.github.zapretdroid.classic.data.AppStatus
 import io.github.zapretdroid.classic.data.Mode
 import io.github.zapretdroid.classic.data.RESTART_ACTION
@@ -136,6 +137,9 @@ class ToggleActivity : Activity() {
         }
         if (strategy != null && strategy != current) {
             prefs.edit(commit = true) { putString("byedpi_cmd_args", strategy) }
+            // Taken over at once, whichever interface is in use (a start from ByeZapret's own
+            // interface would not look at the classic command line).
+            ClassicBridge.toZapret(this, force = true)
             Log.i(TAG, "Strategy updated to: $strategy")
             return true
         }

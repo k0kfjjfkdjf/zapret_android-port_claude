@@ -30,8 +30,12 @@ class ArgTemplatesTest {
                     fakeDir, listDir,
                 ),
             )
+            // An app removed since: left out, so that the VPN still starts; a group with no app
+            // left gets a uid no app has (it matches nothing).
+            assertEquals(listOf("--apps", "10100"), ArgTemplates.resolve(listOf("--apps", "{app:not.installed,com.discord}"), fakeDir, listDir))
+            assertEquals(listOf("--apps", "${ArgTemplates.NO_APP}"), ArgTemplates.resolve(listOf("--apps", "{app:not.installed}"), fakeDir, listDir))
             val e = assertThrows(ArgTemplates.UnknownReference::class.java) {
-                ArgTemplates.resolve(listOf("--apps", "{app:not.installed}"), fakeDir, listDir)
+                ArgTemplates.resolve(listOf("--apps", "{app:,}"), fakeDir, listDir)
             }
             assertEquals("app", e.kind)
             assertThrows(ArgTemplates.UnknownReference::class.java) { ArgTemplates.resolve(listOf("-C", "{proxy:nope}"), fakeDir, listDir) }

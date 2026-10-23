@@ -10,6 +10,11 @@ import io.github.zapretdroid.classic.utility.getCmdArgs
 import io.github.zapretdroid.classic.utility.getCmdEnable
 import io.github.zapretdroid.classic.utility.getStringNotNull
 import io.github.zapretdroid.classic.utility.shellSplit
+import io.github.zapretdroid.core.ClassicCommand
+import io.github.zapretdroid.core.HostLists
+import io.github.zapretdroid.core.Script
+import io.github.zapretdroid.core.Settings
+import io.github.zapretdroid.core.StrategyScript
 
 sealed interface ByeDpiProxyPreferences {
     companion object {
@@ -25,7 +30,13 @@ class ByeDpiProxyCmdPreferences(val args: Array<String>) : ByeDpiProxyPreference
     companion object {
         private fun parseCmdToArguments(context: Context, command: String, host: String, port: String): Array<String> {
             val blacklist = setOf("--help", "--version", "-h", "-v")
-            val args = shellSplit(getLists(command, context))
+            // ZapretDroid: the text may be ByeZapret's strategy (a script, comments on their own
+            // lines or after options): compiled, comments removed, then split as before.
+            var text = getLists(command, context)
+            if (Script.hasDirectives(text)) {
+                text = runCatching { StrategyScript.compile(context, Settings(context), text).text }.getOrDefault(text)
+            }
+            val args = shellSplit(ClassicCommand.stripComments(text))
                 .dropWhile { !it.startsWith("-") }
                 .filter { it !in blacklist }
             val (cmdIp, cmdPort) = args.checkIpAndPortInArgs()
@@ -41,20 +52,15 @@ class ByeDpiProxyCmdPreferences(val args: Array<String>) : ByeDpiProxyPreference
         }
 
         private fun getLists(cmd: String, context: Context): String {
-            // ZapretDroid: a list that is not one of these domain lists is left as {list:name}
-            // for ZapretDroid's host lists, which the engine gets as a file.
-            return Regex("""\{list:([^\}]+)\}""").replace(cmd) { matchResult ->
-                val listName = matchResult.groupValues[1].trim()
-                val lists = DomainListUtils.getLists(context)
-                val domainList = lists.find { it.name.equals(listName, ignoreCase = true) }
-
-                if (domainList != null && domainList.domains.isNotEmpty()) {
-                    domainList.domains.joinToString(" ")
-                } else {
-                    Log.w("ProxyPref", "List '$listName' is not a ByeByeDPI list, left for ByeZapret")
-                    matchResult.value
-                }
-            }
+            // ZapretDroid: ByeByeDPI's {list:name} becomes the domains of its list only inside an
+            // inline list (":{list:x}") or when ByeZapret has no host list of that name; otherwise
+            // it is left as {list:name} for ByeZapret's host lists, which the engine gets as a file.
+            val lists = DomainListUtils.getLists(context)
+            return ClassicCommand.expandLists(
+                cmd,
+                { name -> lists.find { it.name.equals(name, ignoreCase = true) }?.domains },
+                { name -> HostLists.file(context, name).isFile },
+            )
         }
     }
 

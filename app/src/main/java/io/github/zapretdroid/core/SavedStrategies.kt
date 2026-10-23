@@ -21,16 +21,26 @@ object SavedStrategies {
     /** Adds [args] (or moves it to the top), keeping its pin and name; drops the oldest unpinned. */
     fun remember(context: Context, args: String, name: String? = null, now: Long = System.currentTimeMillis()) {
         if (args.isBlank()) return
-        save(context, add(all(context), args.trim(), name, now))
+        save(context, add(all(context), args, name, now))
     }
 
     fun update(context: Context, args: String, change: (SavedStrategy) -> SavedStrategy?) {
-        save(context, all(context).mapNotNull { if (it.args == args) change(it) else it })
+        val key = normalize(args)
+        save(context, all(context).mapNotNull { if (it.args == key) change(it) else it })
     }
+
+    /**
+     * The form a strategy is kept in: what the file can hold (no tabs, no CR). Comparing in this
+     * form keeps one entry per strategy: a strategy pasted with Windows line breaks or a tab was
+     * stored twice (equal only after saving), and two entries with the same text gave two rows
+     * with the same key in the strategy lists, which crashed the app until one was deleted.
+     */
+    fun normalize(args: String) = args.replace("\r", "").replace('\t', ' ').trim()
 
     fun save(context: Context, list: List<SavedStrategy>) = file(context).writeText(format(list))
 
-    fun add(list: List<SavedStrategy>, args: String, name: String?, now: Long): List<SavedStrategy> {
+    fun add(list: List<SavedStrategy>, raw: String, name: String?, now: Long): List<SavedStrategy> {
+        val args = normalize(raw)
         val old = list.firstOrNull { it.args == args }
         val entry = SavedStrategy(name ?: old?.name ?: "", args, old?.pinned ?: false, now)
         val rest = list.filter { it.args != args }
@@ -41,8 +51,10 @@ object SavedStrategies {
     fun parse(text: String): List<SavedStrategy> = text.lineSequence().mapNotNull { line ->
         val p = line.split('\t')
         if (p.size < 4 || p[3].isBlank()) null
-        else SavedStrategy(p[2], unescape(p[3]), p[0] == "1", p[1].toLongOrNull() ?: 0)
+        else SavedStrategy(p[2], normalize(unescape(p[3])), p[0] == "1", p[1].toLongOrNull() ?: 0)
     }.toList()
+        // Files written before normalize(): one entry per strategy, a pinned one first.
+        .sortedByDescending { it.pinned }.distinctBy { it.args }.sortedByDescending { it.time }
 
     fun format(list: List<SavedStrategy>): String = list.joinToString("") {
         "${if (it.pinned) 1 else 0}\t${it.time}\t${clean(it.name)}\t${escape(it.args.trim())}\n"
