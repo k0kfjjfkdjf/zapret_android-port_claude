@@ -1,6 +1,12 @@
 Implementation of some DPI bypass methods.
 The program is a local SOCKS proxy server.
 
+> **Форк ByeDPI в составе ByeZapret.** Ниже — README исходного ByeDPI. Опции, которых в нём
+> нет (маркеры zapret, `-M hostcase…`, `--udp-desync`, `--udp-proto-fake`, `--udp-proxy`,
+> `--apps`, `--slot`, `--names-dns`, `--dns-redirect`, `--mss`, `--conn-log`, `--autohost-log`),
+> и исправления описаны в [UPSTREAM.md](UPSTREAM.md); краткая справка — `ciadpi --help`.
+> Файлы для Windows и Docker в форк не входят.
+
 Usage example:
 ```
 ciadpi --disorder 1 --auto=torst --tlsrec 1+s
@@ -334,13 +340,7 @@ TCP может отсылать данные вне основного пото�
 `make`, `gcc/clang` для Linux, `mingw` для Windows  
 
 * Linux: `make`
-* Windows: `make windows CC=x86_64-w64-mingw32-gcc`
-
-------
-### Docker образ
-
-Docker образ выкладывается на [DockerHub](https://hub.docker.com/r/hufrea/byedpi).
-Пример конфигурации контейнера можно найти в [dist/docker](dist/docker).
+* Windows: не поддерживается в форке (файлы для Windows не перенесены)
 
 ------
 ### Дополнительная информация о DPI, источники идей  
