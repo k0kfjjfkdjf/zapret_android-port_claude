@@ -3,11 +3,13 @@
 ByeZapret можно включать, выключать и менять стратегию из других приложений и скриптов. Для
 этого есть активность `ToggleActivity`: она принимает стратегию и флаги в extras.
 
-## Как вызвать
+<a id="как-вызвать"></a>
+<details>
+<summary><b>Как вызвать</b></summary>
 
 Активность не имеет `intent-filter`, поэтому её вызывают только явным компонентом: нужны
-пакет и класс. У релизов с GitHub пакет — `io.github.zapretdroid.debug` (у своей сборки
-`assembleRelease` — `io.github.zapretdroid`):
+пакет и класс. У тестовой сборки пакет — `io.github.zapretdroid.debug`, у стабильной —
+`io.github.zapretdroid` (класс тот же):
 
 ```
 io.github.zapretdroid.debug/io.github.zapretdroid.classic.activities.ToggleActivity
@@ -20,7 +22,11 @@ adb shell am start -n io.github.zapretdroid.debug/io.github.zapretdroid.classic.
   --es strategy "-o1 -a1 -r-5+se" --ez only_start true
 ```
 
-## Extras
+</details>
+
+<a id="extras"></a>
+<details>
+<summary><b>Extras</b></summary>
 
 | Extra | Тип | Что делает |
 |---|---|---|
@@ -43,7 +49,11 @@ adb shell am start -n io.github.zapretdroid.debug/io.github.zapretdroid.classic.
 умолчанию). Если там выбран редактор вместо командной строки, стратегия сохраняется, но не
 применяется.
 
-## Ограничения стратегии
+</details>
+
+<a id="ограничения-стратегии"></a>
+<details>
+<summary><b>Ограничения стратегии</b></summary>
 
 Стратегия из чужого приложения проверяется, и отклоняются:
 
@@ -66,19 +76,40 @@ adb shell am start -n io.github.zapretdroid.debug/io.github.zapretdroid.classic.
 Допустимы `{fake:имя}` и `{list:имя}`. Отклонённая стратегия пишется в logcat, а действие
 выполняется со старой стратегией.
 
-## Чего не будет
+</details>
 
-- **VPN не запустится без согласия.** В режиме VPN запуск требует, чтобы пользователь уже
-  выдал разрешение на VPN в самом приложении (системный запрос). Без него `only_start` и
-  переключение молча ничего не делают.
-- **Ответа нет.** Активность сразу закрывается и ничего не возвращает. Её записи идут
-  в logcat с тегом `ToggleServiceActivity`; принятая стратегия видна и в журнале приложения
-  строкой `ByeByeDPI interface: strategy '…'`.
+<a id="чего-не-будет"></a>
+<details>
+<summary><b>Чего не будет</b></summary>
 
-## Безопасность
+<details>
+<summary><b>VPN не запустится без согласия</b></summary>
+
+В режиме VPN запуск требует, чтобы пользователь уже
+выдал разрешение на VPN в самом приложении (системный запрос). Без него `only_start` и
+переключение молча ничего не делают.
+
+</details>
+
+<details>
+<summary><b>Ответа нет</b></summary>
+
+Активность сразу закрывается и ничего не возвращает. Её записи идут
+в logcat с тегом `ToggleServiceActivity`; принятая стратегия видна и в журнале приложения
+строкой `ByeByeDPI interface: strategy '…'`.
+
+</details>
+
+</details>
+
+<a id="безопасность"></a>
+<details>
+<summary><b>Безопасность</b></summary>
 
 Активность экспортирована (`exported="true"`) и не защищена разрешением. Значит, любое
 приложение на телефоне может включить, выключить VPN и сменить стратегию, в том числе
 приложение, которому вы не доверяете. Ограничения выше не дают ему прочитать файлы
 приложения, открыть прокси наружу или увести трафик и DNS на свой сервер. Выключить обход
 или поставить плохую стратегию оно может. Устанавливайте только нужные приложения.
+
+</details>
