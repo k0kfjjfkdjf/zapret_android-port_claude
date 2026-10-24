@@ -14,3 +14,4 @@ build/
 *.jks
 # Test-only self-signed certificate for SiteProbeTest and SecureDnsTest
 !core/src/test/resources/probe-test.jks
+__pycache__/
