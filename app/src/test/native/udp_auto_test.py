@@ -139,7 +139,8 @@ def main():
     assert 0.9 < t < 3, f"reply after {t:.2f} s\n{log}"
     with open(cache) as f:
         text = f.read()
-    assert re.search(r"^u 1 \w+ 32 127\.0\.0\.1 32 %d \d+ facebook\.com$" % srv.port, text, re.M), text
+    # IPv4-mapped where the engine listens dual-stack (IPv6 available, as on CI runners).
+    assert re.search(r"^u 1 \w+ 32 (127\.0\.0\.1 32|::ffff:127\.0\.0\.1 128) %d \d+ facebook\.com$" % srv.port, text, re.M), text
     print(f"udp flow moved to the next group, reply after {t:.2f} s: OK")
 
     srv.reset()
