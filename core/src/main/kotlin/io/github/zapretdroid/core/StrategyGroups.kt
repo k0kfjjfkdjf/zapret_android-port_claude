@@ -8,7 +8,7 @@ object StrategyGroups {
     private val GLOBAL_WITH_VALUE = setOf(
         "-i", "--ip", "-p", "--port", "-x", "--debug", "-T", "--timeout", "--autohost-log",
         "-c", "--max-conn", "-b", "--buf-size", "-g", "--def-ttl", "-I", "--conn-ip",
-        "-L", "--auto-mode", "-u", "--cache-ttl", "-y", "--cache-dump",
+        "-L", "--auto-mode", "-u", "--cache-ttl", "-y", "--cache-file", "--auto-cache",
     )
     private val GLOBAL_FLAGS = setOf("--conn-log", "-N", "--no-domain", "-U", "--no-udp", "-F", "--tfo")
 

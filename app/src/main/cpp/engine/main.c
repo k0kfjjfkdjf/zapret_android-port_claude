@@ -23,6 +23,7 @@
 #define OPT_UDP_PROXY 0x104
 #define OPT_APPS 0x105
 #define OPT_SLOT 0x106
+#define OPT_AUTO_CACHE 0x107
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -171,6 +172,7 @@ static const char help_text[] = {
     "    -z, --udp-desync <N[:K]>  UDP fakes before the first N datagrams, then every K-th\n"
     "    -G, --udp-proto-fake <p>:<f>  Fake for quic|discord|stun flows: file, dir or :str\n"
     "    --slot <name>             Empty host list filled at run time (slot_assign)\n"
+    "    --auto-cache <file>       Keep what --auto learnt (address -> group) across restarts\n"
     "    -k, --conn-log            Log every connection, UDP flow and detected block\n"
     "    -J, --autohost-log <file> Append blocked hosts to the file (needs an --auto group)\n"
     #ifdef __linux__
@@ -218,6 +220,7 @@ const struct option options[] = {
     {"udp-proxy",     0, 0, OPT_UDP_PROXY},
     {"apps",          1, 0, OPT_APPS},
     {"slot",          1, 0, OPT_SLOT},
+    {"auto-cache",    1, 0, OPT_AUTO_CACHE},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -730,6 +733,12 @@ void *add(void **root, int *n, size_t ss)
 
 static struct desync_params *add_group(struct desync_params *prev)
 {
+    // ZapretDroid: a group is one bit of a 64-bit mask; the 65th used to be only logged
+    // ("too many groups!") after its bit had already been computed out of range.
+    if ((size_t) params.dp_n >= sizeof(prev->bit) * 8) {
+        fprintf(ENGINE_LOG, "too many groups (at most %zu)\n", sizeof(prev->bit) * 8);
+        return 0;
+    }
     struct desync_params *dp = calloc(1, sizeof(*prev));
     if (!dp) {
         return 0;
@@ -739,7 +748,7 @@ static struct desync_params *add_group(struct desync_params *prev)
         prev->next = dp;
     }
     dp->id = params.dp_n;
-    dp->bit = 1 << dp->id;
+    dp->bit = (uint64_t) 1 << dp->id; // ZapretDroid: 1 << 32 and above in int was undefined
     dp->str = "";
     
     params.dp_n++;
@@ -980,6 +989,10 @@ int parse_args(int argc, char **argv)
 
         case OPT_UDP_PROXY:
             dp->udp_proxy = 1;
+            break;
+
+        case OPT_AUTO_CACHE:
+            params.auto_cache = optarg;
             break;
 
         case OPT_SLOT:
@@ -1577,9 +1590,6 @@ int parse_args(int argc, char **argv)
             return -1;
         }
     }
-    if ((size_t )params.dp_n > sizeof(dp->bit) * 8) {
-        LOG(LOG_E, "too many groups!\n");
-    }
     if (params.baddr.sa.sa_family != AF_INET6) {
         params.ipv6 = 0;
     }
@@ -1686,10 +1696,13 @@ int main(int argc, char **argv)
     INIT_ADDR_STR(params.laddr);
     LOG(LOG_S, "listen address: %s:%d\n", ADDR_STR, ntohs(params.laddr.in.sin_port));
     
+    auto_cache_load();
     if (init() < 0 || run(&params.laddr) < 0) {
+        auto_cache_save(1);
         clear_params(cmd_line, argv);
         return -1;
     }
+    auto_cache_save(1);
     dump_all_cache();
     clear_params(cmd_line, argv);
     return 0;

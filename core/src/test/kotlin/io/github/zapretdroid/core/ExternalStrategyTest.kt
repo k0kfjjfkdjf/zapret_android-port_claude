@@ -56,4 +56,15 @@ class ExternalStrategyTest {
         // "--ipset" is not --ip; "--conn-log" is not --conn-ip.
         assertTrue(safe("--ipset", "{list:x}", "--conn-log"))
     }
+
+    @Test
+    fun autoIsNotTakenForAutoCacheOrAutohostLog() {
+        // getopt_long takes the exact name "auto" before a prefix of auto-cache/autohost-log.
+        assertTrue(safe("-s1", "--auto", "torst", "-s2"))
+        assertTrue(safe("-s1", "--auto=torst", "-s2"))
+        assertTrue(safe("-s1", "-A", "torst", "-s2"))
+        assertFalse(safe("--auto-cache", "x"))
+        assertFalse(safe("--auto-c=x"))
+        assertFalse(safe("--autoh", "x"))
+    }
 }

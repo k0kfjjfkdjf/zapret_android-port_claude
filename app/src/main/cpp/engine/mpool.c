@@ -197,6 +197,11 @@ void load_cache(struct mphdr *hdr, FILE *in, struct desync_params *dp)
         if (c < 1) {
             return;
         }
+        // ZapretDroid: a short line left cache_time and host unset, and a negative or too
+        // long bit length went into the key as it was.
+        if (c != 5 || bitlen < 0) {
+            continue;
+        }
         struct cache_key key = { 0 };
         int key_size = offsetof(struct cache_key, ip.v4);
         bitlen += key_size * 8;
@@ -240,3 +245,121 @@ void load_cache(struct mphdr *hdr, FILE *in, struct desync_params *dp)
     }
 }
 
+
+
+/*
+ * ZapretDroid --auto-cache: the whole cache in one file, every entry with its group, so that
+ * what --auto learnt survives a restart of the engine (the app's process is killed at will).
+ * Line: "<group id> <dp_mask hex> <detect> <ip> <bits> <port> <time> <host|->", after a
+ * header "zdcache 1 <groups>" that ties the file to a strategy with that many groups.
+ */
+void dump_cache_all(struct mphdr *hdr, FILE *out, int groups)
+{
+    fprintf(out, "zdcache 1 %d\n", groups);
+    if (!hdr->root) {
+        fflush(out);
+        return;
+    }
+    kavl_itr_t(my) itr;
+    kavl_itr_first(my, hdr->root, &itr);
+    do {
+        struct elem_i *p = (struct elem_i *)kavl_at(&itr);
+        struct cache_key *key = (struct cache_key *)p->main.data;
+        if (!p->dp) {
+            continue;
+        }
+        char addr[INET6_ADDRSTRLEN];
+        if (key->family == AF_INET)
+            inet_ntop(AF_INET, &key->ip.v4, addr, sizeof(addr));
+        else
+            inet_ntop(AF_INET6, &key->ip.v6, addr, sizeof(addr));
+        int bitlen = p->main.len - offsetof(struct cache_key, ip.v4) * 8;
+        // Host names with white space would break the line: written as "-".
+        bool plain = p->extra && p->extra_len > 0 && p->extra_len < 256;
+        for (unsigned int i = 0; plain && i < p->extra_len; i++) {
+            unsigned char ch = p->extra[i];
+            if (ch <= ' ' || ch >= 0x7f) plain = 0;
+        }
+        fprintf(out, "%d %jx %d %s %d %d %jd %.*s\n",
+            p->dp->id, (uintmax_t) p->dp_mask, p->detect, addr, bitlen, ntohs(key->port),
+            (intmax_t) p->time, plain ? (int) p->extra_len : 1, plain ? p->extra : "-");
+    }
+    while (kavl_itr_next(my, &itr));
+    fflush(out);
+}
+
+
+int load_cache_all(struct mphdr *hdr, FILE *in, int groups,
+        struct desync_params *(*group)(int id))
+{
+    int version = 0, n = -1;
+    if (fscanf(in, "zdcache %d %d\n", &version, &n) != 2 || version != 1) {
+        return -1;
+    }
+    if (n != groups) {
+        // Another strategy: its group numbers mean other groups here.
+        return -1;
+    }
+    int loaded = 0;
+    char line[512];
+    while (fgets(line, sizeof(line), in)) {
+        int id, detect, bitlen, port;
+        uintmax_t mask;
+        intmax_t cache_time;
+        char addr_str[INET6_ADDRSTRLEN] = { 0 };
+        char host[256] = { 0 };
+        if (sscanf(line, "%d %jx %d %45s %d %d %jd %255s",
+                &id, &mask, &detect, addr_str, &bitlen, &port, &cache_time, host) != 8) {
+            continue;
+        }
+        struct desync_params *dp = group(id);
+        if (!dp || bitlen < 0 || port < 0 || port > 0xffff) {
+            continue;
+        }
+        struct cache_key key = { 0 };
+        int key_size = offsetof(struct cache_key, ip.v4);
+        if (inet_pton(AF_INET, addr_str, &key.ip.v4) == 1) {
+            key.family = AF_INET;
+            key_size += sizeof(key.ip.v4);
+        }
+        else if (inet_pton(AF_INET6, addr_str, &key.ip.v6) == 1) {
+            key.family = AF_INET6;
+            key_size += sizeof(key.ip.v6);
+        }
+        else {
+            continue;
+        }
+        bitlen += offsetof(struct cache_key, ip.v4) * 8;
+        if (bitlen > key_size * 8) {
+            continue;
+        }
+        key.port = htons(port);
+        struct cache_key *data = calloc(1, key_size);
+        if (!data) {
+            break;
+        }
+        memcpy(data, &key, key_size);
+        struct elem_i *e = mem_add(hdr, (char *)data, bitlen, sizeof(struct elem_i));
+        if (!e) {
+            free(data);
+            break;
+        }
+        free(e->extra);
+        e->extra = 0;
+        e->extra_len = 0;
+        e->time = (time_t) cache_time;
+        e->dp = dp;
+        e->dp_mask = (uint64_t) mask;
+        e->detect = detect;
+        size_t hl = strlen(host);
+        if (hl > 1 || (hl == 1 && host[0] != '-')) {
+            e->extra = malloc(hl + 1);
+            if (e->extra) {
+                memcpy(e->extra, host, hl + 1);
+                e->extra_len = hl;
+            }
+        }
+        loaded++;
+    }
+    return loaded;
+}

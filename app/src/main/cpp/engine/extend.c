@@ -101,7 +101,10 @@ static struct elem_i *cache_get(const union sockaddr_u *dst)
     time_t t = time(0);
     if (dp->cache_ttl && t > val->time + dp->cache_ttl) {
         LOG(LOG_S, "time=%jd, now=%jd, ignore\n", (intmax_t)val->time, (intmax_t)t);
-        mem_delete(params.mempool, (char *)&key, len);
+        // ZapretDroid: deleted by the stored key and its length in bits; the length in bytes
+        // matched nothing, so expired entries stayed (and were saved) for ever.
+        mem_delete(params.mempool, val->main.data, val->main.len);
+        params.auto_cache_dirty = 1;
         return 0;
     }
     return val;
@@ -575,6 +578,7 @@ int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_aliv
         cache->dp_mask = 0;
         cache->detect = 0;
         cache->dp = params.dp;
+        auto_cache_changed();
         return -1;
     }
     LOG(LOG_S, "save: ip=%s, id=%d\n", ADDR_STR, next->id);
@@ -582,6 +586,7 @@ int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_aliv
     cache->dp_mask |= lav->dp_mask;
     cache->detect = lav->detect;
     cache->dp = dp;
+    auto_cache_changed();
     
     if (!(next->auto_level & AUTO_NORECONN) && can_reconn) {
         return reconnect(pool, val);
@@ -1635,3 +1640,83 @@ static int protect(int conn_fd, const char *path)
     return 0;
 }
 #endif
+
+
+/* ZapretDroid --auto-cache */
+
+#define AUTO_CACHE_SAVE_S 15
+
+static struct desync_params *group_by_id(int id)
+{
+    for (struct desync_params *dp = params.dp; dp; dp = dp->next) {
+        if (dp->id == id) return dp;
+    }
+    return 0;
+}
+
+
+void auto_cache_load(void)
+{
+    if (!params.auto_cache || !params.mempool) {
+        return;
+    }
+    FILE *f = fopen(params.auto_cache, "r");
+    if (!f) {
+        return; // first run
+    }
+    int n = load_cache_all(params.mempool, f, params.dp_n, group_by_id);
+    fclose(f);
+    if (n < 0) {
+        LOG(LOG_S, "auto cache: %s is for another strategy, not loaded\n", params.auto_cache);
+    }
+    else if (params.conn_log) {
+        fprintf(ENGINE_LOG, "auto cache: %d address(es) loaded\n", n);
+    }
+    params.auto_cache_saved = time(0);
+}
+
+
+void auto_cache_save(bool force)
+{
+    if (!params.auto_cache || !params.mempool) {
+        return;
+    }
+    time_t now = time(0);
+    if (!force && (!params.auto_cache_dirty || now - params.auto_cache_saved < AUTO_CACHE_SAVE_S)) {
+        return;
+    }
+    // Written beside the file and renamed over it: a process killed while writing leaves the
+    // previous cache, not half of the new one.
+    size_t len = strlen(params.auto_cache);
+    char *tmp = malloc(len + 5);
+    if (!tmp) {
+        return;
+    }
+    memcpy(tmp, params.auto_cache, len);
+    memcpy(tmp + len, ".tmp", 5);
+    FILE *f = fopen(tmp, "w");
+    if (!f) {
+        uniperror("auto cache fopen");
+        free(tmp);
+        return;
+    }
+    dump_cache_all(params.mempool, f, params.dp_n);
+    bool ok = !ferror(f);
+    ok = !fclose(f) && ok;
+    if (!ok || rename(tmp, params.auto_cache)) {
+        uniperror("auto cache write");
+        remove(tmp);
+    }
+    else {
+        params.auto_cache_dirty = 0;
+        params.auto_cache_saved = now;
+    }
+    free(tmp);
+}
+
+
+void auto_cache_changed(void)
+{
+    params.auto_cache_dirty = 1;
+    auto_cache_save(0);
+}

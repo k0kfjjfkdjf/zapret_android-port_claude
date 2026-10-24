@@ -34,6 +34,7 @@ import io.github.zapretdroid.core.TorProxy
 import io.github.zapretdroid.core.FakePayloads
 import io.github.zapretdroid.core.AutoHost
 import io.github.zapretdroid.core.AutoFix
+import io.github.zapretdroid.core.AutoCache
 import io.github.zapretdroid.core.HostLists
 import io.github.zapretdroid.core.HostScope
 import io.github.zapretdroid.core.StrategyArgs
@@ -167,7 +168,10 @@ class ZapretVpnService : VpnService() {
             if (logLevel.byedpiDebug > 0) {
                 add("--debug"); add(logLevel.byedpiDebug.toString())
             }
-            addAll(resolveStrategy(settings))
+            val strategy = resolveStrategy(settings)
+            addAll(strategy)
+            // What --auto learnt (address -> group) survives restarts, per strategy and network.
+            addAll(AutoCache.args(java.io.File(filesDir, "auto-cache"), strategy, scriptNetwork))
         }
     }
 

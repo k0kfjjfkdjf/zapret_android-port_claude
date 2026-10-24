@@ -10,7 +10,7 @@ package io.github.zapretdroid.core
  * - options that send traffic or DNS elsewhere, or write files: `-C 1.2.3.4:1080` (every
  *   connection through a stranger's proxy, host names included), `--dns-redirect`,
  *   `--names-dns`, `--udp-proxy`, `--conn-ip`, `--protect-path`, `--cache-file`,
- *   `--autohost-log`, `--udp-proto-fake`;
+ *   `--autohost-log`, `--udp-proto-fake`, `--auto-cache`;
  * - script variables (`$name`), which could spell any of the above after the check.
  *
  * Options are recognised as the engine's getopt_long reads them: a long option by any prefix
@@ -22,8 +22,11 @@ object ExternalStrategy {
     private val FORBIDDEN_LONG = listOf(
         "ip", "port", "transparent", "daemon", "pidfile",
         "connect-to", "conn-ip", "dns-redirect", "names-dns", "udp-proxy",
-        "protect-path", "cache-file", "autohost-log", "udp-proto-fake",
+        "protect-path", "cache-file", "autohost-log", "udp-proto-fake", "auto-cache",
     )
+
+    /** Engine options whose full names are prefixes of a forbidden one. */
+    private val ALLOWED_EXACT = setOf("auto")
 
     /** The short forms of the options above. */
     private const val FORBIDDEN_SHORT = "ipEDwCIPyJG"
@@ -36,6 +39,8 @@ object ExternalStrategy {
     fun isForbiddenOption(arg: String): Boolean {
         if (arg.startsWith("--")) {
             val name = arg.substring(2).substringBefore('=')
+            // getopt_long takes an exact name before a prefix: "--auto" is --auto, not --auto-cache.
+            if (name in ALLOWED_EXACT) return false
             return name.isNotEmpty() && FORBIDDEN_LONG.any { it.startsWith(name) }
         }
         if (arg.length < 2 || arg[0] != '-') return false

@@ -191,6 +191,11 @@ struct params {
     
     const char *protect_path;
     const char *autohost_log;
+    // ZapretDroid --auto-cache: file where the --auto cache (address -> group) is kept across
+    // restarts; saved at exit and at most every AUTO_CACHE_SAVE_S seconds after a change.
+    const char *auto_cache;
+    bool auto_cache_dirty;
+    long long auto_cache_saved;
     bool conn_log;
     // --mss: TCP maximum segment size of outgoing connections (as tpws --mss): both sides then
     // send small segments

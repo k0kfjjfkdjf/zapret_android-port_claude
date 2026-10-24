@@ -57,6 +57,11 @@ int slot_assign(const char *host, const char *slot);
  */
 extern int (*owner_uid_hook)(int proto, const char *src_ip, int src_port, const char *dst_ip, int dst_port);
 
+/* ZapretDroid --auto-cache: load at start, save (force: now; else if changed and due). */
+void auto_cache_load(void);
+void auto_cache_save(bool force);
+void auto_cache_changed(void);
+
 int on_timeout(struct poolhd *pool, struct eval *val);
 
 #ifdef __linux__
