@@ -105,6 +105,11 @@ struct desync_params {
     unsigned int proto_fakes_next[3];
     // --udp-desync N[:K]: fakes before the first N datagrams, then before every K-th
     int udp_first, udp_every;
+    // ZapretDroid --quic-split <marker|N>: a client's first QUIC Initial carries its ClientHello
+    // in two CRYPTO frames, the part from this point first (see quic_split_initial).
+    bool quic_split;
+    int quic_split_marker;
+    long quic_split_off;
     int udp_fake_count;
     struct part fake_offset;
     int fake_sni_count;

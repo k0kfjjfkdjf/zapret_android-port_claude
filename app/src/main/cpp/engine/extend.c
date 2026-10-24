@@ -1707,6 +1707,18 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
         udp_maybe_report(val, now);
         return n;
     }
+    // ZapretDroid --quic-split: the Initial with the start of the ClientHello goes out with it in
+    // two CRYPTO frames (also when the client repeats it), on a copy that may grow a little.
+    uint8_t qbuf[QUIC_SPLIT_MAX];
+    if (dp->quic_split && proto == UDP_PROTO_QUIC && n <= (ssize_t) sizeof(qbuf)) {
+        size_t qn = n;
+        memcpy(qbuf, buffer, n);
+        if (quic_split_initial(qbuf, &qn, sizeof(qbuf), dp->quic_split_marker, dp->quic_split_off)) {
+            LOG(LOG_S, "quic split: group=%d, %zd -> %zu bytes\n", dp->id, n, qn);
+            buffer = (char *) qbuf;
+            n = qn;
+        }
+    }
     // --udp-desync N[:K] counts datagrams of the flow; otherwise rounds (request/response) apply.
     bool desync = dp->udp_first > 0
         ? (dindex < (unsigned int) dp->udp_first || (dp->udp_every > 0 && dindex % dp->udp_every == 0))

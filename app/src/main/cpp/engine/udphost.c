@@ -1,6 +1,7 @@
 /* ZapretDroid: host names for UDP flows and TCP without SNI, see udphost.h. */
 
 #include "udphost.h"
+#include "tpws.h"
 
 #include <string.h>
 
@@ -339,6 +340,241 @@ bool quic_add_initial(struct quic_crypto *qc, const uint8_t *pkt, size_t len)
         break; // CONNECTION_CLOSE or not a client Initial
     }
     return any;
+}
+
+/* --- AES-128-GCM (NIST SP 800-38D): counter mode and the tag ------------------------------- */
+
+/* x = x * h in GF(2^128), GCM's bit order. */
+static void gf128_mul(uint8_t x[16], const uint8_t h[16])
+{
+    uint8_t z[16] = { 0 }, v[16];
+    memcpy(v, h, 16);
+    for (int i = 0; i < 128; i++) {
+        if ((x[i / 8] >> (7 - i % 8)) & 1) {
+            for (int j = 0; j < 16; j++) z[j] ^= v[j];
+        }
+        uint8_t lsb = v[15] & 1;
+        for (int j = 15; j > 0; j--) v[j] = (uint8_t) (v[j] >> 1 | v[j - 1] << 7);
+        v[0] >>= 1;
+        if (lsb) v[0] ^= 0xe1;
+    }
+    memcpy(x, z, 16);
+}
+
+static void ghash_update(uint8_t y[16], const uint8_t h[16], const uint8_t *d, size_t len)
+{
+    for (size_t off = 0; off < len; off += 16) {
+        for (size_t i = 0; i < 16 && off + i < len; i++) y[i] ^= d[off + i];
+        gf128_mul(y, h);
+    }
+}
+
+/* Counter mode from J0 + 1 (J0 = nonce || 1), as GCM encrypts and decrypts. */
+static void gcm_ctr(const uint8_t rk[176], const uint8_t nonce[12], const uint8_t *in, uint8_t *out, size_t len)
+{
+    uint8_t ctr[16], stream[16];
+    memcpy(ctr, nonce, 12);
+    uint32_t counter = 2;
+    for (size_t off = 0; off < len; off += 16) {
+        ctr[12] = (uint8_t) (counter >> 24);
+        ctr[13] = (uint8_t) (counter >> 16);
+        ctr[14] = (uint8_t) (counter >> 8);
+        ctr[15] = (uint8_t) counter;
+        counter++;
+        aes128_encrypt(rk, ctr, stream);
+        for (size_t i = 0; i < 16 && off + i < len; i++) out[off + i] = in[off + i] ^ stream[i];
+    }
+}
+
+static void gcm_tag(const uint8_t rk[176], const uint8_t nonce[12], const uint8_t *aad, size_t alen,
+        const uint8_t *ct, size_t clen, uint8_t tag[16])
+{
+    uint8_t h[16] = { 0 }, y[16] = { 0 }, j0[16], ek[16], lens[16];
+    aes128_encrypt(rk, h, h);
+    ghash_update(y, h, aad, alen);
+    ghash_update(y, h, ct, clen);
+    uint64_t abits = (uint64_t) alen * 8, cbits = (uint64_t) clen * 8;
+    for (int i = 0; i < 8; i++) {
+        lens[i] = (uint8_t) (abits >> (56 - 8 * i));
+        lens[8 + i] = (uint8_t) (cbits >> (56 - 8 * i));
+    }
+    ghash_update(y, h, lens, 16);
+    memcpy(j0, nonce, 12);
+    j0[12] = 0; j0[13] = 0; j0[14] = 0; j0[15] = 1;
+    aes128_encrypt(rk, j0, ek);
+    for (int i = 0; i < 16; i++) tag[i] = y[i] ^ ek[i];
+}
+
+static size_t varint_size(uint64_t v)
+{
+    return v < 64 ? 1 : v < 16384 ? 2 : v < 1073741824 ? 4 : 8;
+}
+
+static size_t put_varint(uint8_t *out, uint64_t v)
+{
+    size_t n = varint_size(v);
+    uint8_t prefix = n == 1 ? 0 : n == 2 ? 0x40 : n == 4 ? 0x80 : 0xc0;
+    for (size_t i = 0; i < n; i++) out[i] = (uint8_t) (v >> (8 * (n - 1 - i)));
+    out[0] |= prefix;
+    return n;
+}
+
+/* --- ZapretDroid --quic-split: a client Initial with its ClientHello in two CRYPTO frames --- */
+
+int quic_split_initial(uint8_t *pkt, size_t *plen, size_t cap, int marker, long offset)
+{
+    size_t len = *plen;
+    static const uint8_t salt_v1[20] = {
+        0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17,
+        0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a,
+    };
+    static const uint8_t salt_v2[20] = {
+        0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93,
+        0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb, 0xf9, 0xbd, 0x2e, 0xd9,
+    };
+    if (len < 7 || (pkt[0] & 0xc0) != 0xc0) return 0;
+    uint32_t ver = (uint32_t) pkt[1] << 24 | (uint32_t) pkt[2] << 16 | (uint32_t) pkt[3] << 8 | pkt[4];
+    bool v2 = ver == 0x6b3343cf;
+    if (ver != 1 && !v2) return 0;
+    if (((pkt[0] >> 4) & 3) != (v2 ? 1 : 0)) return 0;
+
+    size_t pos = 5;
+    uint8_t dcid_len = pkt[pos++];
+    if (dcid_len > 20 || pos + dcid_len + 1 > len) return 0;
+    const uint8_t *dcid = pkt + pos;
+    pos += dcid_len;
+    uint8_t scid_len = pkt[pos++];
+    if (scid_len > 20 || pos + scid_len > len) return 0;
+    pos += scid_len;
+    uint64_t token_len, length;
+    if (!read_varint(pkt, len, &pos, &token_len) || token_len > len - pos) return 0;
+    pos += token_len;
+    size_t lpos = pos;
+    if (!read_varint(pkt, len, &pos, &length) || length > len - pos || length < 20) return 0;
+    size_t pn_off = pos;
+    size_t lsz = pn_off - lpos; // the Length field's encoding, kept when it grows
+    if (pn_off + 4 + 16 > len) return 0;
+
+    uint8_t initial[32], client[32], key[16], iv[12], hp[16], hrk[176], rk[176], mask[16];
+    hmac_sha256(v2 ? salt_v2 : salt_v1, 20, dcid, dcid_len, initial);
+    expand_label(initial, "client in", client, 32);
+    expand_label(client, v2 ? "quicv2 key" : "quic key", key, 16);
+    expand_label(client, v2 ? "quicv2 iv" : "quic iv", iv, 12);
+    expand_label(client, v2 ? "quicv2 hp" : "quic hp", hp, 16);
+    aes128_expand(hp, hrk);
+    aes128_expand(key, rk);
+
+    aes128_encrypt(hrk, pkt + pn_off + 4, mask);
+    uint8_t first = pkt[0] ^ (mask[0] & 0x0f);
+    size_t pn_len = (first & 3) + 1;
+    if (length < pn_len + 16) return 0;
+    size_t clen = length - pn_len - 16;
+    if (clen > 1500) return 0;
+
+    // The header as the AEAD saw it: first byte and packet number without protection.
+    uint8_t aad[64 + 2 * 20 + 1500];
+    size_t alen = pn_off + pn_len;
+    if (alen > sizeof(aad)) return 0;
+    memcpy(aad, pkt, alen);
+    aad[0] = first;
+    uint64_t pn = 0;
+    for (size_t i = 0; i < pn_len; i++) {
+        aad[pn_off + i] = pkt[pn_off + i] ^ mask[1 + i];
+        pn = pn << 8 | aad[pn_off + i];
+    }
+    uint8_t nonce[12];
+    memcpy(nonce, iv, 12);
+    for (int i = 0; i < 8; i++) nonce[11 - i] ^= (uint8_t) (pn >> (8 * i));
+
+    uint8_t *ct = pkt + pn_off + pn_len;
+    uint8_t tag[16];
+    // Only a packet whose tag checks out was read right; anything else goes as it came.
+    gcm_tag(rk, nonce, aad, alen, ct, clen, tag);
+    if (memcmp(tag, ct + clen, 16)) return 0;
+
+    uint8_t plain[1500];
+    gcm_ctr(rk, nonce, ct, plain, clen);
+
+    // The ClientHello from offset 0, in CRYPTO frames with only PADDING and PING besides.
+    uint8_t ch[1500];
+    size_t ch_len = 0;
+    bool seen[1500] = { 0 };
+    pos = 0;
+    while (pos < clen) {
+        uint64_t type, off, flen;
+        if (!read_varint(plain, clen, &pos, &type)) return 0;
+        if (type == 0x00 || type == 0x01) continue;
+        if (type != 0x06) return 0;
+        if (!read_varint(plain, clen, &pos, &off) || !read_varint(plain, clen, &pos, &flen)
+                || flen > clen - pos || off > sizeof(ch) || flen > sizeof(ch) - off) return 0;
+        for (uint64_t i = 0; i < flen; i++) {
+            ch[off + i] = plain[pos + i];
+            seen[off + i] = 1;
+        }
+        if (off + flen > ch_len) ch_len = off + flen;
+        pos += flen;
+    }
+    for (size_t i = 0; i < ch_len; i++) {
+        if (!seen[i]) return 0; // a later part of the stream, or a hole
+    }
+    if (ch_len < 4 || ch[0] != 1) return 0;
+
+    // The split point in the ClientHello: a marker as for TLS, given a record header to read.
+    long split = offset;
+    if (marker) {
+        uint8_t rec[5 + 1500];
+        rec[0] = 0x16; rec[1] = 3; rec[2] = 1;
+        rec[3] = (uint8_t) (ch_len >> 8); rec[4] = (uint8_t) ch_len;
+        memcpy(rec + 5, ch, ch_len);
+        long at = tpws_marker_pos(marker, (const char *) rec, 5 + ch_len);
+        if (at < 5) return 0;
+        split = at - 5 + offset;
+    }
+    if (split <= 0 || (size_t) split >= ch_len) return 0;
+
+    // The second part first, then the first; the rest of the packet is PADDING. A packet filled
+    // to the last byte (no PADDING to take the second frame header from) grows by those bytes.
+    size_t a = (size_t) split, b = ch_len - a;
+    size_t need = 1 + varint_size(a) + varint_size(b) + b + 1 + 1 + varint_size(a) + a;
+    size_t nclen = need > clen ? need : clen, grow = nclen - clen;
+    uint64_t nlength = length + grow;
+    if (grow && (len + grow > cap || len + grow > QUIC_SPLIT_MAX || nlength >= ((uint64_t) 1 << (8 * lsz - 2)))) {
+        return 0;
+    }
+    uint8_t np[1500 + 64];
+    if (nclen > sizeof(np)) return 0;
+    size_t w = 0;
+    np[w++] = 0x06;
+    w += put_varint(np + w, a);
+    w += put_varint(np + w, b);
+    memcpy(np + w, ch + a, b);
+    w += b;
+    np[w++] = 0x06;
+    np[w++] = 0;
+    w += put_varint(np + w, a);
+    memcpy(np + w, ch, a);
+    w += a;
+    memset(np + w, 0, nclen - w);
+
+    if (grow) {
+        // Packets coalesced after this one move along; the Length field keeps its size.
+        size_t tail = pn_off + pn_len + clen + 16;
+        memmove(pkt + tail + grow, pkt + tail, len - tail);
+        uint8_t prefix = lsz == 1 ? 0 : lsz == 2 ? 0x40 : lsz == 4 ? 0x80 : 0xc0;
+        for (size_t i = 0; i < lsz; i++) {
+            pkt[lpos + i] = aad[lpos + i] = (uint8_t) (nlength >> (8 * (lsz - 1 - i)));
+        }
+        pkt[lpos] |= prefix;
+        aad[lpos] |= prefix;
+        *plen = len + grow;
+    }
+    gcm_ctr(rk, nonce, np, ct, nclen);
+    gcm_tag(rk, nonce, aad, alen, ct, nclen, ct + nclen);
+    // Header protection again: its sample is the new ciphertext.
+    aes128_encrypt(hrk, pkt + pn_off + 4, mask);
+    pkt[0] = first ^ (mask[0] & 0x0f);
+    for (size_t i = 0; i < pn_len; i++) pkt[pn_off + i] = aad[pn_off + i] ^ mask[1 + i];
+    return 1;
 }
 
 int quic_crypto_sni(const struct quic_crypto *qc, char *out, size_t size)

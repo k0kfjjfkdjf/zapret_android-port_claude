@@ -8,13 +8,7 @@
 
 #include "../../main/cpp/engine/udphost.c"
 #include "packets.h"
-
-static size_t put_varint(uint8_t *out, uint64_t v)
-{
-    if (v < 64) { out[0] = v; return 1; }
-    if (v < 16384) { out[0] = 0x40 | v >> 8; out[1] = v; return 2; }
-    out[0] = 0x80 | v >> 24; out[1] = v >> 16; out[2] = v >> 8; out[3] = v; return 4;
-}
+#include "tpws.h"
 
 /* A client Initial (v1) carrying [plain] as its frames, packet number [pn]. */
 static size_t make_initial(uint8_t *pkt, size_t cap, const uint8_t *dcid, uint8_t dlen,
@@ -46,19 +40,14 @@ static size_t make_initial(uint8_t *pkt, size_t cap, const uint8_t *dcid, uint8_
     expand_label(client, "quic iv", iv, 12);
     expand_label(client, "quic hp", hp, 16);
 
-    uint8_t ctr[16], stream[16];
-    memcpy(ctr, iv, 12);
-    ctr[11] ^= pn;
+    uint8_t nonce[12];
+    memcpy(nonce, iv, 12);
+    nonce[11] ^= pn;
     aes128_expand(key, rk);
-    uint32_t counter = 2;
-    for (size_t off = 0; off < plen; off += 16) {
-        ctr[12] = counter >> 24; ctr[13] = counter >> 16; ctr[14] = counter >> 8; ctr[15] = counter;
-        counter++;
-        aes128_encrypt(rk, ctr, stream);
-        for (size_t i = 0; i < 16 && off + i < plen; i++) pkt[pos + i] = plain[off + i] ^ stream[i];
-    }
+    gcm_ctr(rk, nonce, plain, pkt + pos, plen);
+    // A real tag (the header unprotected as additional data): --quic-split checks it.
+    gcm_tag(rk, nonce, pkt, pn_off + 1, pkt + pos, plen, pkt + pos + plen);
     pos += plen;
-    memset(pkt + pos, 0, 16); // tag, not checked
     pos += 16;
     // Header protection over the sample 4 bytes after the packet number's start.
     aes128_expand(hp, rk);
@@ -92,6 +81,22 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             size_t half = (mode >> 2) & 1 ? size / 2 : size;
             size_t n = make_initial(pkt, 1500, dcid, 8, data, half, 0);
             if (n) quic_add_initial(qc, pkt, n);
+            // --quic-split on the same packet, in a buffer with room to grow by a few bytes.
+            if (n) {
+                uint8_t *copy = malloc(n + 8);
+                if (copy) {
+                    memcpy(copy, pkt, n);
+                    size_t m = n;
+                    int marker = (mode >> 3) % (MK_SNIEXT + 1);
+                    if (quic_split_initial(copy, &m, n + (mode & 8), marker, (long) (mode >> 5) - 2)) {
+                        // The result must decrypt with a valid tag again: a split of it succeeds
+                        // or is refused for room, never reads past it.
+                        size_t k = m;
+                        quic_split_initial(copy, &k, m, 0, 1);
+                    }
+                    free(copy);
+                }
+            }
             if (half < size) {
                 n = make_initial(pkt, 1500, dcid, 8, data + half, size - half, 1);
                 if (n) quic_add_initial(qc, pkt, n);

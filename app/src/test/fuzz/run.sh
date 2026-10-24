@@ -31,7 +31,9 @@ for t in $targets; do
     case $t in
         fuzz_tls) cp "$seeds"/tls_clienthello_*.bin "$corpus"/ ;;
         fuzz_http) cp "$seeds"/http_*.bin "$corpus"/ ;;
-        fuzz_quic_dns) cp "$seeds"/quic_initial_*.bin "$seeds"/dns.bin "$corpus"/ ;;
+        # Plus decrypted Initials (mode byte, CRYPTO frame with a real ClientHello, padding)
+        # that reach --quic-split's rewriting rather than its early checks.
+        fuzz_quic_dns) cp "$seeds"/quic_initial_*.bin "$seeds"/dns.bin "$here"/seeds/quic_split/* "$corpus"/ ;;
     esac
     echo "== $t (${secs}s)"
     "$out/$t" -max_total_time="$secs" -max_len=4096 -artifact_prefix="$out/crash-$t-" \

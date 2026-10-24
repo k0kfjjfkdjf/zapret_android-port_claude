@@ -30,6 +30,19 @@ struct quic_crypto {
 /* Decrypts a client Initial and adds its CRYPTO frames; false if it is not one. */
 bool quic_add_initial(struct quic_crypto *qc, const uint8_t *pkt, size_t len);
 
+/*
+ * ZapretDroid --quic-split: rewrites a client's first QUIC Initial (v1, v2) in place so that its
+ * ClientHello comes in two CRYPTO frames, the part from the split point first. The split point
+ * is a tpws marker in the ClientHello (marker 0: none) plus [offset]. Same packet number, tag
+ * and header protection computed again; a packet without PADDING to spare grows by the second
+ * frame's header (*len, within [cap] and QUIC_SPLIT_MAX). 1 if done, 0 if the packet is left as
+ * it was (not such an Initial, a tag that does not check out, no room).
+ */
+int quic_split_initial(uint8_t *pkt, size_t *len, size_t cap, int marker, long offset);
+
+/* A datagram grown by --quic-split stays within this size (1500-byte MTU, IPv4 and UDP headers). */
+#define QUIC_SPLIT_MAX 1472
+
 /* The SNI of the ClientHello collected so far, lower case: its length, or 0 if not (yet) there. */
 int quic_crypto_sni(const struct quic_crypto *qc, char *out, size_t size);
 

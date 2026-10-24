@@ -24,6 +24,7 @@
 #define OPT_APPS 0x105
 #define OPT_SLOT 0x106
 #define OPT_AUTO_CACHE 0x107
+#define OPT_QUIC_SPLIT 0x108
 
 #ifndef _WIN32
     #include <arpa/inet.h>
@@ -173,6 +174,7 @@ static const char help_text[] = {
     "    -G, --udp-proto-fake <p>:<f>  Fake for quic|discord|stun flows: file, dir or :str\n"
     "    --slot <name>             Empty host list filled at run time (slot_assign)\n"
     "    --auto-cache <file>       Keep what --auto learnt (address -> group) across restarts\n"
+    "    --quic-split <marker|N>   QUIC Initial: ClientHello in two CRYPTO frames, second part first\n"
     "    -k, --conn-log            Log every connection, UDP flow and detected block\n"
     "    -J, --autohost-log <file> Append blocked hosts to the file (needs an --auto group)\n"
     #ifdef __linux__
@@ -221,6 +223,7 @@ const struct option options[] = {
     {"apps",          1, 0, OPT_APPS},
     {"slot",          1, 0, OPT_SLOT},
     {"auto-cache",    1, 0, OPT_AUTO_CACHE},
+    {"quic-split",    1, 0, OPT_QUIC_SPLIT},
     {"udp-proto-fake", 1, 0, 'G'},
     {"udp-desync",    1, 0, 'z'},
     {"proto",         1, 0, 'K'},
@@ -1003,6 +1006,28 @@ int parse_args(int argc, char **argv)
         case OPT_AUTO_CACHE:
             params.auto_cache = optarg;
             break;
+
+        case OPT_QUIC_SPLIT: {
+            int marker = 0;
+            long off = 0;
+            if (isalpha((unsigned char) *optarg)) {
+                if (tpws_parse_marker(optarg, &marker, &off)) {
+                    invalid = 1;
+                    break;
+                }
+            }
+            else {
+                off = strtol(optarg, &end, 0);
+                if (*end || off <= 0 || off > 4096) {
+                    invalid = 1;
+                    break;
+                }
+            }
+            dp->quic_split = 1;
+            dp->quic_split_marker = marker;
+            dp->quic_split_off = off;
+            break;
+        }
 
         case OPT_SLOT:
             // An empty host list the app fills at run time; not together with --hosts.

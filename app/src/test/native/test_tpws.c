@@ -245,6 +245,71 @@ static void test_quic_sni(const char *fakes)
     CHECK(!quic_add_initial(&qc, buf, n));
 }
 
+/* --quic-split: real Initials are split only when their tag checks out (so the GCM code agrees
+ * with the clients that wrote them); the result carries the same ClientHello, same size, a valid
+ * tag (a second split accepts it), and the SNI is cut where the marker says. */
+static void test_quic_split(const char *fakes)
+{
+    struct { const char *file, *sni; int grows; } cases[] = {
+        { "quic_initial_www_google_com.bin", "www.google.com", 0 },
+        { "quic_initial_facebook_com.bin", "facebook.com", 0 },
+        { "quic_initial_rutracker_org.bin", "rutracker.org", 0 },
+        { "quic2_example_com.bin", "example.com", 0 },
+        // Filled with CRYPTO to the last byte: the packet grows by the second frame's header.
+        { "quic_initial_facebook_com_quiche.bin", "facebook.com", 1 },
+        { "quic_initial_vk_com.bin", "vk.com", 1 },
+    };
+    static struct quic_crypto before, after;
+    uint8_t buf[4096], orig[4096];
+    char sni[256];
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        size_t n0 = read_fake(fakes, cases[i].file, buf, sizeof(buf));
+        CHECK(n0 > 0);
+        if (!n0) continue;
+        memcpy(orig, buf, n0);
+        memset(&before, 0, sizeof(before));
+        CHECK(quic_add_initial(&before, orig, n0));
+        size_t n = n0;
+        int split = quic_split_initial(buf, &n, sizeof(buf), MK_MIDSLD, 0);
+        if (!split) fprintf(stderr, "quic split refused %s\n", cases[i].file);
+        CHECK_EQ(split, 1);
+        CHECK(cases[i].grows ? n > n0 && n <= n0 + 8 : n == n0);
+        CHECK(n <= QUIC_SPLIT_MAX || n == n0);
+        CHECK(memcmp(buf, orig, n0) != 0);
+        memset(&after, 0, sizeof(after));
+        CHECK(quic_add_initial(&after, buf, n));
+        CHECK(!memcmp(before.have, after.have, sizeof(before.have)));
+        CHECK(!memcmp(before.data, after.data, sizeof(before.data)));
+        char sni0[256];
+        CHECK_EQ(quic_crypto_sni(&after, sni, sizeof(sni)), (long) quic_crypto_sni(&before, sni0, sizeof(sni0)));
+        CHECK(!strcmp(sni, sni0) && strstr(sni, cases[i].sni) != 0);
+        // The rewritten packet has a valid tag: it can be split again (at a byte offset).
+        size_t m = n;
+        CHECK_EQ(quic_split_initial(buf, &m, sizeof(buf), 0, 10), 1);
+        // No room to grow: left alone.
+        if (cases[i].grows) {
+            memcpy(buf, orig, n0);
+            n = n0;
+            CHECK_EQ(quic_split_initial(buf, &n, n0, MK_MIDSLD, 0), 0);
+            CHECK(n == n0 && !memcmp(buf, orig, n0));
+        }
+        // A damaged ciphertext (its tag no longer checks out): left alone.
+        memcpy(buf, orig, n0);
+        n = n0;
+        buf[200] ^= 1; // inside the Initial (some datagrams carry more after it)
+        CHECK_EQ(quic_split_initial(buf, &n, sizeof(buf), MK_MIDSLD, 0), 0);
+        buf[200] ^= 1; // inside the Initial (some datagrams carry more after it)
+        CHECK(n == n0 && !memcmp(buf, orig, n0));
+    }
+    // The second Initial of a split ClientHello (no offset 0) and non-Initials are left alone.
+    size_t n = read_fake(fakes, "quic_initial_rutracker_org_kyber_2.bin", buf, sizeof(buf));
+    if (n) CHECK_EQ(quic_split_initial(buf, &n, sizeof(buf), MK_MIDSLD, 0), 0);
+    n = read_fake(fakes, "quic_short_header.bin", buf, sizeof(buf));
+    CHECK_EQ(quic_split_initial(buf, &n, sizeof(buf), MK_MIDSLD, 0), 0);
+    n = read_fake(fakes, "stun.bin", buf, sizeof(buf));
+    CHECK_EQ(quic_split_initial(buf, &n, sizeof(buf), MK_MIDSLD, 0), 0);
+}
+
 /* DNS answers name the addresses: the question's name, also through a CNAME. */
 static void test_dns_cache(void)
 {
@@ -483,6 +548,7 @@ int main(int argc, char **argv)
     test_http_parse();
     if (argc > 2) test_udp_proto(argv[2]);
     if (argc > 2) test_quic_sni(argv[2]);
+    if (argc > 2) test_quic_split(argv[2]);
     test_dns_cache();
     test_early_stop();
     test_dns_options();
