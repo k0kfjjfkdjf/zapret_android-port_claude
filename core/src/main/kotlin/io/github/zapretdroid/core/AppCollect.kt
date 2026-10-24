@@ -13,7 +13,7 @@ object AppCollect {
 
     private val CONN = Regex("""\bconn \d+: (\S+) -> ([0-9a-fA-F:.\[\]]+):(\d+), """)
     private val UDP = Regex("""\budp \d+: -> ([0-9a-fA-F:.\[\]]+):(\d+), (\w+), (?:host (\S+) \(([^)]*)\)|group)""")
-    private val BLOCK = Regex("""\bconn \d+: block detected \(\w+\) on (\S+) """)
+    private val BLOCK = Regex("""\b(?:conn|udp) \d+: block detected \(\w+\) on (\S+) """)
     private val IP = Regex("""^[0-9.]+$|:""")
 
     /** Parses the journal lines of one session (after [MARKER]); counts connections per host. */

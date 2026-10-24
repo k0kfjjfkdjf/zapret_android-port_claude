@@ -64,6 +64,8 @@ extern int (*owner_uid_hook)(int proto, const char *src_ip, int src_port, const 
 void auto_cache_load(void);
 void auto_cache_save(bool force);
 void auto_cache_changed(void);
+/* How long the event loop may wait before a pending save is due; -1: none pending. */
+int auto_cache_wait_ms(void);
 
 int on_timeout(struct poolhd *pool, struct eval *val);
 

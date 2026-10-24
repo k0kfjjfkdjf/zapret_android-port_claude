@@ -198,8 +198,8 @@ void load_cache(struct mphdr *hdr, FILE *in, struct desync_params *dp)
             return;
         }
         // ZapretDroid: a short line left cache_time and host unset, and a negative or too
-        // long bit length went into the key as it was.
-        if (c != 5 || bitlen < 0) {
+        // long bit length went into the key as it was (or overflowed when added to below).
+        if (c != 5 || bitlen < 0 || bitlen > 128) {
             continue;
         }
         struct cache_key key = { 0 };
@@ -290,6 +290,7 @@ void dump_cache_all(struct mphdr *hdr, FILE *out, char tag)
 int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
         struct desync_params *(*group)(int id))
 {
+    uint64_t full_mask = groups >= 64 ? ~(uint64_t) 0 : ((uint64_t) 1 << groups) - 1;
     int version = 0, n = -1;
     if (fscanf(in, "zdcache %d %d\n", &version, &n) != 2 || version != 1) {
         return -1;
@@ -316,7 +317,9 @@ int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
         if (!hdr) {
             continue;
         }
-        if (!dp || bitlen < 0 || port < 0 || port > 0xffff) {
+        // A mask of every group is never saved (no group left resets it): a damaged line.
+        if (!dp || bitlen < 0 || bitlen > 128 || port < 0 || port > 0xffff
+                || ((uint64_t) mask & full_mask) == full_mask) {
             continue;
         }
         struct cache_key key = { 0 };
@@ -352,7 +355,8 @@ int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
         e->extra_len = 0;
         e->time = (time_t) cache_time;
         e->dp = dp;
-        e->dp_mask = (uint64_t) mask;
+        // Only bits of existing groups: find_dp ends when the mask is full.
+        e->dp_mask = (uint64_t) mask & full_mask;
         e->detect = detect;
         size_t hl = strlen(host);
         if (hl > 1 || (hl == 1 && host[0] != '-')) {

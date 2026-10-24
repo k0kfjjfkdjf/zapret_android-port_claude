@@ -39,4 +39,15 @@ class AppCollectTest {
         assertEquals(mapOf("c-fra06.discord.media" to 1), r.domains)
         assertEquals(mapOf("66.22.196.10:50003 other" to 1, "66.22.196.11:50004 other" to 1, "66.22.196.12:50005 discord" to 1), r.udp)
     }
+
+    @Test
+    fun udpBlocksCount() {
+        val r = AppCollect.parse(
+            listOf(
+                "10-24 18:01:00.000 vpn | collect mode: only com.google.android.youtube",
+                "10-24 18:01:02.000 byedpi | udp 6: block detected (udp) on www.youtube.com (142.250.1.1) with group 0, trying group 1",
+            ),
+        )
+        assertEquals(mapOf("www.youtube.com" to 1), r.blocks)
+    }
 }

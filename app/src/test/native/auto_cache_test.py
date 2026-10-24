@@ -164,6 +164,44 @@ def main():
     log = e.stop()
     assert "auto cache: 0 address(es) loaded" in log, log
     print("damaged auto cache lines skipped: OK")
+
+    # Bits of groups that do not exist (the mask said every group was tried, and more) and a bit
+    # length that overflowed: the engine still serves and stops (it used to spin for ever).
+    resets[0] = 0
+    with open(cache, "w") as f:
+        f.write("zdcache 1 2\nt 1 ffffffffffffffff 0 127.0.0.1 32 %d %d -\n"
+                "t 1 2 0 127.0.0.1 2147483647 %d %d -\n" % (dst_port, int(time.time()), dst_port, int(time.time())))
+    e = Engine(binary, strategy)
+    request(e.port, dst_port)
+    time.sleep(0.3)
+    log = e.stop()
+    assert "auto cache: 0 address(es) loaded" in log, log
+    print("damaged mask and bit length: OK")
+
+    # A block soon after the start (within the save interval) is saved when due, with no other
+    # event, before the process is killed (not stopped).
+    resets[0] = 1
+    with open(cache, "w") as f:
+        f.write("zdcache 1 2\n")  # loaded at the start: the next save waits for the interval
+    e = Engine(binary, strategy)
+    t0 = time.time()
+    request(e.port, dst_port)
+    deadline = t0 + 20
+    saved = False
+    while time.time() < deadline:
+        try:
+            with open(cache) as f:
+                if re.search(r"^t 1 \w+ \d+ 127\.0\.0\.1 32 %d " % dst_port, f.read(), re.M):
+                    saved = True
+                    break
+        except FileNotFoundError:
+            pass
+        time.sleep(0.5)
+    e.proc.kill()
+    e.proc.wait(5)
+    assert saved, "the block was not saved while the engine was idle"
+    assert time.time() - t0 > 10, "saved before the interval"
+    print(f"pending save done while idle after {time.time() - t0:.0f} s: OK")
     srv.close()
 
 

@@ -352,20 +352,26 @@ void remove_timer(struct poolhd *pool, struct eval *val)
 }
 
 
+/* ZapretDroid: the --auto cache is saved when due even if no other event comes (see loop_event). */
+int auto_cache_wait_ms(void);
+void auto_cache_save(bool force);
+
 struct eval *next_event_tv(struct poolhd *pool, int *offs, int *type)
 {
+    int save_ms = auto_cache_wait_ms();
     if (!pool->tv_start) {
-        return next_event(pool, offs, type, -1);
+        return next_event(pool, offs, type, save_ms);
     }
     struct eval *val = 0;
     
     int ms = pool->tv_start->tv_ms - time_ms();
     if (ms > 0) {
-        val = next_event(pool, offs, type, ms);
+        val = next_event(pool, offs, type, save_ms >= 0 && save_ms < ms ? save_ms : ms);
     }
     else *type = POLLTIMEOUT;
     
-    if (!val && pool->tv_start && *type == POLLTIMEOUT) {
+    // Only a timer that is due fires: the wait may have ended for the cache instead.
+    if (!val && pool->tv_start && *type == POLLTIMEOUT && pool->tv_start->tv_ms <= time_ms()) {
         val = pool->tv_start;
         remove_timer(pool, val);
     }
@@ -378,8 +384,13 @@ void loop_event(struct poolhd *pool)
     int i = -1, etype = -1;
     
     while (!pool->brk) {
+        etype = 0;
         struct eval *val = next_event_tv(pool, &i, &etype);
         if (!val) {
+            if (etype == POLLTIMEOUT) {
+                auto_cache_save(0); // the wait ended for a pending save
+                continue;
+            }
             if (get_e() == EINTR) 
                 continue;
             uniperror("(e)poll");

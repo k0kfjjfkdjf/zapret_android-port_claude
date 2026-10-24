@@ -149,10 +149,12 @@ struct eval {
     // the group came from the cache or no group is left.
     unsigned int udp_first_in;
     long long udp_group_ms;
+    struct desync_params *udp_base;
     uint64_t udp_auto_mask;
     char udp_host[64];
     bool udp_auto_cached;
     bool udp_auto_done;
+    bool udp_auto_moved; // moved by a detected block: the SNI no longer chooses the group
     // ZapretDroid --apps: the address the client's app connected from, given by
     // hev-socks5-tunnel as the SOCKS5 user name, and the app's uid once looked up.
     union sockaddr_u app_src;

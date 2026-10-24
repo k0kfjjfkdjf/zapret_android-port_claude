@@ -16,12 +16,28 @@ object AutoCache {
     /** Files kept besides the current one; older ones are deleted. */
     const val KEEP = 8
 
-    /** Whether [args] (the engine's, resolved) have a group that --auto switches to. */
-    fun hasAuto(args: List<String>): Boolean = args.any { arg ->
-        arg == "-A" || arg == "--auto" || arg.startsWith("--auto=") ||
-            // "-Atorst", but not other short options clustered after a value-less one
-            (arg.startsWith("-A") && arg.length > 2 && !arg.startsWith("--"))
+    /**
+     * Whether [args] (the engine's, resolved) have a group that --auto switches to after a
+     * detected block: torst, redirect, ssl_err, conn or udp. "--auto=none" only starts a group.
+     */
+    fun hasAuto(args: List<String>): Boolean {
+        var i = 0
+        while (i < args.size) {
+            val arg = args[i]
+            val value = when {
+                arg == "-A" || arg == "--auto" -> args.getOrNull(++i)
+                arg.startsWith("--auto=") -> arg.removePrefix("--auto=")
+                arg.startsWith("-A") && !arg.startsWith("--") -> arg.substring(2)
+                else -> null
+            }
+            // The engine reads each comma-separated item by its first letter (p= is a priority).
+            if (value != null && value.split(',').any { it.firstOrNull() in DETECTING }) return true
+            i++
+        }
+        return false
     }
+
+    private val DETECTING = setOf('t', 'r', 's', 'c', 'u')
 
     /** The file name for [args] on [network] ("wifi", "mobile", "other"). */
     fun fileName(args: List<String>, network: String): String {
@@ -44,10 +60,14 @@ object AutoCache {
         return listOf("--auto-cache", file.absolutePath)
     }
 
-    /** Removes everything in [dir] but [current] and the [KEEP] newest other cache files. */
-    fun prune(dir: File, current: File) {
+    /**
+     * Removes all but [current] and the [KEEP] newest other cache files, and temporary files
+     * left by a killed engine. A recent temporary file may be an engine writing right now (the
+     * one a restart replaces saves at its exit): it stays.
+     */
+    fun prune(dir: File, current: File, now: Long = System.currentTimeMillis()) {
         val files = dir.listFiles().orEmpty().filter { it.isFile && it != current }
-        files.filter { it.name.endsWith(".tmp") }.forEach { it.delete() }
+        files.filter { it.name.endsWith(".tmp") && now - it.lastModified() > 60_000 }.forEach { it.delete() }
         files.filter { it.name.endsWith(".cache") }
             .sortedByDescending { it.lastModified() }
             .drop(KEEP)

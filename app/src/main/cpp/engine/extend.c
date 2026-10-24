@@ -30,6 +30,7 @@
 #include "desync.h"
 #include "packets.h"
 #include "udphost.h"
+#include <limits.h>
 
 static bool dest_equ(const union sockaddr_u *a, const union sockaddr_u *b);
 
@@ -823,7 +824,8 @@ static struct desync_params *find_dp(struct eval *client,
     
     for (; ; dp = dp->next) {
         if (!dp) dp = params.dp;
-        if (client->dp_mask == params.dp_full_mask) {
+        // ZapretDroid: bits of no group (a damaged cache file) must not keep this from ending.
+        if ((client->dp_mask & params.dp_full_mask) == params.dp_full_mask) {
             break;
         }
         if (!(dp->bit & client->dp_mask) 
@@ -1445,7 +1447,10 @@ bool ups_is_relay(struct eval *remote, const union sockaddr_u *from)
 /* ZapretDroid --auto=udp: a flow's first destination that does not answer within UDP_AUTO_MS,
  * after at least UDP_AUTO_PKTS datagrams of its current group, moves to the next group with
  * "udp" detection (QUIC repeats its Initial, Discord its IP discovery: the repeats then carry
- * the new group's desync). The choice is kept in the UDP cache for later flows. */
+ * the new group's desync). As for TCP, the groups tried are those right after the group the
+ * flow got by the usual rules (its base), up to the first group without detection: a flow of
+ * an excluded host, an app routed directly or a group sent through a proxy is never moved
+ * into another part of the strategy. The choice is kept in the UDP cache for later flows. */
 #define UDP_AUTO_MS 1000
 #define UDP_AUTO_PKTS 2
 
@@ -1457,41 +1462,66 @@ void udp_reply_from(struct eval *remote, const union sockaddr_u *src)
 }
 
 
+/* Whether [dp] may carry this flow: address and port, app, host list. */
+static bool udp_group_fits(struct desync_params *dp, struct eval *owner, struct eval *val,
+        const union sockaddr_u *dst)
+{
+    if (!check_l34(dp, SOCK_DGRAM, dst) || !check_app(dp, owner, IPPROTO_UDP, dst)) {
+        return 0;
+    }
+    if (dp->hosts) {
+        const char *host = val->udp_host[0] ? val->udp_host : 0;
+        if (!(host ? host_in(dp->hosts, host, strlen(host)) : names_in(dp->hosts, dst))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+
+/* The next untried group with udp detection in the chain after the flow's base, or null. */
 static struct desync_params *udp_auto_next(struct eval *owner, struct eval *val,
         const union sockaddr_u *dst)
 {
-    const char *host = val->udp_host[0] ? val->udp_host : 0;
-    for (struct desync_params *dp = params.dp; dp; dp = dp->next) {
-        if ((dp->bit & val->udp_auto_mask) || !(dp->detect & DETECT_UDP)) {
+    struct desync_params *base = val->udp_base;
+    if (!base || base->out_type) {
+        return 0;
+    }
+    for (struct desync_params *dp = base->next; dp && dp->detect; dp = dp->next) {
+        if ((dp->bit & val->udp_auto_mask) || !(dp->detect & DETECT_UDP) || dp->out_type) {
             continue;
         }
-        if (!check_l34(dp, SOCK_DGRAM, dst) || !check_app(dp, owner, IPPROTO_UDP, dst)) {
-            continue;
+        if (udp_group_fits(dp, owner, val, dst)) {
+            return dp;
         }
-        if (dp->hosts && !(host ? host_in(dp->hosts, host, strlen(host)) : names_in(dp->hosts, dst))) {
-            continue;
-        }
-        return dp;
     }
     return 0;
 }
 
 
-/* The cached group of a new flow to [dst], if it still applies to this flow. */
+/* The cached group of a new flow to [dst], when it is in the chain of the flow's base. */
 static struct desync_params *udp_auto_cached(struct eval *owner, struct eval *val,
         const union sockaddr_u *dst)
 {
-    if (!params.udp_auto || !params.udp_cache) {
+    struct desync_params *base = val->udp_base;
+    if (!params.udp_auto || !params.udp_cache || !base || base->out_type) {
         return 0;
     }
     struct elem_i *e = cache_get_in(params.udp_cache, dst);
-    if (!e || !e->dp || !(e->dp->detect & DETECT_UDP)
-            || !check_l34(e->dp, SOCK_DGRAM, dst) || !check_app(e->dp, owner, IPPROTO_UDP, dst)) {
+    if (!e || !e->dp) {
         return 0;
     }
-    val->udp_auto_mask = e->dp_mask;
-    val->udp_auto_cached = 1;
-    return e->dp;
+    for (struct desync_params *dp = base->next; dp && dp->detect; dp = dp->next) {
+        if (dp == e->dp) {
+            if (!(dp->detect & DETECT_UDP) || dp->out_type || !udp_group_fits(dp, owner, val, dst)) {
+                return 0;
+            }
+            val->udp_auto_mask = e->dp_mask & params.dp_full_mask;
+            val->udp_auto_cached = 1;
+            return dp;
+        }
+    }
+    return 0;
 }
 
 
@@ -1503,17 +1533,39 @@ static void udp_set_host(struct eval *val, const char *host)
 }
 
 
+/* The group for a flow whose base is [base]: the cached one of its chain, else the base. */
+static struct desync_params *udp_start_group(struct eval *owner, struct eval *val,
+        const union sockaddr_u *dst, struct desync_params *base)
+{
+    val->udp_base = base;
+    val->udp_auto_mask = 0;
+    val->udp_auto_cached = 0;
+    struct desync_params *cached = udp_auto_cached(owner, val, dst);
+    return cached ? cached : base;
+}
+
+
 /* Called before a datagram to the first destination; returns the group for it. */
 static struct desync_params *udp_auto_check(struct eval *owner, struct eval *val,
         const union sockaddr_u *dst, struct desync_params *dp, unsigned int dindex, long long now)
 {
     if (!params.udp_auto || val->udp_auto_done || val->udp_first_in || dp->out_type
-            || ntohs(dst->in.sin_port) == 53
             || dindex < UDP_AUTO_PKTS || now - val->udp_group_ms < UDP_AUTO_MS) {
+        return dp;
+    }
+    // Only protocols whose client waits for an answer: one-way UDP (RTP, telemetry) is
+    // not a block.
+    if (val->udp_proto == UDP_PROTO_UNKNOWN || ntohs(dst->in.sin_port) == 53) {
+        val->udp_auto_done = 1;
         return dp;
     }
     val->udp_auto_mask |= dp->bit;
     struct desync_params *next = udp_auto_next(owner, val, dst);
+    if (!next && !val->udp_auto_cached && dp == val->udp_base) {
+        // No udp group follows this flow's group: nothing to try, nothing to report.
+        val->udp_auto_done = 1;
+        return dp;
+    }
     const char *h = val->udp_host[0] ? val->udp_host : "-";
     autohost_record(val->udp_host, strlen(val->udp_host), DETECT_UDP);
     dp->fail_count++;
@@ -1546,9 +1598,9 @@ static struct desync_params *udp_auto_check(struct eval *owner, struct eval *val
         auto_cache_changed();
     }
     val->udp_group_ms = now;
+    val->udp_auto_moved = 1;
     return next;
 }
-
 
 ssize_t udp_hook(struct poolhd *pool, struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst)
@@ -1655,12 +1707,13 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
         char host[256];
         const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host), 1);
         if (source) udp_set_host(val, host);
-        // ZapretDroid --auto=udp: a group that got through to this address before comes first.
-        if (!(dp = udp_auto_cached(pair, val, dst))
-                && !(dp = udp_find_dp(pair, dst, source ? host : 0, is_dns(source)))) {
+        struct desync_params *base = udp_find_dp(pair, dst, source ? host : 0, is_dns(source));
+        if (!base) {
             return UDP_NO_GROUP;
         }
-        pair->dp = dp;
+        // ZapretDroid --auto=udp: a group of the base's chain that got through to this address
+        // before comes first.
+        pair->dp = dp = udp_start_group(pair, val, dst, base);
         val->udp_group_ms = now;
         if (params.conn_log) {
             INIT_ADDR_STR((*dst));
@@ -1681,8 +1734,11 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
             val->udp_quic = 0;
         }
         if (len) udp_set_host(val, host);
-        // A group from the auto cache stays: it was chosen for this address after a block.
-        struct desync_params *found = len && !val->udp_auto_cached ? udp_find_dp(pair, dst, host, 0) : 0;
+        // The SNI decides the base again; a cached group of its chain still comes first.
+        struct desync_params *found = len && !val->udp_auto_moved ? udp_find_dp(pair, dst, host, 0) : 0;
+        if (found) {
+            found = udp_start_group(pair, val, dst, found);
+        }
         if (found && found != dp) {
             if (params.conn_log) {
                 fprintf(ENGINE_LOG, "udp %d: host %s (sni in Initial %u), group %d -> %d\n",
@@ -1855,6 +1911,8 @@ void auto_cache_save(bool force)
     }
     memcpy(tmp, params.auto_cache, len);
     memcpy(tmp + len, ".tmp", 5);
+    // A failed save is tried again after the interval, not at once (the event loop waits for it).
+    params.auto_cache_saved = now;
     FILE *f = fopen(tmp, "w");
     if (!f) {
         uniperror("auto cache fopen");
@@ -1875,6 +1933,16 @@ void auto_cache_save(bool force)
         params.auto_cache_saved = now;
     }
     free(tmp);
+}
+
+
+int auto_cache_wait_ms(void)
+{
+    if (!params.auto_cache || !params.auto_cache_dirty) {
+        return -1;
+    }
+    long long left = (long long) (params.auto_cache_saved + AUTO_CACHE_SAVE_S - time(0)) * 1000;
+    return left < 0 ? 0 : left > INT_MAX ? INT_MAX : (int) left;
 }
 
 
