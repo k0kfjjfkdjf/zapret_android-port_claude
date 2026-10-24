@@ -17,6 +17,8 @@ import tempfile
 import threading
 import time
 
+import log_contract
+
 
 def free_port():
     s = socket.socket()
@@ -99,7 +101,9 @@ class Engine:
         self.proc.terminate()  # SIGTERM: the event loop returns, the cache is saved
         self.proc.wait(5)
         self.log.seek(0)
-        return self.log.read().decode(errors="replace")
+        text = self.log.read().decode(errors="replace")
+        log_contract.check(text)
+        return text
 
 
 def groups_used(log):

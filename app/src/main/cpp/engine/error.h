@@ -15,6 +15,25 @@
 
 #include "params.h"
 
+/*
+ * ZapretDroid: a name from the client (SNI, Host header, SOCKS domain) for the log: lower case,
+ * anything but [a-z0-9.-_:[]] as '?'. The app's log readers (@on rules, the connection monitor,
+ * auto-fix) read lines like "conn 1: block detected ... on bank.com": raw, a name with a line
+ * break let any app forge them.
+ */
+static inline void log_safe(char *out, size_t size, const char *in, size_t len)
+{
+    size_t i = 0;
+    for (; i < len && i + 1 < size; i++) {
+        unsigned char c = (unsigned char) in[i];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        int ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+            || c == '.' || c == '-' || c == '_' || c == ':' || c == '[' || c == ']';
+        out[i] = ok ? (char) c : '?';
+    }
+    out[i] = 0;
+}
+
 /* Where diagnostics go; the Android app points it at the session log, stderr otherwise. */
 extern FILE *engine_log;
 #define ENGINE_LOG (engine_log ? engine_log : stderr)

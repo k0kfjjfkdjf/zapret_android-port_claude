@@ -547,8 +547,9 @@ ssize_t desync(struct poolhd *pool,
         init_proto_info(buffer, *np, &info);
         
         if (info.host_pos) {
-            LOG(LOG_S, "host: %.*s (%d)\n",
-                info.host_len, buffer + info.host_pos, info.host_pos);
+            char hn[256];
+            log_safe(hn, sizeof(hn), buffer + info.host_pos, info.host_len);
+            LOG(LOG_S, "host: %s (%d)\n", hn, info.host_pos);
         } else {
             INIT_HEX_STR(buffer, (*np > 16 ? 16 : *np));
             LOG(LOG_S, "bytes: %s (%zd)\n", HEX_STR, *np);

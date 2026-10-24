@@ -17,6 +17,8 @@ import tempfile
 import threading
 import time
 
+import log_contract
+
 FAKE = b"ZDFAKE"
 
 
@@ -67,7 +69,9 @@ class Engine:
         self.proc.terminate()
         self.proc.wait(5)
         self.log.seek(0)
-        return self.log.read().decode(errors="replace")
+        text = self.log.read().decode(errors="replace")
+        log_contract.check(text)
+        return text
 
 
 def flow(port, dst_port, seconds):

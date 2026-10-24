@@ -21,3 +21,4 @@ python3 "$here/udp_assoc_test.py" "$out/ciadpi" --udp-fake 1 --udp-desync 1:3 --
 python3 "$here/auto_cache_test.py" "$out/ciadpi"
 python3 "$here/udp_auto_test.py" "$out/ciadpi"
 python3 "$here/quic_split_test.py" "$out/ciadpi" "$root/src/main/assets/fake"
+python3 "$here/log_test.py" "$out/ciadpi"

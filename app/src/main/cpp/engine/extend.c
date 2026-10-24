@@ -521,6 +521,16 @@ static void autohost_record(const char *host, int len, int type)
     if (!params.autohost_log || !host || len <= 0) {
         return;
     }
+    // Only plain names go to the list (it is read back as host names).
+    char name[256];
+    if ((size_t) len >= sizeof(name)) {
+        return;
+    }
+    log_safe(name, sizeof(name), host, len);
+    if (!host_name_ok(name, len)) {
+        return;
+    }
+    host = name;
     const char *reason = detect_name(type);
     FILE *f = fopen(params.autohost_log, "a");
     if (!f) {
@@ -897,7 +907,7 @@ static int setup_conn(struct eval *client, const char *buffer, ssize_t n)
         const union sockaddr_u *dst = &client->pair->addr;
         INIT_ADDR_STR((*dst));
         if (client->host) {
-            snprintf(client->log_host, sizeof(client->log_host), "%.*s", client->host_len, client->host);
+            log_safe(client->log_host, sizeof(client->log_host), client->host, client->host_len);
         }
         else if (!client->log_host[0]) {
             // ZapretDroid: without SNI or Host, the name the address was resolved from.

@@ -142,7 +142,11 @@ static int resolve(const char *chost, int len,
     host[len] = 0;
     memcpy(host, chost, len);
     
-    LOG(LOG_S, "resolve: %s\n", host);
+    if (LOG_ENABLED) {
+        char hn[256];
+        log_safe(hn, sizeof(hn), host, len);
+        LOG(LOG_S, "resolve: %s\n", hn);
+    }
     
     if (getaddrinfo(host, 0, &hints, &res) || !res) {
         return -1;
@@ -293,7 +297,7 @@ static int s4_get_addr(const char *buff,
             return -1;
         }
         if (resolve(id_end + 1, len, dst, SOCK_STREAM)) {
-            LOG(LOG_E, "not resolved: %.*s\n", len, id_end + 1);
+            { char hn[256]; log_safe(hn, sizeof(hn), id_end + 1, len); LOG(LOG_E, "not resolved: %s\n", hn); }
             return -1;
         }
     }
@@ -340,7 +344,7 @@ static int s5_get_addr(const char *buffer,
             }
             if (r->dst.id.len < 3 || 
                     resolve(r->dst.id.domain, r->dst.id.len, addr, type)) {
-                LOG(LOG_E, "not resolved: %.*s\n", r->dst.id.len, r->dst.id.domain);
+                { char hn[256]; log_safe(hn, sizeof(hn), r->dst.id.domain, r->dst.id.len); LOG(LOG_E, "not resolved: %s\n", hn); }
                 return -S_ER_HOST;
             }
             break;
@@ -400,7 +404,7 @@ static int http_get_addr(
         return -1;
     }
     if (resolve(host, host_len, dst, SOCK_STREAM)) {
-        LOG(LOG_E, "not resolved: %.*s\n", host_len, host);
+        { char hn[256]; log_safe(hn, sizeof(hn), host, host_len); LOG(LOG_E, "not resolved: %s\n", hn); }
         return -1;
     }
     dst->in.sin_port = htons(port);
@@ -418,7 +422,7 @@ static int tls_get_addr(
         return -1;
     }
     if (params.resolve && resolve(host, host_len, dst, SOCK_STREAM)) {
-        LOG(LOG_E, "not resolved: %.*s\n", host_len, host);
+        { char hn[256]; log_safe(hn, sizeof(hn), host, host_len); LOG(LOG_E, "not resolved: %s\n", hn); }
         return -1;
     }
     dst->in.sin_port = htons(443);
