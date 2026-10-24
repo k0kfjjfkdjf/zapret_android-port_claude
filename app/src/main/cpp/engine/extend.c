@@ -600,10 +600,15 @@ int on_trigger(int type, struct poolhd *pool, struct eval *val, bool client_aliv
     lav->quiet_fail = 0;
     if (!next) {
         LOG(LOG_S, "unreach ip: %s\n", ADDR_STR);
-        cache->dp_mask = 0;
-        cache->detect = 0;
-        cache->dp = params.dp;
-        auto_cache_changed();
+        // ZapretDroid: only an entry this connection used (or a new one) starts afresh. A
+        // connection of another group on the same address (a CDN; an excluded host, or one
+        // whose proxy is down) used to wipe what --auto had learnt for the other hosts there.
+        if (!cache->dp || cache->dp == lav->dp) {
+            cache->dp_mask = 0;
+            cache->detect = 0;
+            cache->dp = params.dp;
+            auto_cache_changed();
+        }
         return -1;
     }
     LOG(LOG_S, "save: ip=%s, id=%d\n", ADDR_STR, next->id);
@@ -855,25 +860,59 @@ static int recv_and_connect(struct poolhd *pool, struct eval *val, int t)
 }
 
 
+/*
+ * ZapretDroid: the group the --auto cache keeps for [dst], when it lies in the auto chain of
+ * [base] (the groups right after it with detection, up to the first without) and fits this
+ * connection. Upstream started from the cached group whatever came before it: another host on
+ * the same address (a CDN) skipped its exclusion, proxy or app group, and --auto-cache made
+ * that last across restarts.
+ */
+static struct desync_params *tcp_cached_group(struct eval *val, struct desync_params *base,
+        const union sockaddr_u *dst, const char *buff, ssize_t n, bool connected)
+{
+    struct elem_i *e = cache_get(dst);
+    if (!e || !e->dp || e->dp == base || base->out_type) {
+        return 0;
+    }
+    for (struct desync_params *dp = base->next; dp && dp->detect; dp = dp->next) {
+        if (dp != e->dp) {
+            continue;
+        }
+        // Once connected, a group that connects elsewhere (a proxy) cannot take over.
+        if ((connected && dp->out_type)
+                || !check_l34(dp, SOCK_STREAM, dst) || !check_app(dp, val, IPPROTO_TCP, dst)
+                || (dp->proto && buff && !check_proto_tcp(dp->proto, buff, n))
+                || (dp->hosts && buff && !check_host(dp->hosts, buff, n, dst))) {
+            return 0;
+        }
+        val->dp_mask |= e->dp_mask & params.dp_full_mask;
+        val->detect = e->detect;
+        return dp;
+    }
+    return 0;
+}
+
+
 int connect_hook(struct poolhd *pool, struct eval *val, 
         const union sockaddr_u *dst, evcb_t next)
 {
-    if (!val->dp) {
-        struct elem_i *e = cache_get(dst);
-        if (e) {
-            val->dp_mask = e->dp_mask;
-            val->detect = e->detect;
-            val->dp = e->dp;
-        }
-    }
     struct desync_params *dp = find_dp(val, 0, 0, dst);
     if (!dp) {
         LOG(LOG_E, "drop connection\n");
         return -1;
     }
+    bool delay = (dp->hosts || dp->proto) && !val->buff && params.delay_conn;
+    // The cache is consulted once the group is known by the usual rules: here when it does not
+    // depend on the client's first data (or that is in), else in setup_conn when it comes.
+    if (!val->cache_checked && (val->buff || !(dp->hosts || dp->proto))) {
+        val->cache_checked = 1;
+        struct desync_params *cached = tcp_cached_group(val, dp, dst,
+            val->buff ? val->buff->data : 0, val->buff ? val->buff->lock : 0, 0);
+        if (cached) dp = cached;
+    }
     val->dp = dp;
     
-    if ((dp->hosts || dp->proto) && !val->buff && params.delay_conn) {
+    if (delay) {
         if (resp_error(val->fd, 0, val->flag) < 0) {
             uniperror("send");
             return -1;
@@ -901,6 +940,11 @@ static int setup_conn(struct eval *client, const char *buffer, ssize_t n)
     if (!dp) {
         LOG(LOG_E, "drop connection\n");
         return -1;
+    }
+    if (!client->cache_checked) {
+        client->cache_checked = 1;
+        struct desync_params *cached = tcp_cached_group(client, dp, &client->pair->addr, buffer, n, 1);
+        if (cached) dp = cached;
     }
     save_hostname(client, buffer, n);
     client->mark = is_tls_chello(buffer, n);
@@ -1093,7 +1137,8 @@ void udp_flow_report(struct eval *remote, const char *state)
         remote->udp_out_pkts, remote->udp_out_bytes, remote->udp_in_pkts, remote->udp_in_bytes,
         remote->udp_fakes, reply, retries, remote->udp_max_out_gap, remote->udp_max_in_gap, remote->udp_stalls,
         (now - remote->udp_first_ms) / 1000,
-        remote->udp_out_pkts && !remote->udp_in_pkts ? "  <-- NO REPLY" : "");
+        remote->udp_out_pkts && !remote->udp_in_pkts
+            ? (remote->udp_block_logged ? "  <-- NO REPLY (block reported)" : "  <-- NO REPLY") : "");
     remote->udp_last_report = now;
 }
 
@@ -1575,6 +1620,7 @@ static struct desync_params *udp_auto_check(struct eval *owner, struct eval *val
         if (params.conn_log) {
             fprintf(ENGINE_LOG, "udp %d: block detected (udp) on %s (%s) with group %d, no group left\n",
                 val->fd, h, ADDR_STR, dp->id);
+            val->udp_block_logged = 1;
         }
         // Nothing worked: the next flow starts afresh.
         struct elem_i *e = cache_get_in(params.udp_cache, dst);
@@ -1587,6 +1633,7 @@ static struct desync_params *udp_auto_check(struct eval *owner, struct eval *val
     if (params.conn_log) {
         fprintf(ENGINE_LOG, "udp %d: block detected (udp) on %s (%s) with group %d, trying group %d\n",
             val->fd, h, ADDR_STR, dp->id, next->id);
+        val->udp_block_logged = 1;
     }
     char *host = val->udp_host[0] ? strdup(val->udp_host) : 0;
     struct elem_i *e = cache_add_in(params.udp_cache, dst, &host, host ? (int) strlen(host) : 0);
@@ -1862,6 +1909,7 @@ static int protect(int conn_fd, const char *path)
 /* ZapretDroid --auto-cache */
 
 #define AUTO_CACHE_SAVE_S 15
+#define AUTO_CACHE_MAX_AGE_S (7 * 24 * 3600)
 
 static struct desync_params *group_by_id(int id)
 {
@@ -1881,7 +1929,10 @@ void auto_cache_load(void)
     if (!f) {
         return; // first run
     }
-    int n = load_cache_all(params.mempool, params.udp_cache, f, params.dp_n, group_by_id);
+    // What was learnt more than a week ago is learnt again: blocks change, and a group that
+    // got through once would otherwise stay for ever (groups have no --cache-ttl by default).
+    int n = load_cache_all(params.mempool, params.udp_cache, f, params.dp_n, group_by_id,
+        time(0) - AUTO_CACHE_MAX_AGE_S);
     fclose(f);
     if (n < 0) {
         LOG(LOG_S, "auto cache: %s is for another strategy, not loaded\n", params.auto_cache);
@@ -1889,7 +1940,7 @@ void auto_cache_load(void)
     else if (params.conn_log) {
         fprintf(ENGINE_LOG, "auto cache: %d address(es) loaded\n", n);
     }
-    params.auto_cache_saved = time(0);
+    params.auto_cache_saved = mono_ms();
 }
 
 
@@ -1898,8 +1949,8 @@ void auto_cache_save(bool force)
     if (!params.auto_cache || !params.mempool) {
         return;
     }
-    time_t now = time(0);
-    if (!force && (!params.auto_cache_dirty || now - params.auto_cache_saved < AUTO_CACHE_SAVE_S)) {
+    long long now = mono_ms();
+    if (!force && (!params.auto_cache_dirty || now - params.auto_cache_saved < AUTO_CACHE_SAVE_S * 1000LL)) {
         return;
     }
     // Written beside the file and renamed over it: a process killed while writing leaves the
@@ -1941,7 +1992,7 @@ int auto_cache_wait_ms(void)
     if (!params.auto_cache || !params.auto_cache_dirty) {
         return -1;
     }
-    long long left = (long long) (params.auto_cache_saved + AUTO_CACHE_SAVE_S - time(0)) * 1000;
+    long long left = params.auto_cache_saved + AUTO_CACHE_SAVE_S * 1000LL - mono_ms();
     return left < 0 ? 0 : left > INT_MAX ? INT_MAX : (int) left;
 }
 

@@ -532,6 +532,18 @@ static void test_http_parse(void)
     memcpy(r, resp, sizeof(resp) - 1);
     CHECK(!is_http_redirect(req, sizeof(req) - 1, r, sizeof(resp) - 1));
     free(r);
+
+    // An empty Location: nothing before it is read (it was a read of gigabytes).
+    const char loc[] = "HTTP/1.1 302 Found\r\nLocation: \r\nXXXXXXXXXXXX";
+    r = malloc(sizeof(loc) - 1);
+    memcpy(r, loc, sizeof(loc) - 1);
+    CHECK(!is_http_redirect(req, sizeof(req) - 1, r, sizeof(loc) - 1));
+    free(r);
+    // A real redirect elsewhere is still one, to the same site is not.
+    const char away[] = "HTTP/1.1 302 Found\r\nLocation: http://blocked.example.net/\r\n\r\n";
+    const char same[] = "HTTP/1.1 302 Found\r\nLocation: https://www.example.com/x\r\n\r\n";
+    CHECK(is_http_redirect(req, sizeof(req) - 1, away, sizeof(away) - 1));
+    CHECK(!is_http_redirect(req, sizeof(req) - 1, same, sizeof(same) - 1));
 }
 
 int main(int argc, char **argv)

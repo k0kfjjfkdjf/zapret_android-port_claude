@@ -525,7 +525,12 @@ bool is_http_redirect(
     if (!l_end) {
         return 0;
     }
-    for (; isspace((unsigned char) *(l_end - 1)); l_end--);
+    // ZapretDroid: the trim stops at the value's start. An empty value ("Location: \r\n", any
+    // server or an injected 302) walked back past it and memchr below got a negative length.
+    for (; l_end > location && isspace((unsigned char) *(l_end - 1)); l_end--);
+    if (l_end <= location) {
+        return 0;
+    }
     
     if ((l_end - location) > 7) {
         if (!strncmp(location, "http://", 7)) {

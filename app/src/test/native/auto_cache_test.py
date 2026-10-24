@@ -68,14 +68,14 @@ def resetting_server(resets):
     return srv, srv.getsockname()[1]
 
 
-def request(port, dst_port):
+def request(port, dst_port, host="example.com"):
     s = socket.create_connection(("127.0.0.1", port), timeout=3)
     s.sendall(b"\x05\x01\x00")
     assert s.recv(2) == b"\x05\x00"
     s.sendall(b"\x05\x01\x00\x01" + socket.inet_aton("127.0.0.1") + struct.pack(">H", dst_port))
     rep = s.recv(10)
     assert len(rep) == 10 and rep[1] == 0, f"CONNECT refused: {rep!r}"
-    s.sendall(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+    s.sendall(b"GET / HTTP/1.1\r\nHost: " + host.encode() + b"\r\n\r\n")
     try:
         s.recv(100)
     except OSError:
@@ -177,6 +177,35 @@ def main():
     log = e.stop()
     assert "auto cache: 0 address(es) loaded" in log, log
     print("damaged mask and bit length: OK")
+
+    # Group order: another host on the same address (a CDN) that the strategy excludes, or
+    # sends through a proxy, keeps its own group; the cached group is only for hosts whose
+    # group is followed by it.
+    for name, head in (("exclusion", []), ("proxy", ["-C", "socks5://127.0.0.1:%d" % free_port()])):
+        resets[0] = 1
+        if os.path.exists(cache):
+            os.remove(cache)
+        ordered = ["--conn-log", "--auto-cache", cache, "-H", ":excluded.example"] + head + \
+            ["--auto=none", "-s1", "-A", "torst", "-s2"]
+        e = Engine(binary, ordered)
+        request(e.port, dst_port, "blocked.example")
+        time.sleep(0.3)
+        log = e.stop()
+        assert "trying group 2" in log, log
+        e = Engine(binary, ordered)
+        try:
+            request(e.port, dst_port, "excluded.example")
+        except (AssertionError, OSError):
+            pass  # the proxy is no SOCKS server: what matters is the group chosen
+        request(e.port, dst_port, "blocked.example")
+        time.sleep(0.3)
+        log = e.stop()
+        lines = re.findall(r"conn \d+: (\S+) -> 127\.0\.0\.1:\d+, \w+, group (\d+)", log)
+        excluded = [g for h, g in lines if h == "excluded.example"]
+        blocked = [g for h, g in lines if h == "blocked.example"]
+        assert "2" not in excluded, f"{name}: the excluded host took the cached group\n{log}"
+        assert blocked and blocked[0] == "2", f"{name}: the blocked host lost its cached group\n{log}"
+        print(f"cached group does not take a host of the {name} group: OK")
 
     # A block soon after the start (within the save interval) is saved when due, with no other
     # event, before the process is killed (not stopped).

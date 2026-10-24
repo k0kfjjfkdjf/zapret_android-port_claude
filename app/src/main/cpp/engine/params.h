@@ -206,7 +206,7 @@ struct params {
     // restarts; saved at exit and at most every AUTO_CACHE_SAVE_S seconds after a change.
     const char *auto_cache;
     bool auto_cache_dirty;
-    long long auto_cache_saved;
+    long long auto_cache_saved; // mono_ms() of the last save: a wall clock set back stops nothing
     bool conn_log;
     // --mss: TCP maximum segment size of outgoing connections (as tpws --mss): both sides then
     // send small segments

@@ -12,7 +12,8 @@ object ScriptEvents {
     private val BLOCK = Regex("""\b(conn|udp) \d+: block detected \(\w+\) on (\S+) """)
     private val CLOSED = Regex("""\bconn \d+ closed: (\S+), up (\d+) B, down (\d+) B""")
     private val CONNFAIL = Regex("""\btcp \d+: connect to (\S+) FAILED""")
-    private val UDP_NO_REPLY = Regex("""\budp \d+ closed: -> (\S+):\d+ .*<-- NO REPLY""")
+    // "(block reported)": the flow's "block detected (udp)" line was already one event.
+    private val UDP_NO_REPLY = Regex("""\budp \d+ closed: -> (\S+):\d+ .*<-- NO REPLY(?! \(block reported\))""")
     private val PROXY_DOWN = Regex("""\bgroup \d+: proxy (\S+) (?:still )?refuses connections""")
 
     fun parse(line: String): Event? {

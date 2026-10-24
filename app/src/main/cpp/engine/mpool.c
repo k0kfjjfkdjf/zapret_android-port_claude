@@ -288,7 +288,7 @@ void dump_cache_all(struct mphdr *hdr, FILE *out, char tag)
 
 
 int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
-        struct desync_params *(*group)(int id))
+        struct desync_params *(*group)(int id), time_t min_time)
 {
     uint64_t full_mask = groups >= 64 ? ~(uint64_t) 0 : ((uint64_t) 1 << groups) - 1;
     int version = 0, n = -1;
@@ -318,7 +318,7 @@ int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
             continue;
         }
         // A mask of every group is never saved (no group left resets it): a damaged line.
-        if (!dp || bitlen < 0 || bitlen > 128 || port < 0 || port > 0xffff
+        if (!dp || (time_t) cache_time < min_time || bitlen < 0 || bitlen > 128 || port < 0 || port > 0xffff
                 || ((uint64_t) mask & full_mask) == full_mask) {
             continue;
         }

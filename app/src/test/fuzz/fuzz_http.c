@@ -22,7 +22,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     uint16_t port = 0;
     is_http((const char *) data, size);
     parse_http((const char *) data, size, &hs, &port);
-    is_http_redirect((const char *) data, size, (const char *) data, size);
+    // A request and a server's answer: the fourth byte (also the room below) says where the
+    // request ends. One buffer cannot be both, so the redirect check never ran past its start.
+    {
+        size_t qn = size ? (data[-1] * 4u) % (size + 1) : 0;
+        char *q = malloc(qn ? qn : 1), *r = malloc(size - qn ? size - qn : 1);
+        if (q && r) {
+            memcpy(q, data, qn);
+            memcpy(r, data + qn, size - qn);
+            is_http_redirect(q, qn, r, size - qn);
+        }
+        free(q);
+        free(r);
+    }
     for (int m = MK_METHOD; m <= MK_SNIEXT; m++) {
         tpws_marker_pos(m, (const char *) data, size);
     }

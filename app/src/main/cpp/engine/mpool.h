@@ -79,6 +79,6 @@ void load_cache(struct mphdr *hdr, FILE *in, struct desync_params *dp);
 void dump_cache_all(struct mphdr *hdr, FILE *out, char tag);
 
 int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
-        struct desync_params *(*group)(int id));
+        struct desync_params *(*group)(int id), time_t min_time);
 
 #endif
