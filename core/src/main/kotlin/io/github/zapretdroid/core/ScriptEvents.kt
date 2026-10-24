@@ -9,14 +9,17 @@ object ScriptEvents {
     /** A failure seen in the log: [reason] as in Script.REASONS, the domain (or address), tcp/udp. */
     data class Event(val reason: String, val host: String, val proto: String)
 
-    private val BLOCK = Regex("""\bconn \d+: block detected \(\w+\) on (\S+) """)
+    private val BLOCK = Regex("""\b(conn|udp) \d+: block detected \(\w+\) on (\S+) """)
     private val CLOSED = Regex("""\bconn \d+ closed: (\S+), up (\d+) B, down (\d+) B""")
     private val CONNFAIL = Regex("""\btcp \d+: connect to (\S+) FAILED""")
     private val UDP_NO_REPLY = Regex("""\budp \d+ closed: -> (\S+):\d+ .*<-- NO REPLY""")
     private val PROXY_DOWN = Regex("""\bgroup \d+: proxy (\S+) (?:still )?refuses connections""")
 
     fun parse(line: String): Event? {
-        BLOCK.find(line)?.let { m -> return m.groupValues[1].takeIf { it != "-" }?.let { Event("block", it.lowercase(), "tcp") } }
+        BLOCK.find(line)?.let { m ->
+            val proto = if (m.groupValues[1] == "udp") "udp" else "tcp"
+            return m.groupValues[2].takeIf { it != "-" }?.let { Event("block", it.lowercase(), proto) }
+        }
         CLOSED.find(line)?.let { m ->
             val host = m.groupValues[1].lowercase().takeIf { it != "-" } ?: return null
             val up = m.groupValues[2].toLong()

@@ -24,6 +24,9 @@ void udp_reply_hook(struct eval *val, const char *buffer, ssize_t n, const union
 
 bool ups_is_relay(struct eval *remote, const union sockaddr_u *from);
 
+/* ZapretDroid --auto=udp: a datagram from [src] came back on the remote socket of a flow. */
+void udp_reply_from(struct eval *remote, const union sockaddr_u *src);
+
 /*
  * Sends one datagram of the client to [dst]. Returns the bytes sent, -1 if the datagram could
  * not be sent (errno says why: lost like any datagram, the association goes on), or

@@ -130,8 +130,8 @@ static const char help_text[] = {
     #ifdef TIMEOUT_SUPPORT
     "    -T, --timeout <s[:p:c:b]> Timeout waiting for response, after which trigger auto\n"
     #endif
-    "    -A, --auto <t,r,s,n,c>    Try desync params after this option\n"
-    "                              Detect: torst,redirect,ssl_err,none,conn\n"
+    "    -A, --auto <t,r,s,n,c,u>  Try desync params after this option\n"
+    "                              Detect: torst,redirect,ssl_err,none,conn,udp\n"
     "    -L, --auto-mode <s,o,n>   Mode: swop,onreconn,noreconn\n"
     "    -y, --cache-file <path|-> Dump cache to file or stdout\n"
     "    -u, --cache-ttl <sec>     Lifetime of cached desync params for IP\n"
@@ -802,6 +802,10 @@ void clear_params(char *line, char **argv)
         free(line);
         free(argv);
     }
+    if (params.udp_cache) {
+        mem_destroy(params.udp_cache);
+        params.udp_cache = 0;
+    }
     if (params.mempool) {
         mem_destroy(params.mempool);
         params.mempool = 0;
@@ -874,6 +878,11 @@ int parse_args(int argc, char **argv)
     
     params.mempool = mem_pool(MF_EXTRA, CMP_BITS);
     if (!params.mempool) {
+        uniperror("mem_pool");
+        return -1;
+    }
+    params.udp_cache = mem_pool(MF_EXTRA, CMP_BITS);
+    if (!params.udp_cache) {
         uniperror("mem_pool");
         return -1;
     }
@@ -1174,6 +1183,11 @@ int parse_args(int argc, char **argv)
                     case 'c':
                         dp->detect |= DETECT_CONNECT;
                         break;
+                    case 'u':
+                        // ZapretDroid: "udp", a UDP flow without a reply
+                        dp->detect |= DETECT_UDP;
+                        params.udp_auto = 1;
+                        break;
                     case 'n': 
                         break;
                     case 'p':
@@ -1190,7 +1204,8 @@ int parse_args(int argc, char **argv)
                 end = strchr(end, ',');
                 if (end) end++;
             }
-            if (dp->detect) {
+            // UDP needs no saved request to replay: only TCP detections do.
+            if (dp->detect & ~DETECT_UDP) {
                 params.auto_reconnect = 1;
             }
             dp->_optind = optind;

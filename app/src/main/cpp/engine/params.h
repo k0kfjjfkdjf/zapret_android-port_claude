@@ -33,6 +33,8 @@
 #define DETECT_TLS_ERR 2
 #define DETECT_TORST 8
 #define DETECT_CONNECT 16
+// ZapretDroid --auto=udp: the first destination of a UDP flow did not answer
+#define DETECT_UDP 32
 
 #define AUTO_ONRECONN 1
 #define AUTO_NORECONN 2
@@ -185,6 +187,10 @@ struct params {
     union sockaddr_u baddr;
     union sockaddr_u laddr;
     struct mphdr *mempool;
+    // ZapretDroid: the --auto cache of UDP flows (--auto=udp), apart from TCP's: the same
+    // address and port (443) is another flow there, with groups of its own.
+    struct mphdr *udp_cache;
+    bool udp_auto;
     
     char **need_free;
     int need_free_n;

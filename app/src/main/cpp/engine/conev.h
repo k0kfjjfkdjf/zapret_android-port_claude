@@ -144,6 +144,15 @@ struct eval {
     unsigned int udp_first_out;
     // Datagrams the socket could not send (dropped; logged once with --conn-log).
     unsigned int udp_send_errors;
+    // ZapretDroid --auto=udp, on the remote socket: replies from the first destination, when
+    // its current group began, the groups tried for it, its host for host lists, and whether
+    // the group came from the cache or no group is left.
+    unsigned int udp_first_in;
+    long long udp_group_ms;
+    uint64_t udp_auto_mask;
+    char udp_host[64];
+    bool udp_auto_cached;
+    bool udp_auto_done;
     // ZapretDroid --apps: the address the client's app connected from, given by
     // hev-socks5-tunnel as the SOCKS5 user name, and the app's uid once looked up.
     union sockaddr_u app_src;

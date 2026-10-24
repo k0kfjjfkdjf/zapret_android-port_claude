@@ -250,14 +250,13 @@ void load_cache(struct mphdr *hdr, FILE *in, struct desync_params *dp)
 /*
  * ZapretDroid --auto-cache: the whole cache in one file, every entry with its group, so that
  * what --auto learnt survives a restart of the engine (the app's process is killed at will).
- * Line: "<group id> <dp_mask hex> <detect> <ip> <bits> <port> <time> <host|->", after a
- * header "zdcache 1 <groups>" that ties the file to a strategy with that many groups.
+ * Line: "<t|u> <group id> <dp_mask hex> <detect> <ip> <bits> <port> <time> <host|->" (t: the
+ * TCP cache, u: UDP's), after a header "zdcache 1 <groups>" that ties the file to a strategy
+ * with that many groups (written by the caller).
  */
-void dump_cache_all(struct mphdr *hdr, FILE *out, int groups)
+void dump_cache_all(struct mphdr *hdr, FILE *out, char tag)
 {
-    fprintf(out, "zdcache 1 %d\n", groups);
-    if (!hdr->root) {
-        fflush(out);
+    if (!hdr || !hdr->root) {
         return;
     }
     kavl_itr_t(my) itr;
@@ -280,16 +279,15 @@ void dump_cache_all(struct mphdr *hdr, FILE *out, int groups)
             unsigned char ch = p->extra[i];
             if (ch <= ' ' || ch >= 0x7f) plain = 0;
         }
-        fprintf(out, "%d %jx %d %s %d %d %jd %.*s\n",
-            p->dp->id, (uintmax_t) p->dp_mask, p->detect, addr, bitlen, ntohs(key->port),
+        fprintf(out, "%c %d %jx %d %s %d %d %jd %.*s\n",
+            tag, p->dp->id, (uintmax_t) p->dp_mask, p->detect, addr, bitlen, ntohs(key->port),
             (intmax_t) p->time, plain ? (int) p->extra_len : 1, plain ? p->extra : "-");
     }
     while (kavl_itr_next(my, &itr));
-    fflush(out);
 }
 
 
-int load_cache_all(struct mphdr *hdr, FILE *in, int groups,
+int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
         struct desync_params *(*group)(int id))
 {
     int version = 0, n = -1;
@@ -306,13 +304,18 @@ int load_cache_all(struct mphdr *hdr, FILE *in, int groups,
         int id, detect, bitlen, port;
         uintmax_t mask;
         intmax_t cache_time;
+        char tag = 0;
         char addr_str[INET6_ADDRSTRLEN] = { 0 };
         char host[256] = { 0 };
-        if (sscanf(line, "%d %jx %d %45s %d %d %jd %255s",
-                &id, &mask, &detect, addr_str, &bitlen, &port, &cache_time, host) != 8) {
+        if (sscanf(line, "%c %d %jx %d %45s %d %d %jd %255s",
+                &tag, &id, &mask, &detect, addr_str, &bitlen, &port, &cache_time, host) != 9) {
             continue;
         }
+        struct mphdr *hdr = tag == 't' ? tcp : tag == 'u' ? udp : 0;
         struct desync_params *dp = group(id);
+        if (!hdr) {
+            continue;
+        }
         if (!dp || bitlen < 0 || port < 0 || port > 0xffff) {
             continue;
         }

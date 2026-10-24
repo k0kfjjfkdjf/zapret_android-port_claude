@@ -87,12 +87,12 @@ static int eq_bitlen(const char *a, const char *b, int n)
 }
 
 
-static struct elem_i *cache_get(const union sockaddr_u *dst)
+static struct elem_i *cache_get_in(struct mphdr *pool, const union sockaddr_u *dst)
 {
     struct cache_key key = { 0 };
     int len = serialize_addr(dst, &key);
     
-    struct elem_i *val = mem_get(params.mempool, (char *)&key, len * 8);
+    struct elem_i *val = mem_get(pool, (char *)&key, len * 8);
     if (!val) {
         return 0;
     }
@@ -103,7 +103,7 @@ static struct elem_i *cache_get(const union sockaddr_u *dst)
         LOG(LOG_S, "time=%jd, now=%jd, ignore\n", (intmax_t)val->time, (intmax_t)t);
         // ZapretDroid: deleted by the stored key and its length in bits; the length in bytes
         // matched nothing, so expired entries stayed (and were saved) for ever.
-        mem_delete(params.mempool, val->main.data, val->main.len);
+        mem_delete(pool, val->main.data, val->main.len);
         params.auto_cache_dirty = 1;
         return 0;
     }
@@ -111,7 +111,13 @@ static struct elem_i *cache_get(const union sockaddr_u *dst)
 }
 
 
-static struct elem_i *cache_add(
+static struct elem_i *cache_get(const union sockaddr_u *dst)
+{
+    return cache_get_in(params.mempool, dst);
+}
+
+
+static struct elem_i *cache_add_in(struct mphdr *pool,
         const union sockaddr_u *dst, char **host, int host_len)
 {
     struct cache_key key = { 0 };
@@ -121,7 +127,7 @@ static struct elem_i *cache_add(
     
     if (dst->sa.sa_family == AF_INET && params.cache_pre) {
         struct elem_i *val = mem_get(
-            params.mempool, (char *)&key, cmp_len - params.cache_pre);
+            pool, (char *)&key, cmp_len - params.cache_pre);
         if (val) {
             cmp_len = eq_bitlen((char *)&key, val->main.data, bytes);
         }
@@ -132,7 +138,7 @@ static struct elem_i *cache_add(
     }
     memcpy(data, &key, bytes);
     
-    struct elem_i *val = mem_add(params.mempool, (char *)data, cmp_len, sizeof(struct elem_i));
+    struct elem_i *val = mem_add(pool, (char *)data, cmp_len, sizeof(struct elem_i));
     if (!val) {
         uniperror("mem_add");
         free(data);
@@ -145,6 +151,13 @@ static struct elem_i *cache_add(
         *host = 0;
     }
     return val;
+}
+
+
+static struct elem_i *cache_add(
+        const union sockaddr_u *dst, char **host, int host_len)
+{
+    return cache_add_in(params.mempool, dst, host, host_len);
 }
 
 
@@ -498,7 +511,8 @@ static const char *detect_name(int type)
     return (type & DETECT_TORST) ? "torst"
         : (type & DETECT_HTTP_LOCAT) ? "redirect"
         : (type & DETECT_TLS_ERR) ? "ssl_err"
-        : (type & DETECT_CONNECT) ? "connect" : "unknown";
+        : (type & DETECT_CONNECT) ? "connect"
+        : (type & DETECT_UDP) ? "udp" : "unknown";
 }
 
 
@@ -1417,6 +1431,115 @@ bool ups_is_relay(struct eval *remote, const union sockaddr_u *from)
 }
 
 
+
+/* ZapretDroid --auto=udp: a flow's first destination that does not answer within UDP_AUTO_MS,
+ * after at least UDP_AUTO_PKTS datagrams of its current group, moves to the next group with
+ * "udp" detection (QUIC repeats its Initial, Discord its IP discovery: the repeats then carry
+ * the new group's desync). The choice is kept in the UDP cache for later flows. */
+#define UDP_AUTO_MS 1000
+#define UDP_AUTO_PKTS 2
+
+void udp_reply_from(struct eval *remote, const union sockaddr_u *src)
+{
+    if (remote->addr.in.sin_port && same_addr(src, &remote->addr, 1)) {
+        remote->udp_first_in++;
+    }
+}
+
+
+static struct desync_params *udp_auto_next(struct eval *owner, struct eval *val,
+        const union sockaddr_u *dst)
+{
+    const char *host = val->udp_host[0] ? val->udp_host : 0;
+    for (struct desync_params *dp = params.dp; dp; dp = dp->next) {
+        if ((dp->bit & val->udp_auto_mask) || !(dp->detect & DETECT_UDP)) {
+            continue;
+        }
+        if (!check_l34(dp, SOCK_DGRAM, dst) || !check_app(dp, owner, IPPROTO_UDP, dst)) {
+            continue;
+        }
+        if (dp->hosts && !(host ? host_in(dp->hosts, host, strlen(host)) : names_in(dp->hosts, dst))) {
+            continue;
+        }
+        return dp;
+    }
+    return 0;
+}
+
+
+/* The cached group of a new flow to [dst], if it still applies to this flow. */
+static struct desync_params *udp_auto_cached(struct eval *owner, struct eval *val,
+        const union sockaddr_u *dst)
+{
+    if (!params.udp_auto || !params.udp_cache) {
+        return 0;
+    }
+    struct elem_i *e = cache_get_in(params.udp_cache, dst);
+    if (!e || !e->dp || !(e->dp->detect & DETECT_UDP)
+            || !check_l34(e->dp, SOCK_DGRAM, dst) || !check_app(e->dp, owner, IPPROTO_UDP, dst)) {
+        return 0;
+    }
+    val->udp_auto_mask = e->dp_mask;
+    val->udp_auto_cached = 1;
+    return e->dp;
+}
+
+
+static void udp_set_host(struct eval *val, const char *host)
+{
+    if (host && strlen(host) < sizeof(val->udp_host)) {
+        strcpy(val->udp_host, host);
+    }
+}
+
+
+/* Called before a datagram to the first destination; returns the group for it. */
+static struct desync_params *udp_auto_check(struct eval *owner, struct eval *val,
+        const union sockaddr_u *dst, struct desync_params *dp, unsigned int dindex, long long now)
+{
+    if (!params.udp_auto || val->udp_auto_done || val->udp_first_in || dp->out_type
+            || ntohs(dst->in.sin_port) == 53
+            || dindex < UDP_AUTO_PKTS || now - val->udp_group_ms < UDP_AUTO_MS) {
+        return dp;
+    }
+    val->udp_auto_mask |= dp->bit;
+    struct desync_params *next = udp_auto_next(owner, val, dst);
+    const char *h = val->udp_host[0] ? val->udp_host : "-";
+    autohost_record(val->udp_host, strlen(val->udp_host), DETECT_UDP);
+    dp->fail_count++;
+    INIT_ADDR_STR((*dst));
+    if (!next) {
+        val->udp_auto_done = 1;
+        if (params.conn_log) {
+            fprintf(ENGINE_LOG, "udp %d: block detected (udp) on %s (%s) with group %d, no group left\n",
+                val->fd, h, ADDR_STR, dp->id);
+        }
+        // Nothing worked: the next flow starts afresh.
+        struct elem_i *e = cache_get_in(params.udp_cache, dst);
+        if (e) {
+            mem_delete(params.udp_cache, e->main.data, e->main.len);
+            auto_cache_changed();
+        }
+        return dp;
+    }
+    if (params.conn_log) {
+        fprintf(ENGINE_LOG, "udp %d: block detected (udp) on %s (%s) with group %d, trying group %d\n",
+            val->fd, h, ADDR_STR, dp->id, next->id);
+    }
+    char *host = val->udp_host[0] ? strdup(val->udp_host) : 0;
+    struct elem_i *e = cache_add_in(params.udp_cache, dst, &host, host ? (int) strlen(host) : 0);
+    free(host); // left when the entry already had its host
+    if (e) {
+        e->dp = next;
+        e->dp_mask = val->udp_auto_mask;
+        e->detect = DETECT_UDP;
+        auto_cache_changed();
+    }
+    val->udp_group_ms = now;
+    return next;
+}
+
+
 ssize_t udp_hook(struct poolhd *pool, struct eval *val, 
         char *buffer, ssize_t n, const union sockaddr_u *dst)
 {
@@ -1521,16 +1644,21 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
     if (first && !dp) {
         char host[256];
         const char *source = udp_flow_host(val, buffer, n, dst, proto, host, sizeof(host), 1);
-        if (!(dp = udp_find_dp(pair, dst, source ? host : 0, is_dns(source)))) {
+        if (source) udp_set_host(val, host);
+        // ZapretDroid --auto=udp: a group that got through to this address before comes first.
+        if (!(dp = udp_auto_cached(pair, val, dst))
+                && !(dp = udp_find_dp(pair, dst, source ? host : 0, is_dns(source)))) {
             return UDP_NO_GROUP;
         }
         pair->dp = dp;
+        val->udp_group_ms = now;
         if (params.conn_log) {
             INIT_ADDR_STR((*dst));
-            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, %s, host %s (%s), group %d\n", val->fd,
+            fprintf(ENGINE_LOG, "udp %d: -> %s:%d, %s, host %s (%s), group %d%s\n", val->fd,
                 ADDR_STR, ntohs(dst->in.sin_port), udp_proto_name(proto),
                 source ? host : "unknown",
-                source ? source : val->udp_quic ? "SNI in a later Initial" : "no SNI, not in DNS answers", dp->id);
+                source ? source : val->udp_quic ? "SNI in a later Initial" : "no SNI, not in DNS answers", dp->id,
+                val->udp_auto_cached ? ", from the auto cache" : "");
         }
     }
     else if (first && val->udp_quic && proto == UDP_PROTO_QUIC) {
@@ -1542,7 +1670,9 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
             free(val->udp_quic);
             val->udp_quic = 0;
         }
-        struct desync_params *found = len ? udp_find_dp(pair, dst, host, 0) : 0;
+        if (len) udp_set_host(val, host);
+        // A group from the auto cache stays: it was chosen for this address after a block.
+        struct desync_params *found = len && !val->udp_auto_cached ? udp_find_dp(pair, dst, host, 0) : 0;
         if (found && found != dp) {
             if (params.conn_log) {
                 fprintf(ENGINE_LOG, "udp %d: host %s (sni in Initial %u), group %d -> %d\n",
@@ -1550,6 +1680,15 @@ ssize_t udp_hook(struct poolhd *pool, struct eval *val,
             }
             pair->dp = dp = found;
             // The new group counts --udp-desync from this datagram, so its fakes go before it.
+            val->udp_dp_base = first_index;
+            dindex = 0;
+            val->udp_group_ms = now;
+        }
+    }
+    if (first) {
+        struct desync_params *next = udp_auto_check(pair, val, dst, dp, dindex, now);
+        if (next != dp) {
+            pair->dp = dp = next;
             val->udp_dp_base = first_index;
             dindex = 0;
         }
@@ -1664,7 +1803,7 @@ void auto_cache_load(void)
     if (!f) {
         return; // first run
     }
-    int n = load_cache_all(params.mempool, f, params.dp_n, group_by_id);
+    int n = load_cache_all(params.mempool, params.udp_cache, f, params.dp_n, group_by_id);
     fclose(f);
     if (n < 0) {
         LOG(LOG_S, "auto cache: %s is for another strategy, not loaded\n", params.auto_cache);
@@ -1700,7 +1839,9 @@ void auto_cache_save(bool force)
         free(tmp);
         return;
     }
-    dump_cache_all(params.mempool, f, params.dp_n);
+    fprintf(f, "zdcache 1 %d\n", params.dp_n);
+    dump_cache_all(params.mempool, f, 't');
+    dump_cache_all(params.udp_cache, f, 'u');
     bool ok = !ferror(f);
     ok = !fclose(f) && ok;
     if (!ok || rename(tmp, params.auto_cache)) {

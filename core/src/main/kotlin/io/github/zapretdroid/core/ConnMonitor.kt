@@ -16,7 +16,8 @@ object ConnMonitor {
     private val TIME = Regex("""^(\d\d-\d\d \d\d:\d\d:\d\d)""")
     private val CONN = Regex("""\bconn (\d+): (\S+) -> (\S+):(\d+), (\w+), group (\d+)""")
     private val CLOSED = Regex("""\bconn (\d+) closed: (\S+), up (\d+) B, down (\d+) B, rounds (\d+), (\d+) ms""")
-    private val BLOCK = Regex("""\bconn (\d+): block detected \((\w+)\) on (\S+) \((\S+)\) with group (\d+), (.*)""")
+    // "udp N: block detected (udp) ..." since --auto=udp: a UDP flow without a reply.
+    private val BLOCK = Regex("""\b(?:conn|udp) (\d+): block detected \((\w+)\) on (\S+) \((\S+)\) with group (\d+), (.*)""")
     private val TCP_FAILED = Regex("""\btcp (\d+): connect to (\S+) FAILED after (\d+) ms: (.*)""")
     // The engine logs a refusing proxy (not running) once per burst, with a count of repeats.
     private val PROXY_REFUSED = Regex("""\bgroup (\d+): proxy (\S+) (?:still )?refuses connections(?: \((\d+) more)?""")

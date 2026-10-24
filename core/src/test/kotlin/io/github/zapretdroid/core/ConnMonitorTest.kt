@@ -81,4 +81,20 @@ class ConnMonitorTest {
         assertEquals("rr1---sn-abc.googlevideo.com", events[2].host)
         assertTrue(events[2].text.endsWith("group 3 -> 0"))
     }
+
+    @Test
+    fun udpBlocksAndCachedGroups() {
+        val events = ConnMonitor.parse(
+            listOf(
+                "10-24 13:00:00.000 vpn | ===== VPN session start (io.github.zapretdroid.START) =====",
+                "10-24 13:00:01.000 byedpi | udp 6: -> 142.250.74.14:443, quic, host www.youtube.com (sni), group 0",
+                "10-24 13:00:02.200 byedpi | udp 6: block detected (udp) on www.youtube.com (142.250.74.14) with group 0, trying group 2",
+                "10-24 13:05:00.000 byedpi | udp 9: -> 142.250.74.14:443, quic, host www.youtube.com (sni), group 2, from the auto cache",
+            ),
+        )
+        assertEquals(listOf(Kind.UDP_START, Kind.BLOCK, Kind.UDP_START), events.map { it.kind })
+        assertEquals("www.youtube.com", events[1].host)
+        assertTrue(events[1].text.contains("udp, group 0, trying group 2"))
+        assertEquals(1, ConnMonitor.summarize(events).blocks)
+    }
 }

@@ -10,6 +10,8 @@ class ScriptEventsTest {
     fun parsesLogLines() {
         assertEquals(ScriptEvents.Event("block", "discord.com", "tcp"),
             ScriptEvents.parse("10-19 byedpi | conn 81: block detected (ssl_err) on discord.com (162.159.128.233) with group 0, no group left"))
+        assertEquals(ScriptEvents.Event("block", "www.youtube.com", "udp"),
+            ScriptEvents.parse("10-24 byedpi | udp 12: block detected (udp) on www.youtube.com (::ffff:142.250.1.1) with group 0, trying group 1"))
         assertEquals(ScriptEvents.Event("noreply", "www.youtube.com", "tcp"),
             ScriptEvents.parse("byedpi | conn 4 closed: www.youtube.com, up 517 B, down 0 B, rounds 1, 5000 ms"))
         assertEquals(ScriptEvents.Event("freeze", "discord.com", "tcp"),

@@ -911,6 +911,7 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
             if (params.conn_log) {
                 udp_stat_in(val, pn);
             }
+            udp_reply_from(val, &addr);
             // Answers of the app's resolver look like they come from the VPN's DNS address.
             if (params.dns_redir && same_addr(&addr, &params.dns_redir_to, 1)) {
                 addr = params.dns_redir_from;

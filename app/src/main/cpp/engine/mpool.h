@@ -76,9 +76,9 @@ void load_cache(struct mphdr *hdr, FILE *in, struct desync_params *dp);
 
 /* ZapretDroid --auto-cache: all groups' entries; load returns the entries read, -1 if the
  * file is not one or belongs to a strategy with another number of groups. */
-void dump_cache_all(struct mphdr *hdr, FILE *out, int groups);
+void dump_cache_all(struct mphdr *hdr, FILE *out, char tag);
 
-int load_cache_all(struct mphdr *hdr, FILE *in, int groups,
+int load_cache_all(struct mphdr *tcp, struct mphdr *udp, FILE *in, int groups,
         struct desync_params *(*group)(int id));
 
 #endif

@@ -122,7 +122,7 @@ def main():
     with open(cache) as f:
         text = f.read()
     assert text.startswith("zdcache 1 2\n"), text
-    assert re.search(r"^1 \w+ \d+ 127\.0\.0\.1 32 %d " % dst_port, text, re.M), text + log
+    assert re.search(r"^t 1 \w+ \d+ 127\.0\.0\.1 32 %d " % dst_port, text, re.M), text + log
     assert not os.path.exists(cache + ".tmp")
 
     e = Engine(binary, strategy)
@@ -151,8 +151,9 @@ def main():
     resets[0] = 1
     # A damaged file is not an error.
     with open(cache, "w") as f:
-        f.write("zdcache 1 2\n1 zz\n99 0 0 127.0.0.1 32 1 0 -\n1 0 0 not-an-ip 32 1 0 -\n"
-                "1 0 0 127.0.0.1 999 1 0 -\n1 0 0 127.0.0.1 -5 1 0 -\n")
+        f.write("zdcache 1 2\nt 1 zz\nt 99 0 0 127.0.0.1 32 1 0 -\nt 1 0 0 not-an-ip 32 1 0 -\n"
+                "t 1 0 0 127.0.0.1 999 1 0 -\nt 1 0 0 127.0.0.1 -5 1 0 -\nx 1 0 0 127.0.0.1 32 1 0 -\n"
+                "1 0 0 127.0.0.1 32 1 0 -\n")
     e = Engine(binary, strategy)
     request(e.port, dst_port)
     time.sleep(0.3)
