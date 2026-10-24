@@ -443,26 +443,39 @@ int parse_http(const char *buffer, size_t bsize, char **hs, uint16_t *port)
     if (!(l_end = memchr(host, '\n', buff_end - host))) {
         return 0;
     }
-    for (; isspace((unsigned char) *(l_end - 1)); l_end--);
-    
+    // ZapretDroid: the trims stop at the value's start. An empty value ("Host: \r\n") walked
+    // back past it into "Host:" and returned a negative length (memmove of -2 in mod_http).
+    for (; l_end > host && isspace((unsigned char) *(l_end - 1)); l_end--);
+    if (l_end <= host) {
+        return 0;
+    }
+
     const char *h_end = l_end - 1;
-    while (isdigit((unsigned char) *--h_end));
-    
+    while (h_end > host && isdigit((unsigned char) *--h_end));
+
     if (*h_end != ':') {
         if (port) *port = 80;
         h_end = l_end;
     }
     else if (port) {
-        char *end;
-        long i = strtol(h_end + 1, &end, 10);
-        if (i <= 0 || end != l_end || i > 0xffff)
+        // ZapretDroid: digits counted by hand. strtol skips leading white space, so with a
+        // value of ":" alone ("Host: :\r\n") it ran over "\r\n" and past the buffer.
+        long i = 0;
+        const char *d = h_end + 1;
+        for (; d < l_end && isdigit((unsigned char) *d) && i <= 0xffff; d++) {
+            i = i * 10 + (*d - '0');
+        }
+        if (i <= 0 || d != l_end || i > 0xffff)
             return 0;
         *port = i;
     }
     if (*host == '[') {
-        if (*--h_end != ']')
+        if (h_end - host < 2 || *--h_end != ']')
             return 0;
-        host++; 
+        host++;
+    }
+    if (h_end <= host) {
+        return 0;
     }
     *hs = (char *)host;
     return h_end - host;
@@ -477,12 +490,17 @@ static int get_http_code(const char *b, size_t n)
     if (!memchr(b + 12, '\n', n - 12)) {
         return 0;
     }
-    char *e;
-    long num = strtol(b + 9, &e, 10);
-    if (num < 100 || num > 511 || !isspace((unsigned char) *e)) {
+    // ZapretDroid: three digits read by hand. strtol skipped white space, newlines included,
+    // and could run past the server's response.
+    if (!isdigit((unsigned char) b[9]) || !isdigit((unsigned char) b[10])
+            || !isdigit((unsigned char) b[11]) || !isspace((unsigned char) b[12])) {
         return 0;
     }
-    return (int )num;
+    int num = (b[9] - '0') * 100 + (b[10] - '0') * 10 + (b[11] - '0');
+    if (num < 100 || num > 511) {
+        return 0;
+    }
+    return num;
 }
 
 

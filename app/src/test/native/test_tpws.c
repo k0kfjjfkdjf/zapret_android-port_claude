@@ -433,6 +433,42 @@ static void test_empty_tls_records(void)
     alarm(0);
 }
 
+/* HTTP parsing on buffers that end right after the request (no NUL behind them). */
+static void test_http_parse(void)
+{
+    static const char *bad[] = {
+        "GET / HTTP/1.1\r\nHost: :\r\n",
+        "GET / HTTP/1.1\r\nHost: \r\n",
+        "GET / HTTP/1.1\r\nHost: a:99999\r\n",
+        "GET / HTTP/1.1\r\nHost: []:80\r\n",
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(*bad); i++) {
+        size_t n = strlen(bad[i]);
+        char *b = malloc(n); // exact size: no NUL after the request
+        memcpy(b, bad[i], n);
+        char *hs = 0;
+        uint16_t port = 0;
+        CHECK_EQ(parse_http(b, n, &hs, &port), 0);
+        free(b);
+    }
+    const char ok[] = "GET / HTTP/1.1\r\nHost: example.com:8080\r\n";
+    char *hs = 0;
+    uint16_t port = 0;
+    CHECK_EQ(parse_http(ok, sizeof(ok) - 1, &hs, &port), 11);
+    CHECK_EQ(port, 8080);
+    const char v6[] = "GET / HTTP/1.1\r\nHost: [::1]:81\r\n";
+    CHECK_EQ(parse_http(v6, sizeof(v6) - 1, &hs, &port), 3);
+    CHECK_EQ(port, 81);
+
+    // A redirect answer that is only white space after "HTTP/1.1": nothing past it is read.
+    const char req[] = "GET / HTTP/1.1\r\nHost: a.example.com\r\n\r\n";
+    const char resp[] = "HTTP/1.1                     \n";
+    char *r = malloc(sizeof(resp) - 1);
+    memcpy(r, resp, sizeof(resp) - 1);
+    CHECK(!is_http_redirect(req, sizeof(req) - 1, r, sizeof(resp) - 1));
+    free(r);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "--parse")) {
@@ -444,6 +480,7 @@ int main(int argc, char **argv)
     test_markers_http();
     test_markers_tls(argc > 1 ? argv[1] : "tls_clienthello_www_google_com.bin");
     test_parsing();
+    test_http_parse();
     if (argc > 2) test_udp_proto(argv[2]);
     if (argc > 2) test_quic_sni(argv[2]);
     test_dns_cache();
