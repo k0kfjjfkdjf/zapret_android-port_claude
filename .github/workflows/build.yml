@@ -40,7 +40,16 @@ jobs:
             "platforms;android-36" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: Native engine tests
-        run: app/src/test/native/run.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          # On failure, the end of the output also goes out as an annotation: readable through
+          # the API (check-runs/<job>/annotations) where the log itself is not.
+          if ! app/src/test/native/run.sh 2>&1 | tee native-tests.log; then
+            tail -n 60 native-tests.log | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}' > tail.txt
+            echo "::error title=Native engine tests::$(cat tail.txt)"
+            exit 1
+          fi
 
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest :core:test
